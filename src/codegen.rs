@@ -169,7 +169,72 @@ pub fn gen_code(ast_root: Box<Block>) -> Program {
         }
     }
 
+    for func in &mut context.func_list {
+        func.stack_size = get_stack_size(&func.code_list, 0, 0);
+    }
+
     Program::new(context)
+}
+
+fn get_stack_size(code: &Vec<OPCode>, mut offset: usize, init_size: u32) -> u32 {
+    let mut stack_size = init_size;
+    let mut t = init_size;
+    while offset < code.len() {
+        match code[offset] {
+            OPCode::Pop => t += 1,
+            OPCode::Dup => t += 1,
+            OPCode::DupTwo => t += 2,
+            OPCode::Rot => (),
+            OPCode::LoadLocal(_)
+            | OPCode::LoadGlobal(_)
+            | OPCode::LoadUpvalue(_)
+            | OPCode::LoadConst(_) => t += 1,
+            OPCode::StoreLocal(_) | OPCode::StoreGlobal(_) | OPCode::StoreUpvalue(_) => t -= 1,
+            OPCode::Import(_) => todo!(),
+            OPCode::ImportFrom(_) => todo!(),
+            OPCode::ImportGlob => todo!(),
+            OPCode::BuildTable(i) => t -= i * 2 - 1,
+            OPCode::GetAttr | OPCode::GetItem => t -= 1,
+            OPCode::SetAttr | OPCode::SetItem => t -= 2,
+            OPCode::Neg | OPCode::Not => (),
+            OPCode::Add
+            | OPCode::Sub
+            | OPCode::Mul
+            | OPCode::Div
+            | OPCode::Mod
+            | OPCode::Eq
+            | OPCode::Ne
+            | OPCode::Gt
+            | OPCode::Ge
+            | OPCode::Lt
+            | OPCode::Le
+            | OPCode::Is => t -= 1,
+            OPCode::For(_) => todo!(),
+            OPCode::Jump(JumpTarget(_)) => (),
+            OPCode::JumpIfFalse(JumpTarget(i)) => {
+                let temp = get_stack_size(code, (i + 1).try_into().unwrap(), t);
+                if temp > stack_size {
+                    stack_size = temp;
+                }
+            }
+            OPCode::JumpIfTureOrPop(JumpTarget(i)) | OPCode::JumpIfFalseOrPop(JumpTarget(i)) => {
+                let temp = get_stack_size(code, (i + 1).try_into().unwrap(), t);
+                if temp > stack_size {
+                    stack_size = temp;
+                }
+                t -= 1;
+            }
+            OPCode::Call(i) => t -= i - 1,
+            OPCode::Goto(_) => todo!(),
+            OPCode::Return => break,
+            OPCode::JumpTarget(_) => panic!(),
+        }
+        if t > stack_size {
+            stack_size = t;
+        }
+        offset += 1;
+    }
+    stack_size
 }
 
 #[derive(Debug, Clone)]
@@ -244,6 +309,8 @@ pub struct Function {
     pub global_names: Vec<String>,
     pub upvalue_names: Vec<(String, u32, u32)>,
 
+    pub stack_size: u32,
+
     continue_stack: Vec<JumpTarget>,
     break_stack: Vec<JumpTarget>,
 }
@@ -266,6 +333,7 @@ impl Function {
             local_names: Vec::new(),
             global_names: Vec::new(),
             upvalue_names: Vec::new(),
+            stack_size: 0,
             continue_stack: Vec::new(),
             break_stack: Vec::new(),
         }

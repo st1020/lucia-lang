@@ -5,11 +5,8 @@ use crate::codegen::{Function, JumpTarget, LucylValue, OPCode, Program};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum GCObjectKind {
-    /// ""abc"", ""abc"
     Str(String),
-    /// Table
     Table(LucyTable),
-    // Closuer
     Closuer(Box<Closuer>),
 }
 
@@ -30,15 +27,10 @@ impl GCObject {
 
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub enum LucyData {
-    /// "null"
     Null,
-    /// "true", "false"
     Bool(bool),
-    /// "12", "0o100", "0b110"
     Int(i64),
-    /// "12.34", "0b100.100"
     Float(f64),
-    /// GC Object
     GCObject(*mut GCObject),
 }
 
@@ -93,16 +85,16 @@ impl PartialEq for Closuer {
 pub struct Frame {
     pc: u32,
     closuer: *mut GCObject,
-    operate_stack: LinkedList<LucyData>,
+    operate_stack: Vec<LucyData>,
     lvm: *mut Lvm,
 }
 
 impl Frame {
-    pub fn new(closuer: *mut GCObject, lvm: *mut Lvm) -> Self {
+    pub fn new(closuer: *mut GCObject, lvm: *mut Lvm, stack_size: u32) -> Self {
         Frame {
             pc: 0,
             closuer,
-            operate_stack: LinkedList::new(),
+            operate_stack: Vec::with_capacity(stack_size.try_into().unwrap()),
             lvm,
         }
     }
@@ -119,29 +111,28 @@ impl Frame {
             let code = closuer.function.code_list.get(self.pc as usize).unwrap();
             match code {
                 OPCode::Pop => {
-                    self.operate_stack.pop_back();
+                    self.operate_stack.pop();
                 }
                 OPCode::Dup => {
-                    self.operate_stack
-                        .push_back(*self.operate_stack.back().unwrap());
+                    self.operate_stack.push(*self.operate_stack.last().unwrap());
                 }
                 OPCode::DupTwo => {
-                    let a = self.operate_stack.pop_back().unwrap();
-                    let b = self.operate_stack.pop_back().unwrap();
-                    self.operate_stack.push_back(b);
-                    self.operate_stack.push_back(a);
+                    let a = self.operate_stack.pop().unwrap();
+                    let b = self.operate_stack.pop().unwrap();
+                    self.operate_stack.push(b);
+                    self.operate_stack.push(a);
                 }
                 OPCode::Rot => {
-                    let a = self.operate_stack.pop_back().unwrap();
-                    let b = self.operate_stack.pop_back().unwrap();
-                    self.operate_stack.push_back(a);
-                    self.operate_stack.push_back(b);
+                    let a = self.operate_stack.pop().unwrap();
+                    let b = self.operate_stack.pop().unwrap();
+                    self.operate_stack.push(a);
+                    self.operate_stack.push(b);
                 }
                 OPCode::LoadLocal(i) => {
-                    self.operate_stack.push_back(closuer.variables[*i as usize]);
+                    self.operate_stack.push(closuer.variables[*i as usize]);
                 }
                 OPCode::LoadGlobal(i) => {
-                    self.operate_stack.push_back(
+                    self.operate_stack.push(
                         lvm.get_global_variable(&closuer.function.global_names[*i as usize])
                             .unwrap_or(LucyData::Null),
                     );
@@ -161,7 +152,7 @@ impl Frame {
                         };
                     }
                     self.operate_stack
-                        .push_back(closuer.variables[upvalue_id as usize]);
+                        .push(closuer.variables[upvalue_id as usize]);
                 }
                 OPCode::LoadConst(i) => {
                     let t = lvm.program.const_list[*i as usize].clone();
@@ -191,15 +182,15 @@ impl Frame {
                             )))
                         }
                     };
-                    self.operate_stack.push_back(v);
+                    self.operate_stack.push(v);
                 }
                 OPCode::StoreLocal(i) => {
-                    closuer.variables[*i as usize] = self.operate_stack.pop_back().unwrap();
+                    closuer.variables[*i as usize] = self.operate_stack.pop().unwrap();
                 }
                 OPCode::StoreGlobal(i) => {
                     lvm.set_global_variable(
                         closuer.function.global_names[*i as usize].clone(),
-                        self.operate_stack.pop_back().unwrap(),
+                        self.operate_stack.pop().unwrap(),
                     );
                 }
                 OPCode::StoreUpvalue(i) => {
@@ -216,7 +207,7 @@ impl Frame {
                             None => panic!(),
                         };
                     }
-                    closuer.variables[upvalue_id as usize] = self.operate_stack.pop_back().unwrap();
+                    closuer.variables[upvalue_id as usize] = self.operate_stack.pop().unwrap();
                 }
                 OPCode::Import(_) => todo!(),
                 OPCode::ImportFrom(_) => todo!(),
@@ -224,7 +215,7 @@ impl Frame {
                 OPCode::BuildTable(i) => {
                     let mut temp: Vec<LucyData> = Vec::new();
                     for _ in 0..(*i * 2) {
-                        temp.push(self.operate_stack.pop_back().unwrap());
+                        temp.push(self.operate_stack.pop().unwrap());
                     }
                     let mut table: Vec<(LucyData, LucyData)> = Vec::new();
                     for _ in 0..*i {
@@ -235,18 +226,18 @@ impl Frame {
                         }
                         table.push((arg1.clone(), arg2));
                     }
-                    self.operate_stack.push_back(LucyData::GCObject(
+                    self.operate_stack.push(LucyData::GCObject(
                         lvm.new_gc_object(GCObject::new(GCObjectKind::Table(LucyTable(table)))),
                     ));
                 }
                 OPCode::GetAttr | OPCode::GetItem => {
-                    let arg2 = self.operate_stack.pop_back().unwrap();
-                    let arg1 = self.operate_stack.pop_back().unwrap();
+                    let arg2 = self.operate_stack.pop().unwrap();
+                    let arg1 = self.operate_stack.pop().unwrap();
                     if let LucyData::GCObject(t) = arg1 {
                         match unsafe { &(*t).kind } {
                             GCObjectKind::Table(v) => self
                                 .operate_stack
-                                .push_back(v.get(&arg2).unwrap_or(LucyData::Null)),
+                                .push(v.get(&arg2).unwrap_or(LucyData::Null)),
                             _ => panic!(),
                         }
                     } else {
@@ -254,9 +245,9 @@ impl Frame {
                     }
                 }
                 OPCode::SetAttr | OPCode::SetItem => {
-                    let arg3 = self.operate_stack.pop_back().unwrap();
-                    let arg2 = self.operate_stack.pop_back().unwrap();
-                    let arg1 = self.operate_stack.pop_back().unwrap();
+                    let arg3 = self.operate_stack.pop().unwrap();
+                    let arg2 = self.operate_stack.pop().unwrap();
+                    let arg1 = self.operate_stack.last().unwrap();
                     if let LucyData::GCObject(t) = arg1 {
                         match unsafe { &mut t.as_mut().unwrap().kind } {
                             GCObjectKind::Table(v) => v.set(&arg2, arg3),
@@ -267,75 +258,75 @@ impl Frame {
                     }
                 }
                 OPCode::Neg => {
-                    let arg1 = self.operate_stack.pop_back().unwrap();
+                    let arg1 = self.operate_stack.pop().unwrap();
                     let t = match arg1 {
                         LucyData::Int(v) => LucyData::Int(-v),
                         LucyData::Float(v) => LucyData::Float(-v),
                         _ => panic!(),
                     };
-                    self.operate_stack.push_back(t);
+                    self.operate_stack.push(t);
                 }
                 OPCode::Not => {
-                    let arg1 = self.operate_stack.pop_back().unwrap();
+                    let arg1 = self.operate_stack.pop().unwrap();
                     let t = match arg1 {
                         LucyData::Bool(v) => LucyData::Bool(!v),
                         _ => panic!(),
                     };
-                    self.operate_stack.push_back(t);
+                    self.operate_stack.push(t);
                 }
                 OPCode::Add => {
-                    let arg2 = self.operate_stack.pop_back().unwrap();
-                    let arg1 = self.operate_stack.pop_back().unwrap();
+                    let arg2 = self.operate_stack.pop().unwrap();
+                    let arg1 = self.operate_stack.pop().unwrap();
                     let t = match (arg1, arg2) {
                         (LucyData::Int(v1), LucyData::Int(v2)) => LucyData::Int(v1 + v2),
                         (LucyData::Float(v1), LucyData::Float(v2)) => LucyData::Float(v1 + v2),
                         _ => panic!(),
                     };
-                    self.operate_stack.push_back(t);
+                    self.operate_stack.push(t);
                 }
                 OPCode::Sub => {
-                    let arg2 = self.operate_stack.pop_back().unwrap();
-                    let arg1 = self.operate_stack.pop_back().unwrap();
+                    let arg2 = self.operate_stack.pop().unwrap();
+                    let arg1 = self.operate_stack.pop().unwrap();
                     let t = match (arg1, arg2) {
                         (LucyData::Int(v1), LucyData::Int(v2)) => LucyData::Int(v1 - v2),
                         (LucyData::Float(v1), LucyData::Float(v2)) => LucyData::Float(v1 - v2),
                         _ => panic!(),
                     };
-                    self.operate_stack.push_back(t);
+                    self.operate_stack.push(t);
                 }
                 OPCode::Mul => {
-                    let arg2 = self.operate_stack.pop_back().unwrap();
-                    let arg1 = self.operate_stack.pop_back().unwrap();
+                    let arg2 = self.operate_stack.pop().unwrap();
+                    let arg1 = self.operate_stack.pop().unwrap();
                     let t = match (arg1, arg2) {
                         (LucyData::Int(v1), LucyData::Int(v2)) => LucyData::Int(v1 * v2),
                         (LucyData::Float(v1), LucyData::Float(v2)) => LucyData::Float(v1 * v2),
                         _ => panic!(),
                     };
-                    self.operate_stack.push_back(t);
+                    self.operate_stack.push(t);
                 }
                 OPCode::Div => {
-                    let arg2 = self.operate_stack.pop_back().unwrap();
-                    let arg1 = self.operate_stack.pop_back().unwrap();
+                    let arg2 = self.operate_stack.pop().unwrap();
+                    let arg1 = self.operate_stack.pop().unwrap();
                     let t = match (arg1, arg2) {
                         (LucyData::Int(v1), LucyData::Int(v2)) => LucyData::Int(v1 / v2),
                         (LucyData::Float(v1), LucyData::Float(v2)) => LucyData::Float(v1 / v2),
                         _ => panic!(),
                     };
-                    self.operate_stack.push_back(t);
+                    self.operate_stack.push(t);
                 }
                 OPCode::Mod => {
-                    let arg2 = self.operate_stack.pop_back().unwrap();
-                    let arg1 = self.operate_stack.pop_back().unwrap();
+                    let arg2 = self.operate_stack.pop().unwrap();
+                    let arg1 = self.operate_stack.pop().unwrap();
                     let t = match (arg1, arg2) {
                         (LucyData::Int(v1), LucyData::Int(v2)) => LucyData::Int(v1 % v2),
                         (LucyData::Float(v1), LucyData::Float(v2)) => LucyData::Float(v1 % v2),
                         _ => panic!(),
                     };
-                    self.operate_stack.push_back(t);
+                    self.operate_stack.push(t);
                 }
                 OPCode::Eq => {
-                    let arg2 = self.operate_stack.pop_back().unwrap();
-                    let arg1 = self.operate_stack.pop_back().unwrap();
+                    let arg2 = self.operate_stack.pop().unwrap();
+                    let arg1 = self.operate_stack.pop().unwrap();
                     let t = LucyData::Bool(match (arg1, arg2) {
                         (LucyData::Null, LucyData::Null) => true,
                         (LucyData::Bool(v1), LucyData::Bool(v2)) => v1 == v2,
@@ -349,11 +340,11 @@ impl Frame {
                         },
                         _ => false,
                     });
-                    self.operate_stack.push_back(t);
+                    self.operate_stack.push(t);
                 }
                 OPCode::Ne => {
-                    let arg2 = self.operate_stack.pop_back().unwrap();
-                    let arg1 = self.operate_stack.pop_back().unwrap();
+                    let arg2 = self.operate_stack.pop().unwrap();
+                    let arg1 = self.operate_stack.pop().unwrap();
                     let t = LucyData::Bool(match (arg1, arg2) {
                         (LucyData::Null, LucyData::Null) => false,
                         (LucyData::Bool(v1), LucyData::Bool(v2)) => v1 != v2,
@@ -367,57 +358,57 @@ impl Frame {
                         },
                         _ => true,
                     });
-                    self.operate_stack.push_back(t);
+                    self.operate_stack.push(t);
                 }
                 OPCode::Gt => {
-                    let arg2 = self.operate_stack.pop_back().unwrap();
-                    let arg1 = self.operate_stack.pop_back().unwrap();
+                    let arg2 = self.operate_stack.pop().unwrap();
+                    let arg1 = self.operate_stack.pop().unwrap();
                     let t = LucyData::Bool(match (arg1, arg2) {
                         (LucyData::Int(v1), LucyData::Int(v2)) => v1 > v2,
                         (LucyData::Float(v1), LucyData::Float(v2)) => v1 > v2,
                         _ => panic!(),
                     });
-                    self.operate_stack.push_back(t);
+                    self.operate_stack.push(t);
                 }
                 OPCode::Ge => {
-                    let arg2 = self.operate_stack.pop_back().unwrap();
-                    let arg1 = self.operate_stack.pop_back().unwrap();
+                    let arg2 = self.operate_stack.pop().unwrap();
+                    let arg1 = self.operate_stack.pop().unwrap();
                     let t = LucyData::Bool(match (arg1, arg2) {
                         (LucyData::Int(v1), LucyData::Int(v2)) => v1 >= v2,
                         (LucyData::Float(v1), LucyData::Float(v2)) => v1 >= v2,
                         _ => panic!(),
                     });
-                    self.operate_stack.push_back(t);
+                    self.operate_stack.push(t);
                 }
                 OPCode::Lt => {
-                    let arg2 = self.operate_stack.pop_back().unwrap();
-                    let arg1 = self.operate_stack.pop_back().unwrap();
+                    let arg2 = self.operate_stack.pop().unwrap();
+                    let arg1 = self.operate_stack.pop().unwrap();
                     let t = LucyData::Bool(match (arg1, arg2) {
                         (LucyData::Int(v1), LucyData::Int(v2)) => v1 < v2,
                         (LucyData::Float(v1), LucyData::Float(v2)) => v1 < v2,
                         _ => panic!(),
                     });
-                    self.operate_stack.push_back(t);
+                    self.operate_stack.push(t);
                 }
                 OPCode::Le => {
-                    let arg2 = self.operate_stack.pop_back().unwrap();
-                    let arg1 = self.operate_stack.pop_back().unwrap();
+                    let arg2 = self.operate_stack.pop().unwrap();
+                    let arg1 = self.operate_stack.pop().unwrap();
                     let t = LucyData::Bool(match (arg1, arg2) {
                         (LucyData::Int(v1), LucyData::Int(v2)) => v1 <= v2,
                         (LucyData::Float(v1), LucyData::Float(v2)) => v1 <= v2,
                         _ => panic!(),
                     });
-                    self.operate_stack.push_back(t);
+                    self.operate_stack.push(t);
                 }
                 OPCode::Is => {
-                    let arg2 = self.operate_stack.pop_back().unwrap();
-                    let arg1 = self.operate_stack.pop_back().unwrap();
-                    self.operate_stack.push_back(LucyData::Bool(arg1 == arg2));
+                    let arg2 = self.operate_stack.pop().unwrap();
+                    let arg1 = self.operate_stack.pop().unwrap();
+                    self.operate_stack.push(LucyData::Bool(arg1 == arg2));
                 }
                 OPCode::For(JumpTarget(i)) => {
                     self.call(0, false);
-                    if self.operate_stack.back().unwrap() == &LucyData::Null {
-                        self.operate_stack.pop_back();
+                    if self.operate_stack.last().unwrap() == &LucyData::Null {
+                        self.operate_stack.pop();
                         self.pc = *i;
                         continue;
                     }
@@ -427,7 +418,7 @@ impl Frame {
                     continue;
                 }
                 OPCode::JumpIfFalse(JumpTarget(i)) => {
-                    let arg1 = self.operate_stack.pop_back().unwrap();
+                    let arg1 = self.operate_stack.pop().unwrap();
                     match arg1 {
                         LucyData::Bool(v) => {
                             if !v {
@@ -439,28 +430,28 @@ impl Frame {
                     }
                 }
                 OPCode::JumpIfTureOrPop(JumpTarget(i)) => {
-                    let arg1 = self.operate_stack.pop_back().unwrap();
+                    let arg1 = self.operate_stack.pop().unwrap();
                     match arg1 {
                         LucyData::Bool(v) => {
                             if v {
                                 self.pc = *i;
                                 continue;
                             } else {
-                                self.operate_stack.pop_back();
+                                self.operate_stack.pop();
                             }
                         }
                         _ => (),
                     }
                 }
                 OPCode::JumpIfFalseOrPop(JumpTarget(i)) => {
-                    let arg1 = self.operate_stack.pop_back().unwrap();
+                    let arg1 = self.operate_stack.pop().unwrap();
                     match arg1 {
                         LucyData::Bool(v) => {
                             if !v {
                                 self.pc = *i;
                                 continue;
                             } else {
-                                self.operate_stack.pop_back();
+                                self.operate_stack.pop();
                             }
                         }
                         _ => (),
@@ -471,7 +462,7 @@ impl Frame {
                 }
                 OPCode::Goto(_) => todo!(),
                 OPCode::Return => {
-                    return self.operate_stack.pop_back().unwrap();
+                    return self.operate_stack.pop().unwrap();
                 }
                 OPCode::JumpTarget(_) => panic!(),
             }
@@ -484,13 +475,13 @@ impl Frame {
 
         let mut arguments = Vec::with_capacity(arg_num.try_into().unwrap());
         for _ in 0..arg_num {
-            arguments.push(self.operate_stack.pop_back().unwrap());
+            arguments.push(self.operate_stack.pop().unwrap());
         }
 
         let callee = if pop {
-            self.operate_stack.pop_back().unwrap()
+            self.operate_stack.pop().unwrap()
         } else {
-            *self.operate_stack.back().unwrap()
+            *self.operate_stack.last().unwrap()
         };
         if let LucyData::GCObject(gc_obj) = callee {
             let v = unsafe {
@@ -505,10 +496,11 @@ impl Frame {
             for i in 0..v.function.params.len() {
                 v.variables[i] = arguments.pop().unwrap();
             }
-            lvm.call_stack.push_back(Frame::new(gc_obj, self.lvm));
+            lvm.call_stack
+                .push_back(Frame::new(gc_obj, self.lvm, v.function.stack_size));
             let return_value = lvm.call_stack.back_mut().unwrap().run();
             // println!("{:?}", return_value);
-            self.operate_stack.push_back(return_value);
+            self.operate_stack.push(return_value);
         } else {
             panic!()
         }
@@ -539,6 +531,7 @@ impl Lvm {
 
     pub fn run(&mut self) {
         let func = self.program.func_list.first().unwrap().clone();
+        let stack_size = func.stack_size;
         let frame = Frame::new(
             self.new_gc_object(GCObject::new(GCObjectKind::Closuer(Box::new(Closuer {
                 base_closuer: None,
@@ -552,6 +545,7 @@ impl Lvm {
                 function: func,
             })))),
             self,
+            stack_size,
         );
         self.call_stack.push_back(frame);
         self.call_stack.back_mut().unwrap().run();
@@ -623,6 +617,7 @@ impl Lvm {
             let mut t = LinkedList::new();
             for ptr in &self.heap {
                 if (**ptr).gc_state {
+                    ptr.drop_in_place();
                     dealloc(*ptr as *mut u8, self.mem_layout);
                 } else {
                     t.push_back(*ptr);
