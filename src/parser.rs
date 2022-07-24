@@ -204,7 +204,6 @@ impl Parser {
                                 break;
                             }
                             _ => {
-                                self.expect(TokenKind::Ident);
                                 path.push(*self.parse_ident());
                                 match self.token.kind {
                                     TokenKind::Semi | TokenKind::As | TokenKind::OpenBrace => break,
@@ -225,23 +224,20 @@ impl Parser {
                             };
                         }
                         TokenKind::As => {
-                            self.bump_expect(TokenKind::Ident);
                             kind = ImportKind::Simple(*self.parse_ident());
                             self.expect(TokenKind::Semi);
                         }
                         TokenKind::OpenBrace => {
-                            self.bump_expect(TokenKind::Ident);
                             let mut temp = Vec::new();
                             loop {
                                 match self.token.kind {
                                     TokenKind::CloseBrace => break,
-                                    TokenKind::Ident => {
+                                    TokenKind::Ident(_) => {
                                         let t = *self.parse_ident();
                                         temp.push((
                                             t.clone(),
                                             match self.token.kind {
                                                 TokenKind::As => {
-                                                    self.bump_expect(TokenKind::Ident);
                                                     let t = *self.parse_ident();
                                                     self.bump();
                                                     t
@@ -372,8 +368,8 @@ impl Parser {
 
     fn parse_expr_unary(&mut self) -> Box<Expr> {
         match self.token.kind {
-            TokenKind::Literal
-            | TokenKind::Ident
+            TokenKind::Literal(_)
+            | TokenKind::Ident(_)
             | TokenKind::Func
             | TokenKind::VBar
             | TokenKind::OpenBrace
@@ -460,7 +456,7 @@ impl Parser {
     }
 
     fn parse_expr_atom(&mut self) -> Box<Expr> {
-        match self.token.kind {
+        match &self.token.kind {
             TokenKind::OpenParen => {
                 self.bump();
                 let temp = self.parse_expr(1);
@@ -468,10 +464,10 @@ impl Parser {
                 self.bump();
                 temp
             }
-            TokenKind::Literal => {
+            TokenKind::Literal(v) => {
                 let temp = Box::new(Expr {
                     kind: ExprKind::Lit(Box::new(Lit {
-                        value: self.token.value.clone(),
+                        value: v.clone(),
                         start: self.token.start,
                         end: self.token.end,
                     })),
@@ -481,7 +477,7 @@ impl Parser {
                 self.bump();
                 temp
             }
-            TokenKind::Ident => self.parse_expr_ident(),
+            TokenKind::Ident(_) => self.parse_expr_ident(),
             TokenKind::OpenBrace => self.parse_expr_table(),
             TokenKind::Func | TokenKind::VBar => self.parse_expr_func(),
             _ => panic!("Unexpect token: {:?}", self.token),
@@ -587,17 +583,17 @@ impl Parser {
     }
 
     fn parse_ident(&mut self) -> Box<Ident> {
-        self.expect(TokenKind::Ident);
-        if let LiteralValue::Str(v) = &self.token.value {
-            let temp = Ident {
-                start: self.token.start,
-                name: v.clone(),
-                end: self.token.end,
-            };
-            self.bump();
-            Box::new(temp)
-        } else {
-            panic!("Unexpect token: {:?}", self.token)
+        match &self.token.kind {
+            TokenKind::Ident(v) => {
+                let temp = Ident {
+                    start: self.token.start,
+                    name: v.clone(),
+                    end: self.token.end,
+                };
+                self.bump();
+                Box::new(temp)
+            }
+            _ => panic!("Expect token Ident , but {:?} was given", self.token),
         }
     }
 }

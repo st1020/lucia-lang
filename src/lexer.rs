@@ -13,10 +13,8 @@ pub(crate) struct Cursor<'a> {
     initial_len: usize,
     /// Iterator over chars. Slightly faster than a &str.
     chars: Chars<'a>,
-
     lineno: u32,
     column: u32,
-
     #[cfg(debug_assertions)]
     prev: char,
 }
@@ -111,25 +109,18 @@ pub struct Location {
 #[derive(Clone, Debug)]
 pub struct Token {
     pub kind: TokenKind,
-    pub value: LiteralValue,
     pub start: Location,
     pub end: Location,
 }
 
 impl Token {
-    pub fn new(kind: TokenKind, value: LiteralValue, start: Location, end: Location) -> Self {
-        Token {
-            kind,
-            value,
-            start,
-            end,
-        }
+    pub fn new(kind: TokenKind, start: Location, end: Location) -> Self {
+        Token { kind, start, end }
     }
 
     pub fn dummy() -> Self {
         Token {
             kind: Unknown,
-            value: Null,
             start: Location {
                 lineno: 1,
                 column: 1,
@@ -274,9 +265,9 @@ pub enum TokenKind {
     /// Any whitespace characters sequence.
     Whitespace,
     /// Ident
-    Ident,
+    Ident(String),
     /// "12", "1.0e-40", ""123"". See `LiteralKind` for more details.
-    Literal,
+    Literal(LiteralValue),
     /// Unknown token, not expected by the lexer, e.g. "№"
     Unknown,
 }
@@ -374,7 +365,6 @@ impl Cursor<'_> {
     pub fn advance_token(&mut self) -> Token {
         let start = self.location();
         let first_char = self.bump().unwrap();
-        let mut value = Null;
         let token_kind = match first_char {
             // Slash, comment or block comment.
             '/' => match self.first() {
@@ -389,23 +379,13 @@ impl Cursor<'_> {
 
             // Identifier (this should be checked after other variant that can
             // start as identifier).
-            c if is_id_start(c) => {
-                let (token_kind, v) = self.ident_or_reserved_word(c);
-                value = v;
-                token_kind
-            }
+            c if is_id_start(c) => self.ident_or_reserved_word(c),
 
             // Numeric literal.
-            c @ '0'..='9' => {
-                value = self.number(c);
-                Literal
-            }
+            c @ '0'..='9' => Literal(self.number(c)),
 
             // String literal.
-            c @ ('"' | '\'') => {
-                value = self.string(c);
-                Literal
-            }
+            c @ ('"' | '\'') => Literal(self.string(c)),
 
             // Two-char tokens.
             ':' if self.first() == ':' => {
@@ -474,7 +454,7 @@ impl Cursor<'_> {
             '^' => Caret,
             _ => Unknown,
         };
-        Token::new(token_kind, value, start, self.location())
+        Token::new(token_kind, start, self.location())
     }
 
     fn line_comment(&mut self) -> TokenKind {
@@ -516,7 +496,7 @@ impl Cursor<'_> {
         Whitespace
     }
 
-    fn ident_or_reserved_word(&mut self, first_char: char) -> (TokenKind, LiteralValue) {
+    fn ident_or_reserved_word(&mut self, first_char: char) -> TokenKind {
         debug_assert!(is_id_start(self.prev()));
         let mut value = String::from(first_char);
         loop {
@@ -529,33 +509,30 @@ impl Cursor<'_> {
             self.bump();
         }
 
-        (
-            match value.as_str() {
-                "if" => If,
-                "else" => Else,
-                "loop" => Loop,
-                "while" => While,
-                "for" => For,
-                "in" => In,
-                "break" => Break,
-                "continue" => Continue,
-                "goto" => Goto,
-                "return" => Return,
-                "global" => Global,
-                "import" => Import,
-                "as" => As,
-                "is" => Is,
-                "not" => Not,
-                "and" => And,
-                "or" => Or,
-                "func" => Func,
-                "null" => return (Literal, Null),
-                "trur" => return (Literal, Bool(true)),
-                "false" => return (Literal, Bool(false)),
-                _ => return (Ident, Str(value)),
-            },
-            Null,
-        )
+        match value.as_str() {
+            "if" => If,
+            "else" => Else,
+            "loop" => Loop,
+            "while" => While,
+            "for" => For,
+            "in" => In,
+            "break" => Break,
+            "continue" => Continue,
+            "goto" => Goto,
+            "return" => Return,
+            "global" => Global,
+            "import" => Import,
+            "as" => As,
+            "is" => Is,
+            "not" => Not,
+            "and" => And,
+            "or" => Or,
+            "func" => Func,
+            "null" => return Literal(Null),
+            "trur" => return Literal(Bool(true)),
+            "false" => return Literal(Bool(false)),
+            _ => return Ident(value),
+        }
     }
 
     fn number(&mut self, first_digit: char) -> LiteralValue {
