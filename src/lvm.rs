@@ -1,5 +1,6 @@
+use core::ptr::NonNull;
 use std::alloc::{alloc, dealloc, Layout};
-use std::collections::{HashMap, LinkedList};
+use std::collections::HashMap;
 
 use crate::codegen::{Function, JumpTarget, LucylValue, OPCode, Program};
 
@@ -86,15 +87,22 @@ pub struct Frame {
     pc: u32,
     closuer: *mut GCObject,
     operate_stack: Vec<LucyData>,
+    prev_frame: Option<NonNull<Frame>>,
     lvm: *mut Lvm,
 }
 
 impl Frame {
-    pub fn new(closuer: *mut GCObject, lvm: *mut Lvm, stack_size: u32) -> Self {
+    pub fn new(
+        closuer: *mut GCObject,
+        lvm: *mut Lvm,
+        prev_frame: Option<NonNull<Frame>>,
+        stack_size: u32,
+    ) -> Self {
         Frame {
             pc: 0,
             closuer,
             operate_stack: Vec::with_capacity(stack_size.try_into().unwrap()),
+            prev_frame,
             lvm,
         }
     }
@@ -151,8 +159,17 @@ impl Frame {
                             None => panic!(),
                         };
                     }
-                    self.operate_stack
-                        .push(closuer.variables[upvalue_id as usize]);
+                    match base_closuer {
+                        Some(v) => unsafe {
+                            match &(*v).kind {
+                                GCObjectKind::Closuer(v) => {
+                                    self.operate_stack.push(v.variables[upvalue_id as usize])
+                                }
+                                _ => panic!(),
+                            }
+                        },
+                        None => panic!(),
+                    }
                 }
                 OPCode::LoadConst(i) => {
                     let t = lvm.program.const_list[*i as usize].clone();
@@ -207,7 +224,18 @@ impl Frame {
                             None => panic!(),
                         };
                     }
-                    closuer.variables[upvalue_id as usize] = self.operate_stack.pop().unwrap();
+                    match base_closuer {
+                        Some(v) => unsafe {
+                            match &mut (*v).kind {
+                                GCObjectKind::Closuer(v) => {
+                                    v.variables[upvalue_id as usize] =
+                                        self.operate_stack.pop().unwrap()
+                                }
+                                _ => panic!(),
+                            }
+                        },
+                        None => panic!(),
+                    }
                 }
                 OPCode::Import(_) => todo!(),
                 OPCode::ImportFrom(_) => todo!(),
@@ -247,7 +275,7 @@ impl Frame {
                 OPCode::SetAttr | OPCode::SetItem => {
                     let arg3 = self.operate_stack.pop().unwrap();
                     let arg2 = self.operate_stack.pop().unwrap();
-                    let arg1 = self.operate_stack.last().unwrap();
+                    let arg1 = self.operate_stack.pop().unwrap();
                     if let LucyData::GCObject(t) = arg1 {
                         match unsafe { &mut t.as_mut().unwrap().kind } {
                             GCObjectKind::Table(v) => v.set(&arg2, arg3),
@@ -471,8 +499,6 @@ impl Frame {
     }
 
     fn call(&mut self, arg_num: u32, pop: bool) {
-        let lvm = unsafe { self.lvm.as_mut().unwrap() };
-
         let mut arguments = Vec::with_capacity(arg_num.try_into().unwrap());
         for _ in 0..arg_num {
             arguments.push(self.operate_stack.pop().unwrap());
@@ -496,11 +522,8 @@ impl Frame {
             for i in 0..v.function.params.len() {
                 v.variables[i] = arguments.pop().unwrap();
             }
-            lvm.call_stack
-                .push_back(Frame::new(gc_obj, self.lvm, v.function.stack_size));
-            let return_value = lvm.call_stack.back_mut().unwrap().run();
-            // println!("{:?}", return_value);
-            self.operate_stack.push(return_value);
+            let mut frame = Frame::new(gc_obj, self.lvm, NonNull::new(self), v.function.stack_size);
+            self.operate_stack.push(frame.run());
         } else {
             panic!()
         }
@@ -511,9 +534,9 @@ impl Frame {
 pub struct Lvm {
     pub program: Program,
     pub global_variables: HashMap<String, LucyData>,
-    pub call_stack: LinkedList<Frame>,
+    pub current_frame: NonNull<Frame>,
     mem_layout: Layout,
-    heap: LinkedList<*mut GCObject>,
+    heap: Vec<*mut GCObject>,
     last_heap_len: usize,
 }
 
@@ -522,9 +545,9 @@ impl Lvm {
         Lvm {
             program,
             global_variables: HashMap::new(),
-            call_stack: LinkedList::new(),
+            current_frame: NonNull::dangling(),
             mem_layout: Layout::new::<GCObject>(),
-            heap: LinkedList::new(),
+            heap: Vec::with_capacity(0),
             last_heap_len: 100,
         }
     }
@@ -532,7 +555,7 @@ impl Lvm {
     pub fn run(&mut self) {
         let func = self.program.func_list.first().unwrap().clone();
         let stack_size = func.stack_size;
-        let frame = Frame::new(
+        let mut frame = Frame::new(
             self.new_gc_object(GCObject::new(GCObjectKind::Closuer(Box::new(Closuer {
                 base_closuer: None,
                 variables: {
@@ -545,10 +568,11 @@ impl Lvm {
                 function: func,
             })))),
             self,
+            None,
             stack_size,
         );
-        self.call_stack.push_back(frame);
-        self.call_stack.back_mut().unwrap().run();
+        self.current_frame = NonNull::new(&mut frame).unwrap();
+        frame.run();
     }
 
     pub fn set_global_variable(&mut self, key: String, value: LucyData) {
@@ -570,7 +594,7 @@ impl Lvm {
         unsafe {
             let ptr = alloc(self.mem_layout) as *mut GCObject;
             ptr.write(value);
-            self.heap.push_back(ptr);
+            self.heap.push(ptr);
             ptr
         }
     }
@@ -606,21 +630,26 @@ impl Lvm {
             for ptr in &self.heap {
                 (**ptr).gc_state = true;
             }
-            for frame in &self.call_stack {
-                self.gc_object(frame.closuer);
-                for value in &frame.operate_stack {
+            let mut ptr = self.current_frame.as_ref();
+            loop {
+                self.gc_object(ptr.closuer);
+                for value in &ptr.operate_stack {
                     if let LucyData::GCObject(ptr) = value {
-                        self.gc_object(*ptr)
+                        self.gc_object(*ptr);
                     }
                 }
+                match ptr.prev_frame {
+                    Some(t) => ptr = t.as_ref(),
+                    None => break,
+                }
             }
-            let mut t = LinkedList::new();
+            let mut t = Vec::new();
             for ptr in &self.heap {
                 if (**ptr).gc_state {
                     ptr.drop_in_place();
                     dealloc(*ptr as *mut u8, self.mem_layout);
                 } else {
-                    t.push_back(*ptr);
+                    t.push(*ptr);
                 }
             }
             self.heap = t;

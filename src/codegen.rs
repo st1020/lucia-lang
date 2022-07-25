@@ -190,10 +190,9 @@ fn get_stack_size(code: &Vec<OPCode>, mut offset: usize, init_size: u32) -> u32 
             | OPCode::LoadUpvalue(_)
             | OPCode::LoadConst(_) => t += 1,
             OPCode::StoreLocal(_) | OPCode::StoreGlobal(_) | OPCode::StoreUpvalue(_) => t -= 1,
-            OPCode::Import(_) => todo!(),
-            OPCode::ImportFrom(_) => todo!(),
-            OPCode::ImportGlob => todo!(),
-            OPCode::BuildTable(i) => t -= i * 2 - 1,
+            OPCode::Import(_) => t += 1,
+            OPCode::ImportFrom(_) | OPCode::ImportGlob => (),
+            OPCode::BuildTable(i) => t = t - i * 2 + 1,
             OPCode::GetAttr | OPCode::GetItem => t -= 1,
             OPCode::SetAttr | OPCode::SetItem => t -= 2,
             OPCode::Neg | OPCode::Not => (),
@@ -209,7 +208,7 @@ fn get_stack_size(code: &Vec<OPCode>, mut offset: usize, init_size: u32) -> u32 
             | OPCode::Lt
             | OPCode::Le
             | OPCode::Is => t -= 1,
-            OPCode::For(_) => todo!(),
+            OPCode::For(_) => t += 1,
             OPCode::Jump(JumpTarget(_)) => (),
             OPCode::JumpIfFalse(JumpTarget(i)) => {
                 let temp = get_stack_size(code, (i + 1).try_into().unwrap(), t);
@@ -224,7 +223,7 @@ fn get_stack_size(code: &Vec<OPCode>, mut offset: usize, init_size: u32) -> u32 
                 }
                 t -= 1;
             }
-            OPCode::Call(i) => t -= i - 1,
+            OPCode::Call(i) => t = t - i + 1,
             OPCode::Goto(_) => todo!(),
             OPCode::Return => break,
             OPCode::JumpTarget(_) => panic!(),
