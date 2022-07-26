@@ -6,14 +6,14 @@ mod parser;
 use std::time::Instant;
 
 fn main() {
-    // let input = "
-    // i = 0;
-    // ans = 0;
-    // while i < 100000 {
-    //     i += 1;
-    //     ans += 1;
-    // }
-    // ";
+    let input = "
+    i = 0;
+    ans = 0;
+    while i < 100000 {
+        i += 1;
+        ans += 1;
+    }
+    ";
     // let input = "
     // global gcd;
     // gcd = func (x, y) {
@@ -34,23 +34,38 @@ fn main() {
     //     i += 1;
     // }
     // ";
-    let input = "
-    a = func () {
-        t = 0;
-        return || {
-            t += 1;
-            if t > 10 {
-                return null;
-            }
-            return t * 2;
-        };
-    };
-    l = {};
-    for i in a() {
-        l[i] = i;
-    }
-    return l;
-    ";
+    // let input = "
+    // a = func () {
+    //     t = 0;
+    //     return || {
+    //         t += 1;
+    //         if t > 10 {
+    //             return null;
+    //         }
+    //         return t * 2;
+    //     };
+    // };
+    // l = {};
+    // for i in a() {
+    //     l[i] = i;
+    // }
+    // return l;
+    // ";
+    // let input = "
+    // l = {
+    //     '__getattr__': func(self, key) {
+    //         return key;
+    //     },
+    //     '__getattr__': func(self, key) {
+    //         return 1;
+    //     },
+    //     '__setitem__': func(self, key, value) {
+    //         self.a = key;
+    //     },
+    // };
+    // l[1] = 2;
+    // return l['a'];
+    // ";
     let start = Instant::now();
     let a = parser::Parser::new(Box::new(lexer::tokenize(input))).parse();
     let b = codegen::gen_code(a);
