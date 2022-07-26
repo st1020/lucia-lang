@@ -12,10 +12,16 @@ pub enum GCObjectKind {
     Closuer(Closuer),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct GCObject {
     pub kind: GCObjectKind,
     pub gc_state: bool,
+}
+
+impl PartialEq for GCObject {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind
+    }
 }
 
 impl GCObject {
@@ -159,7 +165,7 @@ impl IntoIterator for LucyTable {
 #[derive(Debug, Clone)]
 pub struct Closuer {
     pub function: Function,
-    pub base_closuer: Option<*mut GCObject>,
+    pub base_closuer: Option<NonNull<GCObject>>,
     pub variables: Vec<LucyValue>,
 }
 
@@ -245,12 +251,7 @@ impl Frame {
                         (LucyValue::Bool(v1), LucyValue::Bool(v2)) => v1 $op v2,
                         (LucyValue::Int(v1), LucyValue::Int(v2)) => v1 $op v2,
                         (LucyValue::Float(v1), LucyValue::Float(v2)) => v1 $op v2,
-                        (LucyValue::GCObject(v1), LucyValue::GCObject(v2)) => unsafe {
-                            match (&(*v1).kind, &(*v2).kind) {
-                                (GCObjectKind::Str(v1), GCObjectKind::Str(v2)) => v1 $op v2,
-                                _ => $default,
-                            }
-                        },
+                        (LucyValue::GCObject(v1), LucyValue::GCObject(v2)) => unsafe { (*v1) $op (*v2) },
                         _ => $default,
                     }));
                 }
@@ -327,8 +328,8 @@ impl Frame {
                     for _ in 0..func_count {
                         base_closuer = match base_closuer {
                             Some(v) => unsafe {
-                                match &(*v).kind {
-                                    GCObjectKind::Closuer(v) => (*v).base_closuer,
+                                match &v.as_ref().kind {
+                                    GCObjectKind::Closuer(v) => v.base_closuer,
                                     _ => panic!(),
                                 }
                             },
@@ -337,7 +338,7 @@ impl Frame {
                     }
                     match base_closuer {
                         Some(v) => unsafe {
-                            match &(*v).kind {
+                            match &v.as_ref().kind {
                                 GCObjectKind::Closuer(v) => {
                                     self.operate_stack.push(v.variables[upvalue_id as usize])
                                 }
@@ -362,7 +363,7 @@ impl Frame {
                             LucyValue::GCObject(lvm.new_gc_object(GCObject::new(
                                 GCObjectKind::Closuer(Closuer {
                                     base_closuer: if f.is_closure {
-                                        Some(self.closuer)
+                                        NonNull::new(self.closuer)
                                     } else {
                                         None
                                     },
@@ -396,8 +397,8 @@ impl Frame {
                     for _ in 0..func_count {
                         base_closuer = match base_closuer {
                             Some(v) => unsafe {
-                                match &(*v).kind {
-                                    GCObjectKind::Closuer(v) => (*v).base_closuer,
+                                match &v.as_ref().kind {
+                                    GCObjectKind::Closuer(v) => v.base_closuer,
                                     _ => panic!(),
                                 }
                             },
@@ -405,8 +406,8 @@ impl Frame {
                         };
                     }
                     match base_closuer {
-                        Some(v) => unsafe {
-                            match &mut (*v).kind {
+                        Some(mut v) => unsafe {
+                            match &mut v.as_mut().kind {
                                 GCObjectKind::Closuer(v) => {
                                     v.variables[upvalue_id as usize] =
                                         self.operate_stack.pop().unwrap()
@@ -799,7 +800,7 @@ impl Lvm {
                 }
                 GCObjectKind::Closuer(closuer) => {
                     if let Some(ptr) = closuer.base_closuer {
-                        self.gc_object(ptr);
+                        self.gc_object(ptr.as_ptr());
                     }
                     for v in &closuer.variables {
                         if let LucyValue::GCObject(ptr) = v {
