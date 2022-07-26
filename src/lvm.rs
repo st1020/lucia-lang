@@ -5,6 +5,12 @@ use std::collections::HashMap;
 use crate::codegen::{gen_code, Function, JumpTarget, LucylData, OPCode, Program};
 use crate::{lexer, parser};
 
+macro_rules! str_to_program {
+    ($input:expr) => {
+        parser::Parser::new(&mut lexer::tokenize($input)).parse()
+    };
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum GCObjectKind {
     Str(String),
@@ -164,6 +170,7 @@ impl IntoIterator for LucyTable {
 
 #[derive(Debug, Clone)]
 pub struct Closuer {
+    pub module_id: u32,
     pub function: Function,
     pub base_closuer: Option<NonNull<GCObject>>,
     pub variables: Vec<LucyValue>,
@@ -349,7 +356,8 @@ impl Frame {
                     }
                 }
                 OPCode::LoadConst(i) => {
-                    let t = lvm.program.const_list[*i as usize].clone();
+                    let t =
+                        lvm.module_list[closuer.module_id as usize].const_list[*i as usize].clone();
                     let v = match t {
                         LucylData::Null => LucyValue::Null,
                         LucylData::Bool(v) => LucyValue::Bool(v),
@@ -359,9 +367,12 @@ impl Frame {
                             lvm.new_gc_object(GCObject::new(GCObjectKind::Str(v))),
                         ),
                         LucylData::Func(func_id) => {
-                            let f = lvm.program.func_list[func_id as usize].clone();
+                            let f = lvm.module_list[closuer.module_id as usize].func_list
+                                [func_id as usize]
+                                .clone();
                             LucyValue::GCObject(lvm.new_gc_object(GCObject::new(
                                 GCObjectKind::Closuer(Closuer {
+                                    module_id: closuer.module_id,
                                     base_closuer: if f.is_closure {
                                         NonNull::new(self.closuer)
                                     } else {
@@ -709,7 +720,7 @@ impl Frame {
 
 #[derive(Debug, Clone)]
 pub struct Lvm {
-    pub program: Program,
+    pub module_list: Vec<Program>,
     pub global_variables: HashMap<String, LucyValue>,
     pub current_frame: NonNull<Frame>,
     mem_layout: Layout,
@@ -720,7 +731,7 @@ pub struct Lvm {
 impl Lvm {
     pub fn new(program: Program) -> Self {
         Lvm {
-            program,
+            module_list: vec![program],
             global_variables: HashMap::new(),
             current_frame: NonNull::dangling(),
             mem_layout: Layout::new::<GCObject>(),
@@ -730,21 +741,23 @@ impl Lvm {
     }
 
     pub fn from_str(input: &str) -> Self {
-        Lvm {
-            program: gen_code(parser::Parser::new(&mut lexer::tokenize(input)).parse()),
-            global_variables: HashMap::new(),
-            current_frame: NonNull::dangling(),
-            mem_layout: Layout::new::<GCObject>(),
-            heap: Vec::with_capacity(0),
-            last_heap_len: 100,
-        }
+        Lvm::new(gen_code(str_to_program!(input)))
     }
 
     pub fn run(&mut self) {
-        let func = self.program.func_list.first().unwrap().clone();
+        self.run_module(0);
+    }
+
+    pub fn run_module(&mut self, module_id: u32) {
+        let func = self.module_list[module_id as usize]
+            .func_list
+            .first()
+            .unwrap()
+            .clone();
         let stack_size = func.stack_size;
         let mut frame = Frame::new(
             self.new_gc_object(GCObject::new(GCObjectKind::Closuer(Closuer {
+                module_id,
                 base_closuer: None,
                 variables: {
                     let mut temp: Vec<LucyValue> = Vec::with_capacity(func.local_names.len());
