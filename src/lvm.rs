@@ -26,7 +26,7 @@ impl GCObject {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LucyData {
     Null,
     Bool(bool),
@@ -42,14 +42,14 @@ impl LucyTable {
     pub fn raw_get(&self, key: &LucyData) -> Option<LucyData> {
         for (k, v) in &self.0 {
             if k == key {
-                return Some(v.clone());
+                return Some(*v);
             }
             match (k, key) {
                 (LucyData::GCObject(k), LucyData::GCObject(key)) => unsafe {
                     match (&(**k).kind, &(**key).kind) {
                         (GCObjectKind::Str(k), GCObjectKind::Str(key)) => {
                             if k == key {
-                                return Some(v.clone());
+                                return Some(*v);
                             }
                         }
                         _ => (),
@@ -67,7 +67,7 @@ impl LucyTable {
                 unsafe {
                     if let GCObjectKind::Str(k) = &(**k).kind {
                         if k == key {
-                            return Some(v.clone());
+                            return Some(*v);
                         }
                     }
                 }
@@ -135,13 +135,13 @@ impl LucyTable {
                 if value == LucyData::Null {
                     self.0.remove(i);
                 } else {
-                    self.0[i] = (key.clone(), value);
+                    self.0[i] = (*key, value);
                 }
                 return;
             }
         }
         if value != LucyData::Null {
-            self.0.push((key.clone(), value));
+            self.0.push((*key, value));
         }
     }
 }
@@ -297,8 +297,7 @@ impl Frame {
                     self.operate_stack.pop();
                 }
                 OPCode::Dup => {
-                    self.operate_stack
-                        .push(self.operate_stack.last().unwrap().clone());
+                    self.operate_stack.push(*self.operate_stack.last().unwrap());
                 }
                 OPCode::DupTwo => {
                     let a = self.operate_stack.pop().unwrap();
@@ -313,8 +312,7 @@ impl Frame {
                     self.operate_stack.push(b);
                 }
                 OPCode::LoadLocal(i) => {
-                    self.operate_stack
-                        .push(closuer.variables[*i as usize].clone());
+                    self.operate_stack.push(closuer.variables[*i as usize]);
                 }
                 OPCode::LoadGlobal(i) => {
                     self.operate_stack.push(
@@ -339,9 +337,9 @@ impl Frame {
                     match base_closuer {
                         Some(v) => unsafe {
                             match &(*v).kind {
-                                GCObjectKind::Closuer(v) => self
-                                    .operate_stack
-                                    .push(v.variables[upvalue_id as usize].clone()),
+                                GCObjectKind::Closuer(v) => {
+                                    self.operate_stack.push(v.variables[upvalue_id as usize])
+                                }
                                 _ => panic!(),
                             }
                         },
@@ -438,7 +436,7 @@ impl Frame {
                                 }
                             }
                         }
-                        table.push((arg1.clone(), arg2));
+                        table.push((arg1, arg2));
                     }
                     self.operate_stack.push(LucyData::GCObject(
                         lvm.new_gc_object(GCObject::new(GCObjectKind::Table(LucyTable(table)))),
@@ -672,7 +670,7 @@ impl Frame {
         let callee = if pop {
             self.operate_stack.pop().unwrap()
         } else {
-            self.operate_stack.last().unwrap().clone()
+            *self.operate_stack.last().unwrap()
         };
         if let LucyData::GCObject(gc_obj) = callee {
             let v = unsafe {
@@ -757,7 +755,7 @@ impl Lvm {
 
     pub fn get_global_variable(&self, key: &String) -> Option<LucyData> {
         match self.global_variables.get(key) {
-            Some(v) => Some(v.clone()),
+            Some(v) => Some(*v),
             None => None,
         }
     }

@@ -53,14 +53,11 @@ fn main() {
     // ";
     // let input = "
     // l = {
-    //     '__getattr__': func(self, key) {
-    //         return key;
-    //     },
-    //     '__getattr__': func(self, key) {
-    //         return 1;
-    //     },
-    //     '__setitem__': func(self, key, value) {
-    //         self.a = key;
+    //     '__base__': {
+    //         'lll': 1,
+    //         '__setitem__': func (self, key, value) {
+    //             self.a = key;
+    //         },
     //     },
     // };
     // l[1] = 2;
