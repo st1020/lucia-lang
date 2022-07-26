@@ -80,7 +80,6 @@ pub enum OPCode {
     JumpIfFalseOrPop(JumpTarget),
 
     Call(u32),
-    Goto(u32),
     Return,
 
     JumpTarget(JumpTarget),
@@ -224,7 +223,6 @@ fn get_stack_size(code: &Vec<OPCode>, mut offset: usize, init_size: u32) -> u32 
                 t -= 1;
             }
             OPCode::Call(i) => t = t - i + 1,
-            OPCode::Goto(_) => todo!(),
             OPCode::Return => break,
             OPCode::JumpTarget(_) => panic!(),
         }
@@ -662,17 +660,6 @@ impl Function {
             StmtKind::Continue => {
                 code_list.push(OPCode::Jump(*self.continue_stack.last().unwrap()));
             }
-            StmtKind::Goto { argument } => match argument.kind {
-                ExprKind::Call { callee, arguments } => {
-                    let t = arguments.len();
-                    for arg in arguments {
-                        code_list.append(&mut self.gen_expr(arg, context));
-                    }
-                    code_list.append(&mut self.gen_expr(*callee, context));
-                    code_list.push(OPCode::Goto(t.try_into().unwrap()));
-                }
-                _ => (),
-            },
             StmtKind::Return { argument } => {
                 code_list.append(&mut self.gen_expr(*argument, context));
                 code_list.push(OPCode::Return);

@@ -654,7 +654,6 @@ impl Frame {
                 OPCode::Call(i) => {
                     self.call(*i, true);
                 }
-                OPCode::Goto(_) => todo!(),
                 OPCode::Return => {
                     return self.operate_stack.pop().unwrap();
                 }

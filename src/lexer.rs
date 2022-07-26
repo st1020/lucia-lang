@@ -155,8 +155,6 @@ pub enum TokenKind {
     Break,
     /// "continue"
     Continue,
-    /// "goto"
-    Goto,
     /// "return"
     Return,
     /// "global"
@@ -518,7 +516,6 @@ impl Cursor<'_> {
             "in" => In,
             "break" => Break,
             "continue" => Continue,
-            "goto" => Goto,
             "return" => Return,
             "global" => Global,
             "import" => Import,

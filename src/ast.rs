@@ -67,9 +67,6 @@ pub enum StmtKind {
     },
     Break,
     Continue,
-    Goto {
-        argument: Box<Expr>,
-    },
     Return {
         argument: Box<Expr>,
     },

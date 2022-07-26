@@ -139,23 +139,6 @@ impl<'a> Parser<'a> {
                 },
                 end: self.prev_token.end,
             },
-            TokenKind::Goto => Stmt {
-                start: self.token.start,
-                kind: StmtKind::Goto {
-                    argument: {
-                        self.bump();
-                        let temp = self.parse_expr(1);
-                        match temp.kind {
-                            ExprKind::Call {
-                                callee: _,
-                                arguments: _,
-                            } => temp,
-                            _ => panic!("Goto statement must with call expression"),
-                        }
-                    },
-                },
-                end: self.prev_token.end,
-            },
             TokenKind::Return => Stmt {
                 start: self.token.start,
                 kind: StmtKind::Return {
