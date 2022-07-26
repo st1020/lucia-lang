@@ -2,7 +2,7 @@ use core::ptr::NonNull;
 use std::alloc::{alloc, dealloc, Layout};
 use std::collections::HashMap;
 
-use crate::codegen::{gen_code, Function, JumpTarget, LucylValue, OPCode, Program};
+use crate::codegen::{gen_code, Function, JumpTarget, LucylData, OPCode, Program};
 use crate::{lexer, parser};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -28,7 +28,7 @@ impl GCObject {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum LucyData {
+pub enum LucyValue {
     Null,
     Bool(bool),
     Int(i64),
@@ -37,16 +37,16 @@ pub enum LucyData {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct LucyTable(Vec<(LucyData, LucyData)>);
+pub struct LucyTable(Vec<(LucyValue, LucyValue)>);
 
 impl LucyTable {
-    pub fn raw_get(&self, key: &LucyData) -> Option<LucyData> {
+    pub fn raw_get(&self, key: &LucyValue) -> Option<LucyValue> {
         for (k, v) in &self.0 {
             if k == key {
                 return Some(*v);
             }
             match (k, key) {
-                (LucyData::GCObject(k), LucyData::GCObject(key)) => unsafe {
+                (LucyValue::GCObject(k), LucyValue::GCObject(key)) => unsafe {
                     match (&(**k).kind, &(**key).kind) {
                         (GCObjectKind::Str(k), GCObjectKind::Str(key)) => {
                             if k == key {
@@ -62,9 +62,9 @@ impl LucyTable {
         None
     }
 
-    pub fn raw_get_by_str(&self, key: &str) -> Option<LucyData> {
+    pub fn raw_get_by_str(&self, key: &str) -> Option<LucyValue> {
         for (k, v) in &self.0 {
-            if let LucyData::GCObject(k) = k {
+            if let LucyValue::GCObject(k) = k {
                 unsafe {
                     if let GCObjectKind::Str(k) = &(**k).kind {
                         if k == key {
@@ -77,14 +77,14 @@ impl LucyTable {
         None
     }
 
-    pub fn get(&self, key: &LucyData) -> Option<LucyData> {
+    pub fn get(&self, key: &LucyValue) -> Option<LucyValue> {
         let mut t = self;
         loop {
             match t.raw_get(key) {
                 Some(v) => return Some(v),
                 None => match t.raw_get_by_str("__base__") {
                     Some(v) => {
-                        if let LucyData::GCObject(v) = v {
+                        if let LucyValue::GCObject(v) = v {
                             unsafe {
                                 if let GCObjectKind::Table(v) = &(*v).kind {
                                     t = v;
@@ -103,14 +103,14 @@ impl LucyTable {
         None
     }
 
-    pub fn get_by_str(&self, key: &str) -> Option<LucyData> {
+    pub fn get_by_str(&self, key: &str) -> Option<LucyValue> {
         let mut t = self;
         loop {
             match t.raw_get_by_str(key) {
                 Some(v) => return Some(v),
                 None => match t.raw_get_by_str("__base__") {
                     Some(v) => {
-                        if let LucyData::GCObject(v) = v {
+                        if let LucyValue::GCObject(v) = v {
                             unsafe {
                                 if let GCObjectKind::Table(v) = &(*v).kind {
                                     t = v;
@@ -129,11 +129,11 @@ impl LucyTable {
         None
     }
 
-    pub fn set(&mut self, key: &LucyData, value: LucyData) {
+    pub fn set(&mut self, key: &LucyValue, value: LucyValue) {
         for i in 0..self.0.len() {
             let (k, _) = &self.0[i];
             if k == key {
-                if value == LucyData::Null {
+                if value == LucyValue::Null {
                     self.0.remove(i);
                 } else {
                     self.0[i] = (*key, value);
@@ -141,14 +141,14 @@ impl LucyTable {
                 return;
             }
         }
-        if value != LucyData::Null {
+        if value != LucyValue::Null {
             self.0.push((*key, value));
         }
     }
 }
 
 impl IntoIterator for LucyTable {
-    type Item = (LucyData, LucyData);
+    type Item = (LucyValue, LucyValue);
     type IntoIter = std::vec::IntoIter<Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -160,7 +160,7 @@ impl IntoIterator for LucyTable {
 pub struct Closuer {
     pub function: Function,
     pub base_closuer: Option<*mut GCObject>,
-    pub variables: Vec<LucyData>,
+    pub variables: Vec<LucyValue>,
 }
 
 impl PartialEq for Closuer {
@@ -173,7 +173,7 @@ impl PartialEq for Closuer {
 pub struct Frame {
     pc: u32,
     closuer: *mut GCObject,
-    operate_stack: Vec<LucyData>,
+    operate_stack: Vec<LucyValue>,
     prev_frame: Option<NonNull<Frame>>,
     lvm: *mut Lvm,
 }
@@ -194,12 +194,12 @@ impl Frame {
         }
     }
 
-    pub fn run(&mut self) -> LucyData {
+    pub fn run(&mut self) -> LucyValue {
         macro_rules! run_bin_op {
             ($op: tt, $special_name:expr) => {
                 let arg2 = self.operate_stack.pop().unwrap();
                 let arg1 = self.operate_stack.pop().unwrap();
-                if let LucyData::GCObject(t) = arg1 {
+                if let LucyValue::GCObject(t) = arg1 {
                     match unsafe { &mut t.as_mut().unwrap().kind } {
                         GCObjectKind::Table(v) => match v.get_by_str($special_name) {
                             Some(v) => {
@@ -214,8 +214,8 @@ impl Frame {
                     }
                 } else {
                     self.operate_stack.push(match (arg1, arg2) {
-                        (LucyData::Int(v1), LucyData::Int(v2)) => LucyData::Int(v1 $op v2),
-                        (LucyData::Float(v1), LucyData::Float(v2)) => LucyData::Float(v1 $op v2),
+                        (LucyValue::Int(v1), LucyValue::Int(v2)) => LucyValue::Int(v1 $op v2),
+                        (LucyValue::Float(v1), LucyValue::Float(v2)) => LucyValue::Float(v1 $op v2),
                         _ => panic!(),
                     });
                 }
@@ -226,7 +226,7 @@ impl Frame {
             ($op: tt, $special_name:expr, $default:literal) => {
                 let arg2 = self.operate_stack.pop().unwrap();
                 let arg1 = self.operate_stack.pop().unwrap();
-                if let LucyData::GCObject(t) = arg1 {
+                if let LucyValue::GCObject(t) = arg1 {
                     match unsafe { &mut t.as_mut().unwrap().kind } {
                         GCObjectKind::Table(v) => match v.get_by_str($special_name) {
                             Some(v) => {
@@ -240,12 +240,12 @@ impl Frame {
                         _ => panic!(),
                     }
                 } else {
-                    self.operate_stack.push(LucyData::Bool(match (arg1, arg2) {
-                        (LucyData::Null, LucyData::Null) => !($default),
-                        (LucyData::Bool(v1), LucyData::Bool(v2)) => v1 $op v2,
-                        (LucyData::Int(v1), LucyData::Int(v2)) => v1 $op v2,
-                        (LucyData::Float(v1), LucyData::Float(v2)) => v1 $op v2,
-                        (LucyData::GCObject(v1), LucyData::GCObject(v2)) => unsafe {
+                    self.operate_stack.push(LucyValue::Bool(match (arg1, arg2) {
+                        (LucyValue::Null, LucyValue::Null) => !($default),
+                        (LucyValue::Bool(v1), LucyValue::Bool(v2)) => v1 $op v2,
+                        (LucyValue::Int(v1), LucyValue::Int(v2)) => v1 $op v2,
+                        (LucyValue::Float(v1), LucyValue::Float(v2)) => v1 $op v2,
+                        (LucyValue::GCObject(v1), LucyValue::GCObject(v2)) => unsafe {
                             match (&(*v1).kind, &(*v2).kind) {
                                 (GCObjectKind::Str(v1), GCObjectKind::Str(v2)) => v1 $op v2,
                                 _ => $default,
@@ -261,7 +261,7 @@ impl Frame {
             ($op: tt, $special_name:expr) => {
                 let arg2 = self.operate_stack.pop().unwrap();
                 let arg1 = self.operate_stack.pop().unwrap();
-                if let LucyData::GCObject(t) = arg1 {
+                if let LucyValue::GCObject(t) = arg1 {
                     match unsafe { &mut t.as_mut().unwrap().kind } {
                         GCObjectKind::Table(v) => match v.get_by_str($special_name) {
                             Some(v) => {
@@ -275,9 +275,9 @@ impl Frame {
                         _ => panic!(),
                     }
                 } else {
-                    self.operate_stack.push(LucyData::Bool(match (arg1, arg2) {
-                        (LucyData::Int(v1), LucyData::Int(v2)) => v1 $op v2,
-                        (LucyData::Float(v1), LucyData::Float(v2)) => v1 $op v2,
+                    self.operate_stack.push(LucyValue::Bool(match (arg1, arg2) {
+                        (LucyValue::Int(v1), LucyValue::Int(v2)) => v1 $op v2,
+                        (LucyValue::Float(v1), LucyValue::Float(v2)) => v1 $op v2,
                         _ => panic!(),
                     }));
                 }
@@ -318,7 +318,7 @@ impl Frame {
                 OPCode::LoadGlobal(i) => {
                     self.operate_stack.push(
                         lvm.get_global_variable(&closuer.function.global_names[*i as usize])
-                            .unwrap_or(LucyData::Null),
+                            .unwrap_or(LucyValue::Null),
                     );
                 }
                 OPCode::LoadUpvalue(i) => {
@@ -350,16 +350,16 @@ impl Frame {
                 OPCode::LoadConst(i) => {
                     let t = lvm.program.const_list[*i as usize].clone();
                     let v = match t {
-                        LucylValue::Null => LucyData::Null,
-                        LucylValue::Bool(v) => LucyData::Bool(v),
-                        LucylValue::Int(v) => LucyData::Int(v),
-                        LucylValue::Float(v) => LucyData::Float(v),
-                        LucylValue::Str(v) => LucyData::GCObject(
+                        LucylData::Null => LucyValue::Null,
+                        LucylData::Bool(v) => LucyValue::Bool(v),
+                        LucylData::Int(v) => LucyValue::Int(v),
+                        LucylData::Float(v) => LucyValue::Float(v),
+                        LucylData::Str(v) => LucyValue::GCObject(
                             lvm.new_gc_object(GCObject::new(GCObjectKind::Str(v))),
                         ),
-                        LucylValue::Func(func_id) => {
+                        LucylData::Func(func_id) => {
                             let f = lvm.program.func_list[func_id as usize].clone();
-                            LucyData::GCObject(lvm.new_gc_object(GCObject::new(
+                            LucyValue::GCObject(lvm.new_gc_object(GCObject::new(
                                 GCObjectKind::Closuer(Closuer {
                                     base_closuer: if f.is_closure {
                                         Some(self.closuer)
@@ -367,10 +367,10 @@ impl Frame {
                                         None
                                     },
                                     variables: {
-                                        let mut temp: Vec<LucyData> =
+                                        let mut temp: Vec<LucyValue> =
                                             Vec::with_capacity(f.local_names.len());
                                         for _ in 0..f.local_names.len() {
-                                            temp.push(LucyData::Null);
+                                            temp.push(LucyValue::Null);
                                         }
                                         temp
                                     },
@@ -421,15 +421,15 @@ impl Frame {
                 OPCode::ImportFrom(_) => todo!(),
                 OPCode::ImportGlob => todo!(),
                 OPCode::BuildTable(i) => {
-                    let mut temp: Vec<LucyData> = Vec::new();
+                    let mut temp: Vec<LucyValue> = Vec::new();
                     for _ in 0..(*i * 2) {
                         temp.push(self.operate_stack.pop().unwrap());
                     }
-                    let mut table: Vec<(LucyData, LucyData)> = Vec::new();
+                    let mut table: Vec<(LucyValue, LucyValue)> = Vec::new();
                     for _ in 0..*i {
                         let arg1 = temp.pop().unwrap();
                         let arg2 = temp.pop().unwrap();
-                        if let LucyData::GCObject(v) = arg1 {
+                        if let LucyValue::GCObject(v) = arg1 {
                             unsafe {
                                 if let GCObjectKind::Str(_) = &(*v).kind {
                                 } else {
@@ -439,14 +439,14 @@ impl Frame {
                         }
                         table.push((arg1, arg2));
                     }
-                    self.operate_stack.push(LucyData::GCObject(
+                    self.operate_stack.push(LucyValue::GCObject(
                         lvm.new_gc_object(GCObject::new(GCObjectKind::Table(LucyTable(table)))),
                     ));
                 }
                 OPCode::GetAttr | OPCode::GetItem => {
                     let arg2 = self.operate_stack.pop().unwrap();
                     let arg1 = self.operate_stack.pop().unwrap();
-                    if let LucyData::GCObject(t) = arg1 {
+                    if let LucyValue::GCObject(t) = arg1 {
                         match unsafe { &(*t).kind } {
                             GCObjectKind::Table(v) => {
                                 match v.get_by_str(match code {
@@ -462,7 +462,7 @@ impl Frame {
                                     }
                                     None => self
                                         .operate_stack
-                                        .push(v.get(&arg2).unwrap_or(LucyData::Null)),
+                                        .push(v.get(&arg2).unwrap_or(LucyValue::Null)),
                                 }
                             }
                             _ => panic!(),
@@ -475,7 +475,7 @@ impl Frame {
                     let arg3 = self.operate_stack.pop().unwrap();
                     let arg2 = self.operate_stack.pop().unwrap();
                     let arg1 = self.operate_stack.pop().unwrap();
-                    if let LucyData::GCObject(t) = arg1 {
+                    if let LucyValue::GCObject(t) = arg1 {
                         match unsafe { &mut t.as_mut().unwrap().kind } {
                             GCObjectKind::Table(v) => {
                                 match v.get_by_str(match code {
@@ -501,7 +501,7 @@ impl Frame {
                 }
                 OPCode::Neg => {
                     let arg1 = self.operate_stack.pop().unwrap();
-                    if let LucyData::GCObject(t) = arg1 {
+                    if let LucyValue::GCObject(t) = arg1 {
                         match unsafe { &mut t.as_mut().unwrap().kind } {
                             GCObjectKind::Table(v) => match v.get_by_str("__neg__") {
                                 Some(v) => {
@@ -515,8 +515,8 @@ impl Frame {
                         }
                     } else {
                         self.operate_stack.push(match arg1 {
-                            LucyData::Int(v) => LucyData::Int(-v),
-                            LucyData::Float(v) => LucyData::Float(-v),
+                            LucyValue::Int(v) => LucyValue::Int(-v),
+                            LucyValue::Float(v) => LucyValue::Float(-v),
                             _ => panic!(),
                         });
                     }
@@ -524,14 +524,14 @@ impl Frame {
                 OPCode::Not => {
                     let arg1 = self.operate_stack.pop().unwrap();
                     self.operate_stack.push(match arg1 {
-                        LucyData::Bool(v) => LucyData::Bool(!v),
+                        LucyValue::Bool(v) => LucyValue::Bool(!v),
                         _ => panic!(),
                     });
                 }
                 OPCode::Add => {
                     let arg2 = self.operate_stack.pop().unwrap();
                     let arg1 = self.operate_stack.pop().unwrap();
-                    if let LucyData::GCObject(t) = arg1 {
+                    if let LucyValue::GCObject(t) = arg1 {
                         match unsafe { &mut t.as_mut().unwrap().kind } {
                             GCObjectKind::Table(v) => match v.get_by_str("__add__") {
                                 Some(v) => {
@@ -546,12 +546,14 @@ impl Frame {
                         }
                     } else {
                         self.operate_stack.push(match (arg1, arg2) {
-                            (LucyData::Int(v1), LucyData::Int(v2)) => LucyData::Int(v1 + v2),
-                            (LucyData::Float(v1), LucyData::Float(v2)) => LucyData::Float(v1 + v2),
-                            (LucyData::GCObject(v1), LucyData::GCObject(v2)) => unsafe {
+                            (LucyValue::Int(v1), LucyValue::Int(v2)) => LucyValue::Int(v1 + v2),
+                            (LucyValue::Float(v1), LucyValue::Float(v2)) => {
+                                LucyValue::Float(v1 + v2)
+                            }
+                            (LucyValue::GCObject(v1), LucyValue::GCObject(v2)) => unsafe {
                                 match (&(*v1).kind, &(*v2).kind) {
                                     (GCObjectKind::Str(v1), GCObjectKind::Str(v2)) => {
-                                        LucyData::GCObject(lvm.new_gc_object(GCObject::new(
+                                        LucyValue::GCObject(lvm.new_gc_object(GCObject::new(
                                             GCObjectKind::Str(v1.clone() + v2),
                                         )))
                                     }
@@ -595,11 +597,11 @@ impl Frame {
                 OPCode::Is => {
                     let arg2 = self.operate_stack.pop().unwrap();
                     let arg1 = self.operate_stack.pop().unwrap();
-                    self.operate_stack.push(LucyData::Bool(arg1 == arg2));
+                    self.operate_stack.push(LucyValue::Bool(arg1 == arg2));
                 }
                 OPCode::For(JumpTarget(i)) => {
                     self.call(0, false);
-                    if self.operate_stack.last().unwrap() == &LucyData::Null {
+                    if self.operate_stack.last().unwrap() == &LucyValue::Null {
                         self.operate_stack.pop();
                         self.pc = *i;
                         continue;
@@ -612,7 +614,7 @@ impl Frame {
                 OPCode::JumpIfFalse(JumpTarget(i)) => {
                     let arg1 = self.operate_stack.pop().unwrap();
                     match arg1 {
-                        LucyData::Bool(v) => {
+                        LucyValue::Bool(v) => {
                             if !v {
                                 self.pc = *i;
                                 continue;
@@ -624,7 +626,7 @@ impl Frame {
                 OPCode::JumpIfTureOrPop(JumpTarget(i)) => {
                     let arg1 = self.operate_stack.pop().unwrap();
                     match arg1 {
-                        LucyData::Bool(v) => {
+                        LucyValue::Bool(v) => {
                             if v {
                                 self.pc = *i;
                                 continue;
@@ -638,7 +640,7 @@ impl Frame {
                 OPCode::JumpIfFalseOrPop(JumpTarget(i)) => {
                     let arg1 = self.operate_stack.pop().unwrap();
                     match arg1 {
-                        LucyData::Bool(v) => {
+                        LucyValue::Bool(v) => {
                             if !v {
                                 self.pc = *i;
                                 continue;
@@ -673,12 +675,12 @@ impl Frame {
         } else {
             *self.operate_stack.last().unwrap()
         };
-        if let LucyData::GCObject(gc_obj) = callee {
+        if let LucyValue::GCObject(gc_obj) = callee {
             let v = unsafe {
                 match &mut gc_obj.as_mut().unwrap().kind {
                     GCObjectKind::Closuer(v) => v,
                     GCObjectKind::Table(v) => {
-                        if let Some(LucyData::GCObject(v)) = v.get_by_str("__call__") {
+                        if let Some(LucyValue::GCObject(v)) = v.get_by_str("__call__") {
                             if let GCObjectKind::Closuer(v) = &mut (*v).kind {
                                 v
                             } else {
@@ -708,7 +710,7 @@ impl Frame {
 #[derive(Debug, Clone)]
 pub struct Lvm {
     pub program: Program,
-    pub global_variables: HashMap<String, LucyData>,
+    pub global_variables: HashMap<String, LucyValue>,
     pub current_frame: NonNull<Frame>,
     mem_layout: Layout,
     heap: Vec<*mut GCObject>,
@@ -745,9 +747,9 @@ impl Lvm {
             self.new_gc_object(GCObject::new(GCObjectKind::Closuer(Closuer {
                 base_closuer: None,
                 variables: {
-                    let mut temp: Vec<LucyData> = Vec::with_capacity(func.local_names.len());
+                    let mut temp: Vec<LucyValue> = Vec::with_capacity(func.local_names.len());
                     for _ in 0..func.local_names.len() {
-                        temp.push(LucyData::Null);
+                        temp.push(LucyValue::Null);
                     }
                     temp
                 },
@@ -761,11 +763,11 @@ impl Lvm {
         println!("{:?}", frame.run());
     }
 
-    pub fn set_global_variable(&mut self, key: String, value: LucyData) {
+    pub fn set_global_variable(&mut self, key: String, value: LucyValue) {
         self.global_variables.insert(key, value);
     }
 
-    pub fn get_global_variable(&self, key: &String) -> Option<LucyData> {
+    pub fn get_global_variable(&self, key: &String) -> Option<LucyValue> {
         match self.global_variables.get(key) {
             Some(v) => Some(*v),
             None => None,
@@ -791,7 +793,7 @@ impl Lvm {
             match (*ptr).kind.clone() {
                 GCObjectKind::Table(table) => {
                     for (_, v) in table {
-                        if let LucyData::GCObject(ptr) = v {
+                        if let LucyValue::GCObject(ptr) = v {
                             self.gc_object(ptr);
                         }
                     }
@@ -801,7 +803,7 @@ impl Lvm {
                         self.gc_object(ptr);
                     }
                     for v in &closuer.variables {
-                        if let LucyData::GCObject(ptr) = v {
+                        if let LucyValue::GCObject(ptr) = v {
                             self.gc_object(*ptr);
                         }
                     }
@@ -820,7 +822,7 @@ impl Lvm {
             loop {
                 self.gc_object(ptr.closuer);
                 for value in &ptr.operate_stack {
-                    if let LucyData::GCObject(ptr) = value {
+                    if let LucyValue::GCObject(ptr) = value {
                         self.gc_object(*ptr);
                     }
                 }

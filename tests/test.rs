@@ -18,8 +18,8 @@ fn temp() {
     let start = Instant::now();
     let a = parser::Parser::new(&mut lexer::tokenize(input)).parse();
     let b = codegen::gen_code(a);
-    println!("{:#?}", b);
-    println!("{:?}", std::mem::size_of::<lvm::LucyData>());
+    // println!("{:#?}", b);
+    // println!("{:?}", std::mem::size_of::<lvm::LucyValue>());
     let mut c = lvm::Lvm::new(b);
     c.run();
     let duration = start.elapsed();

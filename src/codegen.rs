@@ -2,7 +2,7 @@ use crate::ast::*;
 use crate::lexer::LiteralValue;
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
-pub enum LucylValue {
+pub enum LucylData {
     /// "null"
     Null,
     /// "true", "false"
@@ -17,14 +17,14 @@ pub enum LucylValue {
     Func(u32),
 }
 
-impl LucylValue {
+impl LucylData {
     pub fn from(value: LiteralValue) -> Self {
         match value {
-            LiteralValue::Null => LucylValue::Null,
-            LiteralValue::Bool(v) => LucylValue::Bool(v),
-            LiteralValue::Int(v) => LucylValue::Int(v),
-            LiteralValue::Float(v) => LucylValue::Float(v),
-            LiteralValue::Str(v) => LucylValue::Str(v),
+            LiteralValue::Null => LucylData::Null,
+            LiteralValue::Bool(v) => LucylData::Bool(v),
+            LiteralValue::Int(v) => LucylData::Int(v),
+            LiteralValue::Float(v) => LucylData::Float(v),
+            LiteralValue::Str(v) => LucylData::Str(v),
         }
     }
 }
@@ -239,7 +239,7 @@ fn get_stack_size(code: &Vec<OPCode>, mut offset: usize, init_size: u32) -> u32 
 #[derive(Debug, Clone)]
 pub struct Program {
     pub func_list: Vec<Function>,
-    pub const_list: Vec<LucylValue>,
+    pub const_list: Vec<LucylData>,
 }
 
 impl Program {
@@ -254,7 +254,7 @@ impl Program {
 #[derive(Debug, Clone)]
 struct Context {
     pub func_list: Vec<Function>,
-    pub const_list: Vec<LucylValue>,
+    pub const_list: Vec<LucylData>,
     func_id_count: u32,
     jump_target_count: u32,
 }
@@ -279,7 +279,7 @@ impl Context {
         JumpTarget(self.jump_target_count - 1)
     }
 
-    fn add_const(&mut self, value: LucylValue) -> u32 {
+    fn add_const(&mut self, value: LucylData) -> u32 {
         match self.const_list.iter().position(|x| *x == value) {
             Some(index) => index.try_into().unwrap(),
             None => {
@@ -426,7 +426,7 @@ impl Function {
         self.code_list.append(t);
         if *self.code_list.last().unwrap() != OPCode::Return {
             self.code_list
-                .push(OPCode::LoadConst(context.add_const(LucylValue::Null)));
+                .push(OPCode::LoadConst(context.add_const(LucylData::Null)));
             self.code_list.push(OPCode::Return);
         }
         self.code = None;
@@ -436,7 +436,7 @@ impl Function {
         let mut code_list = Vec::new();
         match ast_node.kind {
             ExprKind::Lit(lit) => code_list.push(OPCode::LoadConst(
-                context.add_const(LucylValue::from(lit.value)),
+                context.add_const(LucylData::from(lit.value)),
             )),
             ExprKind::Ident(ident) => code_list.push(self.get_load(&ident.name, context)),
             ExprKind::Function {
@@ -459,7 +459,7 @@ impl Function {
                 );
 
                 code_list.push(OPCode::LoadConst(
-                    context.add_const(LucylValue::Func(func.function_id)),
+                    context.add_const(LucylData::Func(func.function_id)),
                 ));
                 context.func_list.push(func);
             }
@@ -521,7 +521,7 @@ impl Function {
                         match property.kind {
                             ExprKind::Ident(ident) => {
                                 code_list.push(OPCode::LoadConst(
-                                    context.add_const(LucylValue::Str(ident.name)),
+                                    context.add_const(LucylData::Str(ident.name)),
                                 ));
                             }
                             _ => panic!(),
@@ -544,7 +544,7 @@ impl Function {
                             match property.kind {
                                 ExprKind::Ident(ident) => {
                                     code_list.push(OPCode::LoadConst(
-                                        context.add_const(LucylValue::Str(ident.name)),
+                                        context.add_const(LucylData::Str(ident.name)),
                                     ));
                                 }
                                 _ => panic!(),
@@ -688,7 +688,7 @@ impl Function {
                     .map(|x| x.name.clone())
                     .collect::<Vec<String>>()
                     .join(" ");
-                code_list.push(OPCode::Import(context.add_const(LucylValue::Str(path_str))));
+                code_list.push(OPCode::Import(context.add_const(LucylData::Str(path_str))));
                 match kind {
                     ImportKind::Simple(alias) => {
                         code_list.push(OPCode::StoreGlobal(self.add_global_name(&alias.name)));
@@ -696,7 +696,7 @@ impl Function {
                     ImportKind::Nested(items) => {
                         for (name, alias) in items {
                             code_list.push(OPCode::ImportFrom(
-                                context.add_const(LucylValue::Str(name.name)),
+                                context.add_const(LucylData::Str(name.name)),
                             ));
                             code_list.push(OPCode::StoreGlobal(self.add_global_name(&alias.name)));
                         }
