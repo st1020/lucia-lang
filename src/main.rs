@@ -64,14 +64,12 @@ fn main() {
     // return l['a'];
     // ";
     let start = Instant::now();
-    let a = parser::Parser::new(Box::new(lexer::tokenize(input))).parse();
-    let b = codegen::gen_code(a);
+    // let a = parser::Parser::new(&mut lexer::tokenize(input)).parse();
+    // let b = codegen::gen_code(a);
     // println!("{:#?}", b);
     // println!("{:?}", std::mem::size_of::<lvm::LucyData>());
-    let mut c = lvm::Lvm::new(b);
-
+    let mut c = lvm::Lvm::from_str(input);
     c.run();
-
     let duration = start.elapsed();
     println!("Time: {:?}", duration);
 }

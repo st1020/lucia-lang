@@ -2,7 +2,8 @@ use core::ptr::NonNull;
 use std::alloc::{alloc, dealloc, Layout};
 use std::collections::HashMap;
 
-use crate::codegen::{Function, JumpTarget, LucylValue, OPCode, Program};
+use crate::codegen::{gen_code, Function, JumpTarget, LucylValue, OPCode, Program};
+use crate::{lexer, parser};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum GCObjectKind {
@@ -718,6 +719,17 @@ impl Lvm {
     pub fn new(program: Program) -> Self {
         Lvm {
             program,
+            global_variables: HashMap::new(),
+            current_frame: NonNull::dangling(),
+            mem_layout: Layout::new::<GCObject>(),
+            heap: Vec::with_capacity(0),
+            last_heap_len: 100,
+        }
+    }
+
+    pub fn from_str(input: &str) -> Self {
+        Lvm {
+            program: gen_code(parser::Parser::new(&mut lexer::tokenize(input)).parse()),
             global_variables: HashMap::new(),
             current_frame: NonNull::dangling(),
             mem_layout: Layout::new::<GCObject>(),

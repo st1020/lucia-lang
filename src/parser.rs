@@ -1,19 +1,19 @@
 use crate::ast::*;
 use crate::lexer::{LiteralValue, Token, TokenKind};
 
-pub struct Parser {
+pub struct Parser<'a> {
     /// The current token.
     pub token: Token,
     /// The previous token.
     pub prev_token: Token,
     /// The token iter
-    pub token_iter: Box<dyn Iterator<Item = Token>>,
+    pub token_iter: &'a mut dyn Iterator<Item = Token>,
     /// Is token iter end
     pub is_eof: bool,
 }
 
-impl Parser {
-    pub fn new(token_iter: Box<dyn Iterator<Item = Token>>) -> Self {
+impl<'a> Parser<'a> {
+    pub fn new(token_iter: &'a mut dyn Iterator<Item = Token>) -> Self {
         let mut parser = Parser {
             token: Token::dummy(),
             prev_token: Token::dummy(),
