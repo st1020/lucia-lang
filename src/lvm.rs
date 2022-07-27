@@ -4,184 +4,14 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
-use crate::codegen::{gen_code, Function, JumpTarget, LucylData, OPCode, Program};
+use crate::codegen::{gen_code, JumpTarget, LucylData, OPCode, Program};
+use crate::object::*;
 use crate::{lexer, parser};
 
 macro_rules! str_to_program {
     ($input:expr) => {
         parser::Parser::new(&mut lexer::tokenize($input)).parse()
     };
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum GCObjectKind {
-    Str(String),
-    Table(LucyTable),
-    Closuer(Closuer),
-}
-
-#[derive(Debug, Clone)]
-pub struct GCObject {
-    pub kind: GCObjectKind,
-    pub gc_state: bool,
-}
-
-impl PartialEq for GCObject {
-    fn eq(&self, other: &Self) -> bool {
-        self.kind == other.kind
-    }
-}
-
-impl GCObject {
-    pub fn new(kind: GCObjectKind) -> Self {
-        Self {
-            kind,
-            gc_state: false,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum LucyValue {
-    Null,
-    Bool(bool),
-    Int(i64),
-    Float(f64),
-    GCObject(*mut GCObject),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct LucyTable(Vec<(LucyValue, LucyValue)>);
-
-impl LucyTable {
-    pub fn raw_get(&self, key: &LucyValue) -> Option<LucyValue> {
-        for (k, v) in &self.0 {
-            if k == key {
-                return Some(*v);
-            }
-            match (k, key) {
-                (LucyValue::GCObject(k), LucyValue::GCObject(key)) => unsafe {
-                    match (&(**k).kind, &(**key).kind) {
-                        (GCObjectKind::Str(k), GCObjectKind::Str(key)) => {
-                            if k == key {
-                                return Some(*v);
-                            }
-                        }
-                        _ => (),
-                    }
-                },
-                _ => (),
-            }
-        }
-        None
-    }
-
-    pub fn raw_get_by_str(&self, key: &str) -> Option<LucyValue> {
-        for (k, v) in &self.0 {
-            if let LucyValue::GCObject(k) = k {
-                unsafe {
-                    if let GCObjectKind::Str(k) = &(**k).kind {
-                        if k == key {
-                            return Some(*v);
-                        }
-                    }
-                }
-            }
-        }
-        None
-    }
-
-    pub fn get(&self, key: &LucyValue) -> Option<LucyValue> {
-        let mut t = self;
-        loop {
-            match t.raw_get(key) {
-                Some(v) => return Some(v),
-                None => match t.raw_get_by_str("__base__") {
-                    Some(v) => {
-                        if let LucyValue::GCObject(v) = v {
-                            unsafe {
-                                if let GCObjectKind::Table(v) = &(*v).kind {
-                                    t = v;
-                                } else {
-                                    break;
-                                }
-                            }
-                        } else {
-                            break;
-                        }
-                    }
-                    None => break,
-                },
-            }
-        }
-        None
-    }
-
-    pub fn get_by_str(&self, key: &str) -> Option<LucyValue> {
-        let mut t = self;
-        loop {
-            match t.raw_get_by_str(key) {
-                Some(v) => return Some(v),
-                None => match t.raw_get_by_str("__base__") {
-                    Some(v) => {
-                        if let LucyValue::GCObject(v) = v {
-                            unsafe {
-                                if let GCObjectKind::Table(v) = &(*v).kind {
-                                    t = v;
-                                } else {
-                                    break;
-                                }
-                            }
-                        } else {
-                            break;
-                        }
-                    }
-                    None => break,
-                },
-            }
-        }
-        None
-    }
-
-    pub fn set(&mut self, key: &LucyValue, value: LucyValue) {
-        for i in 0..self.0.len() {
-            let (k, _) = &self.0[i];
-            if k == key {
-                if value == LucyValue::Null {
-                    self.0.remove(i);
-                } else {
-                    self.0[i] = (*key, value);
-                }
-                return;
-            }
-        }
-        if value != LucyValue::Null {
-            self.0.push((*key, value));
-        }
-    }
-}
-
-impl IntoIterator for LucyTable {
-    type Item = (LucyValue, LucyValue);
-    type IntoIter = std::vec::IntoIter<Self::Item>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Closuer {
-    pub module_id: u32,
-    pub function: Function,
-    pub base_closuer: Option<NonNull<GCObject>>,
-    pub variables: Vec<LucyValue>,
-}
-
-impl PartialEq for Closuer {
-    fn eq(&self, _: &Self) -> bool {
-        false
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -433,17 +263,8 @@ impl Frame {
                 }
                 OPCode::Import(i) => {
                     let mut path = PathBuf::new();
-                    match lvm.get_global_variable("__module_path__") {
-                        Some(v) => {
-                            if let LucyValue::GCObject(v) = v {
-                                unsafe {
-                                    if let GCObjectKind::Str(v) = &(*v).kind {
-                                        path.push(v);
-                                    }
-                                }
-                            }
-                        }
-                        None => (),
+                    if let Some(v) = lvm.get_global_variable("__module_path__") {
+                        path.push(String::try_from(v).unwrap());
                     }
                     if let LucylData::Str(v) =
                         lvm.module_list[closuer.module_id as usize].const_list[*i as usize].clone()
@@ -454,57 +275,26 @@ impl Frame {
                     let input_file = fs::read_to_string(path).expect("Read file error!");
                     lvm.module_list.push(gen_code(str_to_program!(&input_file)));
                     let module = lvm.run_module((lvm.module_list.len() - 1).try_into().unwrap());
-                    if let LucyValue::GCObject(v) = module {
-                        unsafe {
-                            if let GCObjectKind::Table(_) = &(*v).kind {
-                                self.operate_stack.push(module);
-                            } else {
-                                panic!("Import error")
-                            }
-                        }
-                    } else {
-                        panic!("Import error")
+                    match <&LucyTable>::try_from(module) {
+                        Ok(_) => self.operate_stack.push(module),
+                        Err(_) => panic!("Import error"),
                     }
                 }
                 OPCode::ImportFrom(i) => {
-                    let module = self.operate_stack.last().unwrap();
-                    if let LucyValue::GCObject(v) = module {
-                        unsafe {
-                            if let GCObjectKind::Table(v) = &(**v).kind {
-                                if let LucylData::Str(t) = &lvm.module_list
-                                    [closuer.module_id as usize]
-                                    .const_list[*i as usize]
-                                {
-                                    self.operate_stack.push(v.raw_get_by_str(t).unwrap());
-                                } else {
-                                    panic!()
-                                }
-                            } else {
-                                panic!("Import error")
-                            }
-                        }
+                    let module: &LucyTable =
+                        (*self.operate_stack.last().unwrap()).try_into().unwrap();
+                    if let LucylData::Str(t) =
+                        &lvm.module_list[closuer.module_id as usize].const_list[*i as usize]
+                    {
+                        self.operate_stack.push(module.raw_get_by_str(t).unwrap());
                     } else {
                         panic!("Import error")
                     }
                 }
                 OPCode::ImportGlob => {
-                    let module = self.operate_stack.pop().unwrap();
-                    if let LucyValue::GCObject(v) = module {
-                        unsafe {
-                            if let GCObjectKind::Table(v) = &(*v).kind {
-                                for (k, v) in v.clone() {
-                                    if let LucyValue::GCObject(k) = k {
-                                        if let GCObjectKind::Str(k) = &(*k).kind {
-                                            lvm.set_global_variable(k.clone(), v);
-                                        }
-                                    }
-                                }
-                            } else {
-                                panic!("Import error")
-                            }
-                        }
-                    } else {
-                        panic!("Import error")
+                    let module: &LucyTable = self.operate_stack.pop().unwrap().try_into().unwrap();
+                    for (k, v) in module.clone() {
+                        lvm.set_global_variable(String::try_from(k).unwrap(), v);
                     }
                 }
                 OPCode::BuildTable(i) => {
