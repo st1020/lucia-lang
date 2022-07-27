@@ -114,13 +114,7 @@ impl OPCode {
 
 pub fn gen_code(ast_root: Box<Block>) -> Program {
     let mut context = Context::new();
-    let func = Function::new(
-        Some(ast_root),
-        context.get_func_id(),
-        None,
-        Vec::new(),
-        false,
-    );
+    let func = Function::new(Some(ast_root), 0, None, Vec::new(), false);
     context.func_list.push(func);
 
     let mut func_count = 0;
@@ -253,7 +247,6 @@ impl Program {
 struct Context {
     pub func_list: Vec<Function>,
     pub const_list: Vec<LucylData>,
-    func_id_count: u32,
     jump_target_count: u32,
 }
 
@@ -262,14 +255,8 @@ impl Context {
         Context {
             func_list: Vec::new(),
             const_list: Vec::new(),
-            func_id_count: 0,
             jump_target_count: 0,
         }
-    }
-
-    pub fn get_func_id(&mut self) -> u32 {
-        self.func_id_count += 1;
-        self.func_id_count - 1
     }
 
     fn get_jump_target(&mut self) -> JumpTarget {
@@ -444,7 +431,7 @@ impl Function {
             } => {
                 let func = Function::new(
                     Some(body),
-                    context.get_func_id(),
+                    context.func_list.len().try_into().unwrap(),
                     Some(self.function_id),
                     {
                         let mut temp = Vec::new();
@@ -455,7 +442,6 @@ impl Function {
                     },
                     is_closure,
                 );
-
                 code_list.push(OPCode::LoadConst(
                     context.add_const(LucylData::Func(func.function_id)),
                 ));
