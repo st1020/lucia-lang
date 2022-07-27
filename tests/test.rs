@@ -29,8 +29,9 @@ fn temp() {
 #[test]
 fn import() {
     let input = "
-    import test as a;
-    return a.abc;
+    import std::io::{input, println};
+    import std::convert::{bool, int};
+    println(bool(int(input())));
     ";
     println!("{:?}", lvm::Lvm::from_str(input).run());
 }

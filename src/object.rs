@@ -42,6 +42,25 @@ impl PartialEq for LucyValue {
     }
 }
 
+impl ToString for LucyValue {
+    fn to_string(&self) -> String {
+        match self {
+            LucyValue::Null => String::from("null"),
+            LucyValue::Bool(v) => String::from(if *v { "true" } else { "false" }),
+            LucyValue::Int(v) => String::from(v.to_string()),
+            LucyValue::Float(v) => String::from(v.to_string()),
+            LucyValue::ExtFunction(_) => String::from("function: ext_function"),
+            LucyValue::GCObject(v) => unsafe {
+                match &(**v).kind {
+                    GCObjectKind::Str(v) => v.clone(),
+                    GCObjectKind::Table(v) => v.to_string(),
+                    GCObjectKind::Closuer(v) => v.to_string(),
+                }
+            },
+        }
+    }
+}
+
 impl From<bool> for LucyValue {
     fn from(value: bool) -> Self {
         LucyValue::Bool(value)
@@ -283,6 +302,19 @@ impl LucyTable {
     }
 }
 
+impl ToString for LucyTable {
+    fn to_string(&self) -> String {
+        format!(
+            "{{{}}}",
+            self.clone()
+                .into_iter()
+                .map(|(k, v)| format!("{}: {}", k.to_string(), v.to_string()))
+                .collect::<Vec<String>>()
+                .join(", ")
+        )
+    }
+}
+
 impl IntoIterator for LucyTable {
     type Item = (LucyValue, LucyValue);
     type IntoIter = std::vec::IntoIter<Self::Item>;
@@ -303,5 +335,11 @@ pub struct Closuer {
 impl PartialEq for Closuer {
     fn eq(&self, _: &Self) -> bool {
         false
+    }
+}
+
+impl ToString for Closuer {
+    fn to_string(&self) -> String {
+        format!("function")
     }
 }

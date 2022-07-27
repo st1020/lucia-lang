@@ -15,6 +15,15 @@ macro_rules! str_to_program {
     };
 }
 
+#[macro_export]
+macro_rules! str_to_value {
+    ($lvm:expr ,$name:expr) => {
+        LucyValue::GCObject(
+            $lvm.new_gc_object(GCObject::new(GCObjectKind::Str(String::from($name)))),
+        )
+    };
+}
+
 #[derive(Debug, Clone)]
 pub struct Frame {
     pc: u32,
@@ -264,22 +273,36 @@ impl Frame {
                     }
                 }
                 OPCode::Import(i) => {
-                    let mut path = PathBuf::new();
-                    if let Some(v) = lvm.get_global_variable("__module_path__") {
-                        path.push(String::try_from(v).unwrap());
-                    }
-                    if let LucylData::Str(v) =
+                    if let LucylData::Str(mut v) =
                         lvm.module_list[closuer.module_id as usize].const_list[*i as usize].clone()
                     {
-                        path.push(v);
-                    }
-                    path.set_extension("lucy");
-                    let input_file = fs::read_to_string(path).expect("Read file error!");
-                    lvm.module_list.push(gen_code(str_to_program!(&input_file)));
-                    let module = lvm.run_module((lvm.module_list.len() - 1).try_into().unwrap());
-                    match <&LucyTable>::try_from(module) {
-                        Ok(_) => self.operate_stack.push(module),
-                        Err(_) => panic!("Import error"),
+                        if v.starts_with("std/") {
+                            v = String::from(v.strip_prefix("std/").unwrap());
+                            match lvm.std_libs.get(&v) {
+                                Some(module) => match <&LucyTable>::try_from(*module) {
+                                    Ok(_) => self.operate_stack.push(*module),
+                                    Err(_) => panic!("Import error"),
+                                },
+                                None => panic!("Import error"),
+                            }
+                        } else {
+                            let mut path = PathBuf::new();
+                            if let Some(v) = lvm.get_global_variable("__module_path__") {
+                                path.push(String::try_from(v).unwrap());
+                            }
+                            path.push(v);
+                            path.set_extension("lucy");
+                            let input_file = fs::read_to_string(path).expect("Read file error!");
+                            lvm.module_list.push(gen_code(str_to_program!(&input_file)));
+                            let module =
+                                lvm.run_module((lvm.module_list.len() - 1).try_into().unwrap());
+                            match <&LucyTable>::try_from(module) {
+                                Ok(_) => self.operate_stack.push(module),
+                                Err(_) => panic!("Import error"),
+                            }
+                        }
+                    } else {
+                        panic!();
                     }
                 }
                 OPCode::ImportFrom(i) => {
@@ -593,6 +616,7 @@ pub struct Lvm {
     pub module_list: Vec<Program>,
     pub global_variables: HashMap<String, LucyValue>,
     pub builtin_variables: HashMap<String, LucyValue>,
+    pub std_libs: HashMap<String, LucyValue>,
     pub current_frame: NonNull<Frame>,
     mem_layout: Layout,
     heap: Vec<*mut GCObject>,
@@ -604,20 +628,14 @@ impl Lvm {
         let mut t = Lvm {
             module_list: vec![program],
             global_variables: HashMap::new(),
-            builtin_variables: HashMap::new(),
+            builtin_variables: libs::builtin::builtin_variables(),
+            std_libs: HashMap::new(),
             current_frame: NonNull::dangling(),
             mem_layout: Layout::new::<GCObject>(),
             heap: Vec::with_capacity(0),
             last_heap_len: 64,
         };
-        t.builtin_variables.insert(
-            String::from("id"),
-            LucyValue::ExtFunction(libs::builtin::ID),
-        );
-        t.builtin_variables.insert(
-            String::from("type"),
-            LucyValue::ExtFunction(libs::builtin::TYPE),
-        );
+        t.std_libs = libs::std_libs(&mut t);
         t
     }
 
