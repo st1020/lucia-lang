@@ -207,10 +207,12 @@ impl<'a> Parser<'a> {
                             };
                         }
                         TokenKind::As => {
+                            self.bump();
                             kind = ImportKind::Simple(*self.parse_ident());
                             self.expect(TokenKind::Semi);
                         }
                         TokenKind::OpenBrace => {
+                            self.bump();
                             let mut temp = Vec::new();
                             loop {
                                 match self.token.kind {
@@ -221,8 +223,8 @@ impl<'a> Parser<'a> {
                                             t.clone(),
                                             match self.token.kind {
                                                 TokenKind::As => {
-                                                    let t = *self.parse_ident();
                                                     self.bump();
+                                                    let t = *self.parse_ident();
                                                     t
                                                 }
                                                 _ => t,
