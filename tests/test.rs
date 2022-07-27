@@ -27,6 +27,15 @@ fn temp() {
 }
 
 #[test]
+fn import() {
+    let input = "
+    import test as a;
+    return a.abc;
+    ";
+    println!("{:?}", lvm::Lvm::from_str(input).run());
+}
+
+#[test]
 fn add_pref() {
     let input = "
     i = 0;
@@ -70,10 +79,6 @@ fn gcd_pref() {
     }
     ";
     let start = Instant::now();
-    // let a = parser::Parser::new(&mut lexer::tokenize(input)).parse();
-    // let b = codegen::gen_code(a);
-    // println!("{:#?}", b);
-    // println!("{:?}", std::mem::size_of::<lvm::LucyData>());
     let mut c = lvm::Lvm::from_str(input);
     c.run();
     let duration = start.elapsed();
@@ -100,10 +105,6 @@ fn for_test() {
     return l;
     ";
     let start = Instant::now();
-    // let a = parser::Parser::new(&mut lexer::tokenize(input)).parse();
-    // let b = codegen::gen_code(a);
-    // println!("{:#?}", b);
-    // println!("{:?}", std::mem::size_of::<lvm::LucyData>());
     let mut c = lvm::Lvm::from_str(input);
     c.run();
     let duration = start.elapsed();

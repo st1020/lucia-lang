@@ -660,7 +660,7 @@ impl Function {
                     .iter()
                     .map(|x| x.name.clone())
                     .collect::<Vec<String>>()
-                    .join("::");
+                    .join("/");
                 code_list.push(OPCode::Import(context.add_const(LucylData::Str(path_str))));
                 match kind {
                     ImportKind::Simple(alias) => {

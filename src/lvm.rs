@@ -1,6 +1,8 @@
 use core::ptr::NonNull;
 use std::alloc::{alloc, dealloc, Layout};
 use std::collections::HashMap;
+use std::fs;
+use std::path::PathBuf;
 
 use crate::codegen::{gen_code, Function, JumpTarget, LucylData, OPCode, Program};
 use crate::{lexer, parser};
@@ -429,9 +431,82 @@ impl Frame {
                         None => panic!(),
                     }
                 }
-                OPCode::Import(_) => todo!(),
-                OPCode::ImportFrom(_) => todo!(),
-                OPCode::ImportGlob => todo!(),
+                OPCode::Import(i) => {
+                    let mut path = PathBuf::new();
+                    match lvm.get_global_variable("__module_path__") {
+                        Some(v) => {
+                            if let LucyValue::GCObject(v) = v {
+                                unsafe {
+                                    if let GCObjectKind::Str(v) = &(*v).kind {
+                                        path.push(v);
+                                    }
+                                }
+                            }
+                        }
+                        None => (),
+                    }
+                    if let LucylData::Str(v) =
+                        lvm.module_list[closuer.module_id as usize].const_list[*i as usize].clone()
+                    {
+                        path.push(v);
+                    }
+                    path.set_extension("lucy");
+                    let input_file = fs::read_to_string(path).expect("Read file error!");
+                    lvm.module_list.push(gen_code(str_to_program!(&input_file)));
+                    let module = lvm.run_module((lvm.module_list.len() - 1).try_into().unwrap());
+                    if let LucyValue::GCObject(v) = module {
+                        unsafe {
+                            if let GCObjectKind::Table(_) = &(*v).kind {
+                                self.operate_stack.push(module);
+                            } else {
+                                panic!("Import error")
+                            }
+                        }
+                    } else {
+                        panic!("Import error")
+                    }
+                }
+                OPCode::ImportFrom(i) => {
+                    let module = self.operate_stack.last().unwrap();
+                    if let LucyValue::GCObject(v) = module {
+                        unsafe {
+                            if let GCObjectKind::Table(v) = &(**v).kind {
+                                if let LucylData::Str(t) = &lvm.module_list
+                                    [closuer.module_id as usize]
+                                    .const_list[*i as usize]
+                                {
+                                    self.operate_stack.push(v.raw_get_by_str(t).unwrap());
+                                } else {
+                                    panic!()
+                                }
+                            } else {
+                                panic!("Import error")
+                            }
+                        }
+                    } else {
+                        panic!("Import error")
+                    }
+                }
+                OPCode::ImportGlob => {
+                    let module = self.operate_stack.pop().unwrap();
+                    if let LucyValue::GCObject(v) = module {
+                        unsafe {
+                            if let GCObjectKind::Table(v) = &(*v).kind {
+                                for (k, v) in v.clone() {
+                                    if let LucyValue::GCObject(k) = k {
+                                        if let GCObjectKind::Str(k) = &(*k).kind {
+                                            lvm.set_global_variable(k.clone(), v);
+                                        }
+                                    }
+                                }
+                            } else {
+                                panic!("Import error")
+                            }
+                        }
+                    } else {
+                        panic!("Import error")
+                    }
+                }
                 OPCode::BuildTable(i) => {
                     let mut temp: Vec<LucyValue> = Vec::new();
                     for _ in 0..(*i * 2) {
@@ -744,11 +819,11 @@ impl Lvm {
         Lvm::new(gen_code(str_to_program!(input)))
     }
 
-    pub fn run(&mut self) {
-        self.run_module(0);
+    pub fn run(&mut self) -> LucyValue {
+        self.run_module(0)
     }
 
-    pub fn run_module(&mut self, module_id: u32) {
+    pub fn run_module(&mut self, module_id: u32) -> LucyValue {
         let func = self.module_list[module_id as usize]
             .func_list
             .first()
@@ -773,14 +848,14 @@ impl Lvm {
             stack_size,
         );
         self.current_frame = NonNull::new(&mut frame).unwrap();
-        println!("{:?}", frame.run());
+        frame.run()
     }
 
     pub fn set_global_variable(&mut self, key: String, value: LucyValue) {
         self.global_variables.insert(key, value);
     }
 
-    pub fn get_global_variable(&self, key: &String) -> Option<LucyValue> {
+    pub fn get_global_variable(&self, key: &str) -> Option<LucyValue> {
         match self.global_variables.get(key) {
             Some(v) => Some(*v),
             None => None,
