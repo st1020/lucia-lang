@@ -1,42 +1,45 @@
 use core::ptr::NonNull;
+use std::fmt::Debug;
 
 use crate::codegen::Function;
+use crate::lvm::Lvm;
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum GCObjectKind {
-    Str(String),
-    Table(LucyTable),
-    Closuer(Closuer),
-}
-
-#[derive(Debug, Clone)]
-pub struct GCObject {
-    pub kind: GCObjectKind,
-    pub gc_state: bool,
-}
-
-impl GCObject {
-    pub fn new(kind: GCObjectKind) -> Self {
-        Self {
-            kind,
-            gc_state: false,
-        }
-    }
-}
-
-impl PartialEq for GCObject {
-    fn eq(&self, other: &Self) -> bool {
-        self.kind == other.kind
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Clone, Copy)]
 pub enum LucyValue {
     Null,
     Bool(bool),
     Int(i64),
     Float(f64),
+    ExtFunction(fn(Vec<LucyValue>, &mut Lvm) -> LucyValue),
     GCObject(*mut GCObject),
+}
+
+impl Debug for LucyValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Null => write!(f, "Null"),
+            Self::Bool(arg0) => f.debug_tuple("Bool").field(arg0).finish(),
+            Self::Int(arg0) => f.debug_tuple("Int").field(arg0).finish(),
+            Self::Float(arg0) => f.debug_tuple("Float").field(arg0).finish(),
+            Self::ExtFunction(_) => f.debug_tuple("ExtFunction").finish(),
+            Self::GCObject(arg0) => unsafe {
+                f.debug_tuple("GCObject").field(&(**arg0).kind).finish()
+            },
+        }
+    }
+}
+
+impl PartialEq for LucyValue {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Bool(l0), Self::Bool(r0)) => l0 == r0,
+            (Self::Int(l0), Self::Int(r0)) => l0 == r0,
+            (Self::Float(l0), Self::Float(r0)) => l0 == r0,
+            (Self::ExtFunction(_), Self::ExtFunction(_)) => false,
+            (Self::GCObject(l0), Self::GCObject(r0)) => l0 == r0,
+            _ => core::mem::discriminant(self) == core::mem::discriminant(other),
+        }
+    }
 }
 
 impl From<bool> for LucyValue {
@@ -137,11 +140,42 @@ impl TryFrom<LucyValue> for &mut Closuer {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum GCObjectKind {
+    Str(String),
+    Table(LucyTable),
+    Closuer(Closuer),
+}
+
+#[derive(Debug, Clone)]
+pub struct GCObject {
+    pub kind: GCObjectKind,
+    pub gc_state: bool,
+}
+
+impl GCObject {
+    pub fn new(kind: GCObjectKind) -> Self {
+        Self {
+            kind,
+            gc_state: false,
+        }
+    }
+}
+
+impl PartialEq for GCObject {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LucyTable(pub Vec<(LucyValue, LucyValue)>);
 
 impl LucyTable {
+    pub fn new() -> Self {
+        LucyTable(Vec::new())
+    }
+
     pub fn raw_get(&self, key: &LucyValue) -> Option<LucyValue> {
         for (k, v) in &self.0 {
             if k == key {

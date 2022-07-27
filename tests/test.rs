@@ -19,9 +19,9 @@ fn temp() {
     let a = parser::Parser::new(&mut lexer::tokenize(input)).parse();
     let b = codegen::gen_code(a);
     // println!("{:#?}", b);
-    // println!("{:?}", std::mem::size_of::<lvm::LucyValue>());
+    // println!("{:?}", std::mem::size_of::<object::LucyValue>());
     let mut c = lvm::Lvm::new(b);
-    c.run();
+    println!("{:?}", c.run());
     let duration = start.elapsed();
     println!("Time: {:?}", duration);
 }

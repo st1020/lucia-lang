@@ -5,6 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::codegen::{gen_code, JumpTarget, LucylData, OPCode, Program};
+use crate::libs;
 use crate::object::*;
 use crate::{lexer, parser};
 
@@ -156,9 +157,10 @@ impl Frame {
                     self.operate_stack.push(closuer.variables[*i as usize]);
                 }
                 OPCode::LoadGlobal(i) => {
+                    let t = &closuer.function.global_names[*i as usize];
                     self.operate_stack.push(
-                        lvm.get_global_variable(&closuer.function.global_names[*i as usize])
-                            .unwrap_or(LucyValue::Null),
+                        lvm.get_global_variable(t)
+                            .unwrap_or(lvm.get_builtin_variable(t).unwrap_or(LucyValue::Null)),
                     );
                 }
                 OPCode::LoadUpvalue(i) => {
@@ -577,6 +579,9 @@ impl Frame {
             }
             let mut frame = Frame::new(gc_obj, self.lvm, NonNull::new(self), v.function.stack_size);
             self.operate_stack.push(frame.run());
+        } else if let LucyValue::ExtFunction(f) = callee {
+            self.operate_stack
+                .push(f(arguments, unsafe { self.lvm.as_mut().unwrap() }));
         } else {
             panic!()
         }
@@ -587,6 +592,7 @@ impl Frame {
 pub struct Lvm {
     pub module_list: Vec<Program>,
     pub global_variables: HashMap<String, LucyValue>,
+    pub builtin_variables: HashMap<String, LucyValue>,
     pub current_frame: NonNull<Frame>,
     mem_layout: Layout,
     heap: Vec<*mut GCObject>,
@@ -595,14 +601,24 @@ pub struct Lvm {
 
 impl Lvm {
     pub fn new(program: Program) -> Self {
-        Lvm {
+        let mut t = Lvm {
             module_list: vec![program],
             global_variables: HashMap::new(),
+            builtin_variables: HashMap::new(),
             current_frame: NonNull::dangling(),
             mem_layout: Layout::new::<GCObject>(),
             heap: Vec::with_capacity(0),
-            last_heap_len: 100,
-        }
+            last_heap_len: 64,
+        };
+        t.builtin_variables.insert(
+            String::from("id"),
+            LucyValue::ExtFunction(libs::builtin::ID),
+        );
+        t.builtin_variables.insert(
+            String::from("type"),
+            LucyValue::ExtFunction(libs::builtin::TYPE),
+        );
+        t
     }
 
     pub fn from_str(input: &str) -> Self {
@@ -647,6 +663,13 @@ impl Lvm {
 
     pub fn get_global_variable(&self, key: &str) -> Option<LucyValue> {
         match self.global_variables.get(key) {
+            Some(v) => Some(*v),
+            None => None,
+        }
+    }
+
+    pub fn get_builtin_variable(&self, key: &str) -> Option<LucyValue> {
+        match self.builtin_variables.get(key) {
             Some(v) => Some(*v),
             None => None,
         }
