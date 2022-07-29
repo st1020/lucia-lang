@@ -1,14 +1,13 @@
 use std::io;
 
 use crate::lvm::Lvm;
-use crate::object::{GCObject, GCObjectKind, LucyTable, LucyValue};
+use crate::object::{GCObjectKind, LucyTable, LucyValue};
+use crate::str_to_value;
 
 pub fn libs(lvm: &mut Lvm) -> LucyTable {
     let mut t = LucyTable::new();
     t.set(
-        &LucyValue::GCObject(
-            lvm.new_gc_object(GCObject::new(GCObjectKind::Str(String::from("print")))),
-        ),
+        &str_to_value!(lvm, "print"),
         LucyValue::ExtFunction(|args, _| {
             if args.len() == 1 {
                 panic!()
@@ -18,9 +17,7 @@ pub fn libs(lvm: &mut Lvm) -> LucyTable {
         }),
     );
     t.set(
-        &LucyValue::GCObject(
-            lvm.new_gc_object(GCObject::new(GCObjectKind::Str(String::from("println")))),
-        ),
+        &str_to_value!(lvm, "println"),
         LucyValue::ExtFunction(|args, _| {
             if args.len() != 1 {
                 panic!()
@@ -30,20 +27,16 @@ pub fn libs(lvm: &mut Lvm) -> LucyTable {
         }),
     );
     t.set(
-        &LucyValue::GCObject(
-            lvm.new_gc_object(GCObject::new(GCObjectKind::Str(String::from("input")))),
-        ),
+        &str_to_value!(lvm, "input"),
         LucyValue::ExtFunction(|args, lvm| {
             if args.len() != 0 {
                 panic!()
             }
             let mut t = String::new();
             io::stdin().read_line(&mut t).unwrap();
-            LucyValue::GCObject(
-                lvm.new_gc_object(GCObject::new(GCObjectKind::Str(String::from(
-                    t.strip_suffix("\n").unwrap(),
-                )))),
-            )
+            lvm.new_gc_value(GCObjectKind::Str(String::from(
+                t.strip_suffix("\n").unwrap(),
+            )))
         }),
     );
     t

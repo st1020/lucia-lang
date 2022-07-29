@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::object::{GCObject, GCObjectKind, LucyValue};
+use crate::object::{GCObjectKind, LucyValue};
 
 pub fn builtin_variables() -> HashMap<String, LucyValue> {
     let mut t = HashMap::new();
@@ -22,24 +22,23 @@ pub fn builtin_variables() -> HashMap<String, LucyValue> {
             if args.len() != 1 {
                 panic!()
             }
-            LucyValue::GCObject(
-                lvm.new_gc_object(GCObject::new(GCObjectKind::Str(String::from(
-                    match args.first().unwrap() {
-                        LucyValue::Null => "null",
-                        LucyValue::Bool(_) => "bool",
-                        LucyValue::Int(_) => "int",
-                        LucyValue::Float(_) => "float",
-                        LucyValue::ExtFunction(_) => "function",
-                        LucyValue::GCObject(v) => unsafe {
-                            match &(**v).kind {
-                                GCObjectKind::Str(_) => "str",
-                                GCObjectKind::Table(_) => "table",
-                                GCObjectKind::Closuer(_) => "function",
-                            }
-                        },
+            lvm.new_gc_value(GCObjectKind::Str(String::from(
+                match args.first().unwrap() {
+                    LucyValue::Null => "null",
+                    LucyValue::Bool(_) => "bool",
+                    LucyValue::Int(_) => "int",
+                    LucyValue::Float(_) => "float",
+                    LucyValue::ExtFunction(_) => "function",
+                    LucyValue::GCObject(v) => unsafe {
+                        match &(**v).kind {
+                            GCObjectKind::Str(_) => "str",
+                            GCObjectKind::Table(_) => "table",
+                            GCObjectKind::Closuer(_) => "function",
+                            GCObjectKind::ExtClosuer(_) => "function",
+                        }
                     },
-                )))),
-            )
+                },
+            )))
         }),
     );
     t

@@ -18,9 +18,7 @@ macro_rules! str_to_program {
 #[macro_export]
 macro_rules! str_to_value {
     ($lvm:expr ,$name:expr) => {
-        LucyValue::GCObject(
-            $lvm.new_gc_object(GCObject::new(GCObjectKind::Str(String::from($name)))),
-        )
+        $lvm.new_gc_value(GCObjectKind::Str(String::from($name)))
     };
 }
 
@@ -206,32 +204,28 @@ impl Frame {
                         LucylData::Bool(v) => LucyValue::Bool(v),
                         LucylData::Int(v) => LucyValue::Int(v),
                         LucylData::Float(v) => LucyValue::Float(v),
-                        LucylData::Str(v) => LucyValue::GCObject(
-                            lvm.new_gc_object(GCObject::new(GCObjectKind::Str(v))),
-                        ),
+                        LucylData::Str(v) => lvm.new_gc_value(GCObjectKind::Str(v)),
                         LucylData::Func(func_id) => {
                             let f = lvm.module_list[closuer.module_id as usize].func_list
                                 [func_id as usize]
                                 .clone();
-                            LucyValue::GCObject(lvm.new_gc_object(GCObject::new(
-                                GCObjectKind::Closuer(Closuer {
-                                    module_id: closuer.module_id,
-                                    base_closuer: if f.is_closure {
-                                        NonNull::new(self.closuer)
-                                    } else {
-                                        None
-                                    },
-                                    variables: {
-                                        let mut temp: Vec<LucyValue> =
-                                            Vec::with_capacity(f.local_names.len());
-                                        for _ in 0..f.local_names.len() {
-                                            temp.push(LucyValue::Null);
-                                        }
-                                        temp
-                                    },
-                                    function: f,
-                                }),
-                            )))
+                            lvm.new_gc_value(GCObjectKind::Closuer(Closuer {
+                                module_id: closuer.module_id,
+                                base_closuer: if f.is_closure {
+                                    NonNull::new(self.closuer)
+                                } else {
+                                    None
+                                },
+                                variables: {
+                                    let mut temp: Vec<LucyValue> =
+                                        Vec::with_capacity(f.local_names.len());
+                                    for _ in 0..f.local_names.len() {
+                                        temp.push(LucyValue::Null);
+                                    }
+                                    temp
+                                },
+                                function: f,
+                            }))
                         }
                     };
                     self.operate_stack.push(v);
@@ -341,9 +335,8 @@ impl Frame {
                         }
                         table.push((arg1, arg2));
                     }
-                    self.operate_stack.push(LucyValue::GCObject(
-                        lvm.new_gc_object(GCObject::new(GCObjectKind::Table(LucyTable(table)))),
-                    ));
+                    self.operate_stack
+                        .push(lvm.new_gc_value(GCObjectKind::Table(LucyTable(table))));
                 }
                 OPCode::GetAttr | OPCode::GetItem => {
                     let arg2 = self.operate_stack.pop().unwrap();
@@ -455,9 +448,7 @@ impl Frame {
                             (LucyValue::GCObject(v1), LucyValue::GCObject(v2)) => unsafe {
                                 match (&(*v1).kind, &(*v2).kind) {
                                     (GCObjectKind::Str(v1), GCObjectKind::Str(v2)) => {
-                                        LucyValue::GCObject(lvm.new_gc_object(GCObject::new(
-                                            GCObjectKind::Str(v1.clone() + v2),
-                                        )))
+                                        lvm.new_gc_value(GCObjectKind::Str(v1.clone() + v2))
                                     }
                                     _ => panic!(),
                                 }
@@ -580,16 +571,12 @@ impl Frame {
             let v = unsafe {
                 match &mut gc_obj.as_mut().unwrap().kind {
                     GCObjectKind::Closuer(v) => v,
-                    GCObjectKind::Table(v) => {
-                        if let Some(LucyValue::GCObject(v)) = v.get_by_str("__call__") {
-                            if let GCObjectKind::Closuer(v) = &mut (*v).kind {
-                                v
-                            } else {
-                                panic!()
-                            }
-                        } else {
-                            panic!()
-                        }
+                    GCObjectKind::Table(v) => v.get_by_str("__call__").unwrap().try_into().unwrap(),
+                    GCObjectKind::ExtClosuer(v) => {
+                        arguments.reverse();
+                        self.operate_stack
+                            .push(v(arguments, self.lvm.as_mut().unwrap()));
+                        return;
                     }
                     _ => panic!(),
                 }
@@ -603,6 +590,7 @@ impl Frame {
             let mut frame = Frame::new(gc_obj, self.lvm, NonNull::new(self), v.function.stack_size);
             self.operate_stack.push(frame.run());
         } else if let LucyValue::ExtFunction(f) = callee {
+            arguments.reverse();
             self.operate_stack
                 .push(f(arguments, unsafe { self.lvm.as_mut().unwrap() }));
         } else {
@@ -655,7 +643,7 @@ impl Lvm {
             .clone();
         let stack_size = func.stack_size;
         let mut frame = Frame::new(
-            self.new_gc_object(GCObject::new(GCObjectKind::Closuer(Closuer {
+            self.new_gc_object(GCObjectKind::Closuer(Closuer {
                 module_id,
                 base_closuer: None,
                 variables: {
@@ -666,7 +654,7 @@ impl Lvm {
                     temp
                 },
                 function: func,
-            }))),
+            })),
             self,
             None,
             stack_size,
@@ -693,11 +681,16 @@ impl Lvm {
         }
     }
 
-    pub fn new_gc_object(&mut self, value: GCObject) -> *mut GCObject {
+    pub fn new_gc_value(&mut self, value: GCObjectKind) -> LucyValue {
+        LucyValue::GCObject(self.new_gc_object(value))
+    }
+
+    pub fn new_gc_object(&mut self, value: GCObjectKind) -> *mut GCObject {
         if self.heap.len() > self.last_heap_len * 2 {
             self.last_heap_len = self.heap.len();
             self.gc();
         }
+        let value = GCObject::new(value);
         unsafe {
             let ptr = alloc(self.mem_layout) as *mut GCObject;
             ptr.write(value);
@@ -709,9 +702,9 @@ impl Lvm {
     fn gc_object(&self, ptr: *mut GCObject) {
         unsafe {
             (*ptr).gc_state = false;
-            match (*ptr).kind.clone() {
+            match &(*ptr).kind {
                 GCObjectKind::Table(table) => {
-                    for (_, v) in table {
+                    for (_, v) in table.clone() {
                         if let LucyValue::GCObject(ptr) = v {
                             self.gc_object(ptr);
                         }
@@ -728,6 +721,7 @@ impl Lvm {
                     }
                 }
                 GCObjectKind::Str(_) => (),
+                GCObjectKind::ExtClosuer(_) => (),
             }
         }
     }

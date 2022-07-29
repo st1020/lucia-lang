@@ -1,5 +1,5 @@
 use crate::lvm::Lvm;
-use crate::object::{GCObject, GCObjectKind, LucyTable, LucyValue};
+use crate::object::{GCObjectKind, LucyTable, LucyValue};
 use crate::str_to_value;
 
 pub fn libs(lvm: &mut Lvm) -> LucyTable {
@@ -80,9 +80,7 @@ pub fn libs(lvm: &mut Lvm) -> LucyTable {
             if args.len() != 1 {
                 panic!()
             }
-            LucyValue::GCObject(lvm.new_gc_object(GCObject::new(GCObjectKind::Str(
-                args.first().unwrap().to_string(),
-            ))))
+            lvm.new_gc_value(GCObjectKind::Str(args.first().unwrap().to_string()))
         }),
     );
     t
