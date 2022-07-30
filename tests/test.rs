@@ -4,11 +4,16 @@ use std::time::Instant;
 #[test]
 fn temp() {
     let input = "
+    import std::io::{println};
+    import std::table::{raw_get};
     l = {
         '__base__': {
             'lll': 1,
             '__setitem__': func (self, key, value) {
                 self.a = key;
+            },
+            '__getitem__': func (self, key) {
+                return 0;
             },
         },
     };
@@ -33,7 +38,22 @@ fn import() {
     import std::convert::{bool, int};
     println(bool(int(input())));
     ";
-    println!("{:?}", lvm::Lvm::from_str(input).run());
+    lvm::Lvm::from_str(input).run();
+}
+
+#[test]
+fn for_table() {
+    let input = "
+    import std::io::{input, println};
+    import std::convert::{bool, int};
+    // println(bool(int(input())));
+    import std::table::{keys};
+    t = {1: 0, 2: 0};
+    for i in keys(t) {
+        println(i);
+    }
+    ";
+    lvm::Lvm::from_str(input).run();
 }
 
 #[test]
@@ -47,12 +67,7 @@ fn add_pref() {
     }
     ";
     let start = Instant::now();
-    // let a = parser::Parser::new(&mut lexer::tokenize(input)).parse();
-    // let b = codegen::gen_code(a);
-    // println!("{:#?}", b);
-    // println!("{:?}", std::mem::size_of::<lvm::LucyData>());
-    let mut c = lvm::Lvm::from_str(input);
-    c.run();
+    lvm::Lvm::from_str(input).run();
     let duration = start.elapsed();
     println!("Time: {:?}", duration);
 }
@@ -80,8 +95,7 @@ fn gcd_pref() {
     }
     ";
     let start = Instant::now();
-    let mut c = lvm::Lvm::from_str(input);
-    c.run();
+    lvm::Lvm::from_str(input).run();
     let duration = start.elapsed();
     println!("Time: {:?}", duration);
 }
@@ -89,6 +103,7 @@ fn gcd_pref() {
 #[test]
 fn for_test() {
     let input = "
+    import std::io::{println};
     a = func () {
         t = 0;
         return || {
@@ -103,11 +118,11 @@ fn for_test() {
     for i in a() {
         l[i] = i;
     }
+    println(l);
     return l;
     ";
     let start = Instant::now();
-    let mut c = lvm::Lvm::from_str(input);
-    c.run();
+    lvm::Lvm::from_str(input).run();
     let duration = start.elapsed();
     println!("Time: {:?}", duration);
 }
