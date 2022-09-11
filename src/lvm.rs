@@ -1,6 +1,7 @@
 use core::ptr::NonNull;
 use std::alloc::{alloc, dealloc, Layout};
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::fs;
 use std::path::PathBuf;
 
@@ -80,18 +81,11 @@ impl Frame {
         }
 
         macro_rules! run_eq_ne {
-            ($op: tt, $special_name:expr, $default:literal) => {
+            ($op: tt, $special_name:expr) => {
                 let arg2 = self.operate_stack.pop().unwrap();
                 let arg1 = self.operate_stack.pop().unwrap();
                 run_default!({
-                    self.operate_stack.push(LucyValue::Bool(match (arg1, arg2) {
-                        (LucyValue::Null, LucyValue::Null) => !($default),
-                        (LucyValue::Bool(v1), LucyValue::Bool(v2)) => v1 $op v2,
-                        (LucyValue::Int(v1), LucyValue::Int(v2)) => v1 $op v2,
-                        (LucyValue::Float(v1), LucyValue::Float(v2)) => v1 $op v2,
-                        (LucyValue::GCObject(v1), LucyValue::GCObject(v2)) => unsafe { (*v1) $op (*v2) },
-                        _ => $default,
-                    }));
+                    self.operate_stack.push(LucyValue::Bool(arg1 $op arg2));
                 }, arg1, arg2, $special_name)
             };
         }
@@ -374,14 +368,14 @@ impl Frame {
                                 (LucyValue::Float(v1), LucyValue::Float(v2)) => {
                                     LucyValue::Float(v1 + v2)
                                 }
-                                (LucyValue::GCObject(v1), LucyValue::GCObject(v2)) => unsafe {
-                                    match (&(*v1).kind, &(*v2).kind) {
-                                        (GCObjectKind::Str(v1), GCObjectKind::Str(v2)) => {
-                                            lvm.new_gc_value(GCObjectKind::Str(v1.clone() + v2))
+                                (LucyValue::GCObject(_), LucyValue::GCObject(_)) => {
+                                    match (String::try_from(arg1), String::try_from(arg2)) {
+                                        (Ok(v1), Ok(v2)) => {
+                                            lvm.new_gc_value(GCObjectKind::Str(v1 + &v2))
                                         }
                                         _ => panic!(),
                                     }
-                                },
+                                }
                                 _ => panic!(),
                             });
                         }
@@ -400,10 +394,10 @@ impl Frame {
                     run_bin_op!(%, "__mod__");
                 }
                 OPCode::Eq => {
-                    run_eq_ne!(==, "__eq__", false);
+                    run_eq_ne!(==, "__eq__");
                 }
                 OPCode::Ne => {
-                    run_eq_ne!(!=, "__ne__", true);
+                    run_eq_ne!(!=, "__ne__");
                 }
                 OPCode::Gt => {
                     run_compare!(>, "__gt__");
@@ -420,7 +414,14 @@ impl Frame {
                 OPCode::Is => {
                     let arg2 = self.operate_stack.pop().unwrap();
                     let arg1 = self.operate_stack.pop().unwrap();
-                    self.operate_stack.push(LucyValue::Bool(arg1 == arg2));
+                    self.operate_stack.push(LucyValue::Bool(match (arg1, arg2) {
+                        (LucyValue::Null, LucyValue::Null) => true,
+                        (LucyValue::Bool(v1), LucyValue::Bool(v2)) => v1 == v2,
+                        (LucyValue::Int(v1), LucyValue::Int(v2)) => v1 == v2,
+                        (LucyValue::Float(v1), LucyValue::Float(v2)) => v1 == v2,
+                        (LucyValue::GCObject(v1), LucyValue::GCObject(v2)) => v1 == v2,
+                        _ => false,
+                    }));
                 }
                 OPCode::For(JumpTarget(i)) => {
                     self.call(0, false);
@@ -618,24 +619,24 @@ impl Lvm {
         }
     }
 
-    fn gc_object(&self, ptr: *mut GCObject) {
+    fn gc_mark_object(&self, ptr: *mut GCObject) {
         unsafe {
             (*ptr).gc_state = false;
             match &(*ptr).kind {
                 GCObjectKind::Table(table) => {
                     for (_, v) in table.clone() {
                         if let LucyValue::GCObject(ptr) = v {
-                            self.gc_object(ptr);
+                            self.gc_mark_object(ptr);
                         }
                     }
                 }
                 GCObjectKind::Closuer(closuer) => {
                     if let Some(ptr) = closuer.base_closuer {
-                        self.gc_object(ptr.as_ptr());
+                        self.gc_mark_object(ptr.as_ptr());
                     }
                     for v in &closuer.variables {
                         if let LucyValue::GCObject(ptr) = v {
-                            self.gc_object(*ptr);
+                            self.gc_mark_object(*ptr);
                         }
                     }
                 }
@@ -647,22 +648,24 @@ impl Lvm {
 
     pub fn gc(&mut self) {
         unsafe {
+            // mark
             for ptr in &self.heap {
                 (**ptr).gc_state = true;
             }
-            let mut ptr = self.current_frame.as_ref();
+            let mut frame = self.current_frame.as_ref();
             loop {
-                self.gc_object(ptr.closuer);
-                for value in &ptr.operate_stack {
+                self.gc_mark_object(frame.closuer);
+                for value in &frame.operate_stack {
                     if let LucyValue::GCObject(ptr) = value {
-                        self.gc_object(*ptr);
+                        self.gc_mark_object(*ptr);
                     }
                 }
-                match ptr.prev_frame {
-                    Some(t) => ptr = t.as_ref(),
+                match frame.prev_frame {
+                    Some(t) => frame = t.as_ref(),
                     None => break,
                 }
             }
+            // sweep
             let mut t = Vec::new();
             for ptr in &self.heap {
                 if (**ptr).gc_state {

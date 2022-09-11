@@ -1,5 +1,5 @@
 use core::ptr::NonNull;
-use std::convert::{TryInto, TryFrom};
+use std::convert::{TryFrom, TryInto};
 use std::fmt::Debug;
 
 use crate::codegen::Function;
@@ -38,7 +38,7 @@ impl PartialEq for LucyValue {
             (Self::Int(l0), Self::Int(r0)) => l0 == r0,
             (Self::Float(l0), Self::Float(r0)) => l0 == r0,
             (Self::ExtFunction(_), Self::ExtFunction(_)) => false,
-            (Self::GCObject(l0), Self::GCObject(r0)) => l0 == r0,
+            (Self::GCObject(l0), Self::GCObject(r0)) => unsafe { **l0 == **r0 },
             _ => false,
         }
     }
@@ -202,14 +202,6 @@ impl LucyTable {
             if k == key {
                 return Some(*v);
             }
-            match (k, key) {
-                (LucyValue::GCObject(k), LucyValue::GCObject(key)) => {
-                    if k == key {
-                        return Some(*v);
-                    }
-                },
-                _ => (),
-            }
         }
         None
     }
@@ -221,7 +213,7 @@ impl LucyTable {
                     if k == key {
                         return Some(*v);
                     }
-                },
+                }
                 Err(_) => (),
             }
         }
