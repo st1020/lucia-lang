@@ -1,4 +1,5 @@
 use core::ptr::NonNull;
+use std::convert::{TryInto, TryFrom};
 use std::fmt::Debug;
 
 use crate::codegen::Function;
@@ -202,14 +203,9 @@ impl LucyTable {
                 return Some(*v);
             }
             match (k, key) {
-                (LucyValue::GCObject(k), LucyValue::GCObject(key)) => unsafe {
-                    match (&(**k).kind, &(**key).kind) {
-                        (GCObjectKind::Str(k), GCObjectKind::Str(key)) => {
-                            if k == key {
-                                return Some(*v);
-                            }
-                        }
-                        _ => (),
+                (LucyValue::GCObject(k), LucyValue::GCObject(key)) => {
+                    if k == key {
+                        return Some(*v);
                     }
                 },
                 _ => (),
@@ -220,69 +216,42 @@ impl LucyTable {
 
     pub fn raw_get_by_str(&self, key: &str) -> Option<LucyValue> {
         for (k, v) in &self.0 {
-            if let LucyValue::GCObject(k) = k {
-                unsafe {
-                    if let GCObjectKind::Str(k) = &(**k).kind {
-                        if k == key {
-                            return Some(*v);
-                        }
+            match String::try_from(*k) {
+                Ok(k) => {
+                    if k == key {
+                        return Some(*v);
                     }
-                }
+                },
+                Err(_) => (),
             }
         }
         None
     }
 
     pub fn get(&self, key: &LucyValue) -> Option<LucyValue> {
-        let mut t = self;
-        loop {
-            match t.raw_get(key) {
-                Some(v) => return Some(v),
-                None => match t.raw_get_by_str("__base__") {
-                    Some(v) => {
-                        if let LucyValue::GCObject(v) = v {
-                            unsafe {
-                                if let GCObjectKind::Table(v) = &(*v).kind {
-                                    t = v;
-                                } else {
-                                    break;
-                                }
-                            }
-                        } else {
-                            break;
-                        }
-                    }
-                    None => break,
-                },
-            }
+        match self.raw_get(key) {
+            Some(v) => Some(v),
+            None => match self.raw_get_by_str("__base__") {
+                Some(v) => {
+                    let t: &LucyTable = v.try_into().unwrap();
+                    t.get(key)
+                }
+                None => None,
+            },
         }
-        None
     }
 
     pub fn get_by_str(&self, key: &str) -> Option<LucyValue> {
-        let mut t = self;
-        loop {
-            match t.raw_get_by_str(key) {
-                Some(v) => return Some(v),
-                None => match t.raw_get_by_str("__base__") {
-                    Some(v) => {
-                        if let LucyValue::GCObject(v) = v {
-                            unsafe {
-                                if let GCObjectKind::Table(v) = &(*v).kind {
-                                    t = v;
-                                } else {
-                                    break;
-                                }
-                            }
-                        } else {
-                            break;
-                        }
-                    }
-                    None => break,
-                },
-            }
+        match self.raw_get_by_str(key) {
+            Some(v) => Some(v),
+            None => match self.raw_get_by_str("__base__") {
+                Some(v) => {
+                    let t: &LucyTable = v.try_into().unwrap();
+                    t.raw_get_by_str(key)
+                }
+                None => None,
+            },
         }
-        None
     }
 
     pub fn set(&mut self, key: &LucyValue, value: LucyValue) {
