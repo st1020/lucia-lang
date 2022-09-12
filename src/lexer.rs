@@ -539,7 +539,7 @@ impl Cursor<'_> {
             "or" => Or,
             "func" => Func,
             "null" => Literal(Null),
-            "trur" => Literal(Bool(true)),
+            "true" => Literal(Bool(true)),
             "false" => Literal(Bool(false)),
             _ => Ident(value),
         }
