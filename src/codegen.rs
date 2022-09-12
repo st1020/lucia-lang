@@ -115,7 +115,7 @@ impl OPCode {
 
 pub fn gen_code(ast_root: Box<Block>) -> LResult<Program> {
     let mut context = Context::new();
-    let func = Function::new(ast_root, 0, None, Vec::new(), false);
+    let func = FunctionBuilder::new(ast_root, 0, None, Vec::new(), false);
     context.func_list.push(func);
 
     let mut func_count = 0;
@@ -165,7 +165,7 @@ pub fn gen_code(ast_root: Box<Block>) -> LResult<Program> {
         func.stack_size = get_stack_size(&func.code_list, 0, 0);
     }
 
-    Ok(Program::new(context))
+    Ok(Program::from(context))
 }
 
 fn get_stack_size(code: &Vec<OPCode>, mut offset: usize, init_size: usize) -> usize {
@@ -235,17 +235,26 @@ pub struct Program {
 }
 
 impl Program {
-    fn new(context: Context) -> Self {
+    pub fn new(func_list: Vec<Function>, const_list: Vec<LucylData>) -> Self {
         Program {
-            func_list: context.func_list,
-            const_list: context.const_list,
+            func_list,
+            const_list,
+        }
+    }
+}
+
+impl From<Context> for Program {
+    fn from(value: Context) -> Self {
+        Program {
+            func_list: Vec::from_iter(value.func_list.iter().map(|x| Function::from(x.clone()))),
+            const_list: value.const_list,
         }
     }
 }
 
 #[derive(Debug, Clone)]
 struct Context {
-    pub func_list: Vec<Function>,
+    pub func_list: Vec<FunctionBuilder>,
     pub const_list: Vec<LucylData>,
     jump_target_count: usize,
 }
@@ -282,7 +291,39 @@ enum LoadStore {
 
 #[derive(Debug, Clone)]
 pub struct Function {
-    pub code: Box<Block>,
+    pub function_id: usize,
+    pub params: Vec<String>,
+    pub code_list: Vec<OPCode>,
+    pub is_closure: bool,
+    pub base_function: Option<usize>,
+
+    pub local_names: Vec<String>,
+    pub global_names: Vec<String>,
+    pub upvalue_names: Vec<(String, usize, usize)>,
+
+    pub stack_size: usize,
+}
+
+impl From<FunctionBuilder> for Function {
+    fn from(value: FunctionBuilder) -> Self {
+        Function {
+            function_id: value.function_id,
+            params: value.params,
+            code_list: value.code_list,
+            is_closure: value.is_closure,
+            base_function: value.base_function,
+            local_names: value.local_names,
+            global_names: value.global_names,
+            upvalue_names: value.upvalue_names,
+            stack_size: value.stack_size,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FunctionBuilder {
+    code: Box<Block>,
+
     pub function_id: usize,
     pub params: Vec<String>,
     pub code_list: Vec<OPCode>,
@@ -299,7 +340,7 @@ pub struct Function {
     break_stack: Vec<JumpTarget>,
 }
 
-impl Function {
+impl FunctionBuilder {
     fn new(
         code: Box<Block>,
         function_id: usize,
@@ -307,7 +348,7 @@ impl Function {
         params: Vec<String>,
         is_closure: bool,
     ) -> Self {
-        Function {
+        FunctionBuilder {
             code,
             function_id,
             params,
@@ -425,7 +466,7 @@ impl Function {
                 body,
                 is_closure,
             } => {
-                let func = Function::new(
+                let func = FunctionBuilder::new(
                     body,
                     context.func_list.len(),
                     Some(self.function_id),
