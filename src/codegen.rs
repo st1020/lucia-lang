@@ -1,4 +1,5 @@
 use crate::ast::*;
+use crate::errors::{CodegenErrorKind, LResult, LucyError};
 use crate::lexer::LiteralValue;
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
@@ -14,7 +15,7 @@ pub enum LucylData {
     /// ""abc"", ""abc"
     Str(String),
     // func id
-    Func(u32),
+    Func(usize),
 }
 
 impl LucylData {
@@ -30,7 +31,7 @@ impl LucylData {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct JumpTarget(pub u32);
+pub struct JumpTarget(pub usize);
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum OPCode {
@@ -38,19 +39,19 @@ pub enum OPCode {
     Dup,
     DupTwo,
     Rot,
-    LoadLocal(u32),
-    LoadGlobal(u32),
-    LoadUpvalue(u32),
-    LoadConst(u32),
-    StoreLocal(u32),
-    StoreGlobal(u32),
-    StoreUpvalue(u32),
+    LoadLocal(usize),
+    LoadGlobal(usize),
+    LoadUpvalue(usize),
+    LoadConst(usize),
+    StoreLocal(usize),
+    StoreGlobal(usize),
+    StoreUpvalue(usize),
 
-    Import(u32),
-    ImportFrom(u32),
+    Import(usize),
+    ImportFrom(usize),
     ImportGlob,
 
-    BuildTable(u32),
+    BuildTable(usize),
     GetAttr,
     GetItem,
     SetAttr,
@@ -79,15 +80,15 @@ pub enum OPCode {
     JumpIfTureOrPop(JumpTarget),
     JumpIfFalseOrPop(JumpTarget),
 
-    Call(u32),
+    Call(usize),
     Return,
 
     JumpTarget(JumpTarget),
 }
 
 impl OPCode {
-    pub fn from_bin_op(bin_op: BinOp) -> Self {
-        match bin_op {
+    pub fn from_bin_op(bin_op: BinOp) -> LResult<Self> {
+        Ok(match bin_op {
             BinOp::Add => OPCode::Add,
             BinOp::Sub => OPCode::Sub,
             BinOp::Mul => OPCode::Mul,
@@ -100,8 +101,8 @@ impl OPCode {
             BinOp::Ge => OPCode::Ge,
             BinOp::Gt => OPCode::Gt,
             BinOp::Is => OPCode::Is,
-            _ => panic!(),
-        }
+            _ => return Err(LucyError::CodegenError(CodegenErrorKind::IllegalAst)),
+        })
     }
 
     pub fn from_un_op(un_op: UnOp) -> Self {
@@ -112,20 +113,20 @@ impl OPCode {
     }
 }
 
-pub fn gen_code(ast_root: Box<Block>) -> Program {
+pub fn gen_code(ast_root: Box<Block>) -> LResult<Program> {
     let mut context = Context::new();
-    let func = Function::new(Some(ast_root), 0, None, Vec::new(), false);
+    let func = Function::new(ast_root, 0, None, Vec::new(), false);
     context.func_list.push(func);
 
     let mut func_count = 0;
     while func_count < context.func_list.len() {
         let mut func = context.func_list[func_count].clone();
-        func.gen_code(&mut context);
+        func.gen_code(&mut context)?;
         context.func_list[func_count] = func;
         func_count += 1;
     }
 
-    let mut temp: Vec<u32> = Vec::with_capacity(context.jump_target_count.try_into().unwrap());
+    let mut temp: Vec<usize> = Vec::with_capacity(context.jump_target_count);
     for _ in 0..context.jump_target_count {
         temp.push(0);
     }
@@ -134,7 +135,7 @@ pub fn gen_code(ast_root: Box<Block>) -> Program {
         while i < func.code_list.len() {
             match func.code_list[i] {
                 OPCode::JumpTarget(JumpTarget(index)) => {
-                    temp[index as usize] = i.try_into().unwrap();
+                    temp[index] = i;
                     func.code_list.remove(i);
                 }
                 _ => i += 1,
@@ -145,16 +146,14 @@ pub fn gen_code(ast_root: Box<Block>) -> Program {
         let mut i = 0;
         while i < func.code_list.len() {
             func.code_list[i] = match &func.code_list[i] {
-                OPCode::For(JumpTarget(v)) => OPCode::For(JumpTarget(temp[*v as usize])),
-                OPCode::Jump(JumpTarget(v)) => OPCode::Jump(JumpTarget(temp[*v as usize])),
-                OPCode::JumpIfFalse(JumpTarget(v)) => {
-                    OPCode::JumpIfFalse(JumpTarget(temp[*v as usize]))
-                }
+                OPCode::For(JumpTarget(v)) => OPCode::For(JumpTarget(temp[*v])),
+                OPCode::Jump(JumpTarget(v)) => OPCode::Jump(JumpTarget(temp[*v])),
+                OPCode::JumpIfFalse(JumpTarget(v)) => OPCode::JumpIfFalse(JumpTarget(temp[*v])),
                 OPCode::JumpIfTureOrPop(JumpTarget(v)) => {
-                    OPCode::JumpIfTureOrPop(JumpTarget(temp[*v as usize]))
+                    OPCode::JumpIfTureOrPop(JumpTarget(temp[*v]))
                 }
                 OPCode::JumpIfFalseOrPop(JumpTarget(v)) => {
-                    OPCode::JumpIfFalseOrPop(JumpTarget(temp[*v as usize]))
+                    OPCode::JumpIfFalseOrPop(JumpTarget(temp[*v]))
                 }
                 v @ _ => v.clone(),
             };
@@ -166,10 +165,10 @@ pub fn gen_code(ast_root: Box<Block>) -> Program {
         func.stack_size = get_stack_size(&func.code_list, 0, 0);
     }
 
-    Program::new(context)
+    Ok(Program::new(context))
 }
 
-fn get_stack_size(code: &Vec<OPCode>, mut offset: usize, init_size: u32) -> u32 {
+fn get_stack_size(code: &Vec<OPCode>, mut offset: usize, init_size: usize) -> usize {
     let mut stack_size = init_size;
     let mut t = init_size;
     while offset < code.len() {
@@ -205,13 +204,13 @@ fn get_stack_size(code: &Vec<OPCode>, mut offset: usize, init_size: u32) -> u32 
             OPCode::For(_) => t += 1,
             OPCode::Jump(JumpTarget(_)) => (),
             OPCode::JumpIfFalse(JumpTarget(i)) => {
-                let temp = get_stack_size(code, (i + 1).try_into().unwrap(), t);
+                let temp = get_stack_size(code, i + 1, t);
                 if temp > stack_size {
                     stack_size = temp;
                 }
             }
             OPCode::JumpIfTureOrPop(JumpTarget(i)) | OPCode::JumpIfFalseOrPop(JumpTarget(i)) => {
-                let temp = get_stack_size(code, (i + 1).try_into().unwrap(), t);
+                let temp = get_stack_size(code, i + 1, t);
                 if temp > stack_size {
                     stack_size = temp;
                 }
@@ -248,7 +247,7 @@ impl Program {
 struct Context {
     pub func_list: Vec<Function>,
     pub const_list: Vec<LucylData>,
-    jump_target_count: u32,
+    jump_target_count: usize,
 }
 
 impl Context {
@@ -265,12 +264,12 @@ impl Context {
         JumpTarget(self.jump_target_count - 1)
     }
 
-    fn add_const(&mut self, value: LucylData) -> u32 {
+    fn add_const(&mut self, value: LucylData) -> usize {
         match self.const_list.iter().position(|x| *x == value) {
-            Some(index) => index.try_into().unwrap(),
+            Some(index) => index,
             None => {
                 self.const_list.push(value);
-                (self.const_list.len() - 1).try_into().unwrap()
+                self.const_list.len() - 1
             }
         }
     }
@@ -283,18 +282,18 @@ enum LoadStore {
 
 #[derive(Debug, Clone)]
 pub struct Function {
-    pub code: Option<Box<Block>>,
-    pub function_id: u32,
+    pub code: Box<Block>,
+    pub function_id: usize,
     pub params: Vec<String>,
     pub code_list: Vec<OPCode>,
     pub is_closure: bool,
-    pub base_function: Option<u32>,
+    pub base_function: Option<usize>,
 
     pub local_names: Vec<String>,
     pub global_names: Vec<String>,
-    pub upvalue_names: Vec<(String, u32, u32)>,
+    pub upvalue_names: Vec<(String, usize, usize)>,
 
-    pub stack_size: u32,
+    pub stack_size: usize,
 
     continue_stack: Vec<JumpTarget>,
     break_stack: Vec<JumpTarget>,
@@ -302,9 +301,9 @@ pub struct Function {
 
 impl Function {
     fn new(
-        code: Option<Box<Block>>,
-        function_id: u32,
-        base_function: Option<u32>,
+        code: Box<Block>,
+        function_id: usize,
+        base_function: Option<usize>,
         params: Vec<String>,
         is_closure: bool,
     ) -> Self {
@@ -324,21 +323,21 @@ impl Function {
         }
     }
 
-    fn add_local_name(&mut self, name: &String) -> u32 {
+    fn add_local_name(&mut self, name: &String) -> usize {
         if let Some(index) = self.local_names.iter().position(|x| x == name) {
-            index.try_into().unwrap()
+            index
         } else {
             self.local_names.push(name.clone());
-            (self.local_names.len() - 1).try_into().unwrap()
+            self.local_names.len() - 1
         }
     }
 
-    fn add_global_name(&mut self, name: &String) -> u32 {
+    fn add_global_name(&mut self, name: &String) -> usize {
         if let Some(index) = self.global_names.iter().position(|x| x == name) {
-            index.try_into().unwrap()
+            index
         } else {
             self.global_names.push(name.clone());
-            (self.global_names.len() - 1).try_into().unwrap()
+            self.global_names.len() - 1
         }
     }
 
@@ -353,13 +352,13 @@ impl Function {
     fn get_load_store(&mut self, name: &String, kind: LoadStore, context: &mut Context) -> OPCode {
         if let Some(index) = self.local_names.iter().position(|x| x == name) {
             match kind {
-                LoadStore::Load => OPCode::LoadLocal(index.try_into().unwrap()),
-                LoadStore::Store => OPCode::StoreLocal(index.try_into().unwrap()),
+                LoadStore::Load => OPCode::LoadLocal(index),
+                LoadStore::Store => OPCode::StoreLocal(index),
             }
         } else if let Some(index) = self.global_names.iter().position(|x| x == name) {
             match kind {
-                LoadStore::Load => OPCode::LoadGlobal(index.try_into().unwrap()),
-                LoadStore::Store => OPCode::StoreGlobal(index.try_into().unwrap()),
+                LoadStore::Load => OPCode::LoadGlobal(index),
+                LoadStore::Store => OPCode::StoreGlobal(index),
             }
         } else {
             if !self.is_closure {
@@ -371,21 +370,17 @@ impl Function {
                 let mut base_func_count = 0;
                 let mut base_func_id = self.base_function.unwrap();
                 loop {
-                    let base_func = &context.func_list[base_func_id as usize];
+                    let base_func = &context.func_list[base_func_id];
                     match base_func.local_names.iter().position(|x| x == name) {
                         Some(i) => {
-                            self.upvalue_names.push((
-                                name.clone(),
-                                base_func_count,
-                                i.try_into().unwrap(),
-                            ));
+                            self.upvalue_names.push((name.clone(), base_func_count, i));
                             break match kind {
-                                LoadStore::Load => OPCode::LoadUpvalue(
-                                    (self.upvalue_names.len() - 1).try_into().unwrap(),
-                                ),
-                                LoadStore::Store => OPCode::StoreUpvalue(
-                                    (self.upvalue_names.len() - 1).try_into().unwrap(),
-                                ),
+                                LoadStore::Load => {
+                                    OPCode::LoadUpvalue(self.upvalue_names.len() - 1)
+                                }
+                                LoadStore::Store => {
+                                    OPCode::StoreUpvalue(self.upvalue_names.len() - 1)
+                                }
                             };
                         }
                         None => (),
@@ -403,22 +398,22 @@ impl Function {
         }
     }
 
-    fn gen_code(&mut self, context: &mut Context) {
+    fn gen_code(&mut self, context: &mut Context) -> LResult<()> {
         for param in self.params.clone() {
             self.add_local_name(&param);
         }
 
-        let t = &mut self.gen_stmt(self.code.clone().unwrap().to_stmt(), context);
+        let t = &mut self.gen_stmt(self.code.clone().to_stmt(), context)?;
         self.code_list.append(t);
-        if *self.code_list.last().unwrap() != OPCode::Return {
+        if *self.code_list.last().unwrap_or(&OPCode::Pop) != OPCode::Return {
             self.code_list
                 .push(OPCode::LoadConst(context.add_const(LucylData::Null)));
             self.code_list.push(OPCode::Return);
         }
-        self.code = None;
+        Ok(())
     }
 
-    fn gen_expr(&mut self, ast_node: Expr, context: &mut Context) -> Vec<OPCode> {
+    fn gen_expr(&mut self, ast_node: Expr, context: &mut Context) -> LResult<Vec<OPCode>> {
         let mut code_list = Vec::new();
         match ast_node.kind {
             ExprKind::Lit(lit) => code_list.push(OPCode::LoadConst(
@@ -431,8 +426,8 @@ impl Function {
                 is_closure,
             } => {
                 let func = Function::new(
-                    Some(body),
-                    context.func_list.len().try_into().unwrap(),
+                    body,
+                    context.func_list.len(),
                     Some(self.function_id),
                     {
                         let mut temp = Vec::new();
@@ -457,13 +452,13 @@ impl Function {
                     end: _,
                 } in properties
                 {
-                    code_list.append(&mut self.gen_expr(*key, context));
-                    code_list.append(&mut self.gen_expr(*value, context));
+                    code_list.append(&mut self.gen_expr(*key, context)?);
+                    code_list.append(&mut self.gen_expr(*value, context)?);
                 }
-                code_list.push(OPCode::BuildTable(temp.try_into().unwrap()));
+                code_list.push(OPCode::BuildTable(temp));
             }
             ExprKind::Unary { operator, argument } => {
-                code_list.append(&mut self.gen_expr(*argument, context));
+                code_list.append(&mut self.gen_expr(*argument, context)?);
                 code_list.push(OPCode::from_un_op(operator));
             }
             ExprKind::Binary {
@@ -473,22 +468,22 @@ impl Function {
             } => match operator {
                 BinOp::And => {
                     let label = context.get_jump_target();
-                    code_list.append(&mut self.gen_expr(*left, context));
+                    code_list.append(&mut self.gen_expr(*left, context)?);
                     code_list.push(OPCode::JumpIfFalseOrPop(label));
-                    code_list.append(&mut self.gen_expr(*right, context));
+                    code_list.append(&mut self.gen_expr(*right, context)?);
                     code_list.push(OPCode::JumpTarget(label));
                 }
                 BinOp::Or => {
                     let label = context.get_jump_target();
-                    code_list.append(&mut self.gen_expr(*left, context));
+                    code_list.append(&mut self.gen_expr(*left, context)?);
                     code_list.push(OPCode::JumpIfTureOrPop(label));
-                    code_list.append(&mut self.gen_expr(*right, context));
+                    code_list.append(&mut self.gen_expr(*right, context)?);
                     code_list.push(OPCode::JumpTarget(label));
                 }
                 operator @ _ => {
-                    code_list.append(&mut self.gen_expr(*left, context));
-                    code_list.append(&mut self.gen_expr(*right, context));
-                    code_list.push(OPCode::from_bin_op(operator));
+                    code_list.append(&mut self.gen_expr(*left, context)?);
+                    code_list.append(&mut self.gen_expr(*right, context)?);
+                    code_list.push(OPCode::from_bin_op(operator)?);
                 }
             },
             ExprKind::Member {
@@ -496,10 +491,10 @@ impl Function {
                 property,
                 kind,
             } => {
-                code_list.append(&mut self.gen_expr(*table, context));
+                code_list.append(&mut self.gen_expr(*table, context)?);
                 match kind {
                     MemberExprKind::OpenBracket => {
-                        code_list.append(&mut self.gen_expr(*property, context));
+                        code_list.append(&mut self.gen_expr(*property, context)?);
                         code_list.push(OPCode::GetItem);
                     }
                     MemberExprKind::Dot | MemberExprKind::DoubleColon => {
@@ -509,14 +504,14 @@ impl Function {
                                     context.add_const(LucylData::Str(ident.name)),
                                 ));
                             }
-                            _ => panic!(),
+                            _ => return Err(LucyError::CodegenError(CodegenErrorKind::IllegalAst)),
                         }
                         code_list.push(OPCode::GetAttr);
                     }
                 }
             }
             ExprKind::Call { callee, arguments } => {
-                let temp: u32;
+                let temp: usize;
                 match callee.kind.clone() {
                     ExprKind::Member {
                         table,
@@ -524,7 +519,7 @@ impl Function {
                         kind,
                     } => {
                         if kind == MemberExprKind::Dot {
-                            code_list.append(&mut self.gen_expr(*table, context));
+                            code_list.append(&mut self.gen_expr(*table, context)?);
                             code_list.push(OPCode::Dup);
                             match property.kind {
                                 ExprKind::Ident(ident) => {
@@ -532,31 +527,35 @@ impl Function {
                                         context.add_const(LucylData::Str(ident.name)),
                                     ));
                                 }
-                                _ => panic!(),
+                                _ => {
+                                    return Err(LucyError::CodegenError(
+                                        CodegenErrorKind::IllegalAst,
+                                    ))
+                                }
                             }
                             code_list.push(OPCode::GetAttr);
                             code_list.push(OPCode::Rot);
-                            temp = (arguments.len() + 1).try_into().unwrap();
+                            temp = arguments.len() + 1;
                         } else {
-                            code_list.append(&mut self.gen_expr(*callee, context));
-                            temp = arguments.len().try_into().unwrap();
+                            code_list.append(&mut self.gen_expr(*callee, context)?);
+                            temp = arguments.len();
                         }
                     }
                     _ => {
-                        code_list.append(&mut self.gen_expr(*callee, context));
-                        temp = arguments.len().try_into().unwrap();
+                        code_list.append(&mut self.gen_expr(*callee, context)?);
+                        temp = arguments.len();
                     }
                 }
                 for arg in arguments {
-                    code_list.append(&mut self.gen_expr(arg, context));
+                    code_list.append(&mut self.gen_expr(arg, context)?);
                 }
                 code_list.push(OPCode::Call(temp));
             }
         }
-        code_list
+        Ok(code_list)
     }
 
-    fn gen_stmt(&mut self, ast_node: Stmt, context: &mut Context) -> Vec<OPCode> {
+    fn gen_stmt(&mut self, ast_node: Stmt, context: &mut Context) -> LResult<Vec<OPCode>> {
         let mut code_list = Vec::new();
         match ast_node.kind {
             StmtKind::If {
@@ -578,18 +577,18 @@ impl Function {
                 if let Some(alternate) = alternate {
                     let false_label = context.get_jump_target();
                     let end_label = context.get_jump_target();
-                    code_list.append(&mut self.gen_expr(*test, context));
+                    code_list.append(&mut self.gen_expr(*test, context)?);
                     code_list.push(OPCode::JumpIfFalse(false_label));
-                    code_list.append(&mut self.gen_stmt(consequent.to_stmt(), context));
+                    code_list.append(&mut self.gen_stmt(consequent.to_stmt(), context)?);
                     code_list.push(OPCode::Jump(end_label));
                     code_list.push(OPCode::JumpTarget(false_label));
-                    code_list.append(&mut self.gen_stmt(alternate.to_stmt(), context));
+                    code_list.append(&mut self.gen_stmt(alternate.to_stmt(), context)?);
                     code_list.push(OPCode::JumpTarget(end_label));
                 } else {
                     let end_label = context.get_jump_target();
-                    code_list.append(&mut self.gen_expr(*test, context));
+                    code_list.append(&mut self.gen_expr(*test, context)?);
                     code_list.push(OPCode::JumpIfFalse(end_label));
-                    code_list.append(&mut self.gen_stmt(consequent.to_stmt(), context));
+                    code_list.append(&mut self.gen_stmt(consequent.to_stmt(), context)?);
                     code_list.push(OPCode::JumpTarget(end_label));
                 }
             }
@@ -600,7 +599,7 @@ impl Function {
                 self.break_stack.push(break_label);
 
                 code_list.push(OPCode::JumpTarget(continue_label));
-                code_list.append(&mut self.gen_stmt(body.to_stmt(), context));
+                code_list.append(&mut self.gen_stmt(body.to_stmt(), context)?);
                 code_list.push(OPCode::Jump(continue_label));
                 code_list.push(OPCode::JumpTarget(break_label));
 
@@ -614,9 +613,9 @@ impl Function {
                 self.break_stack.push(break_label);
 
                 code_list.push(OPCode::JumpTarget(continue_label));
-                code_list.append(&mut self.gen_expr(*test, context));
+                code_list.append(&mut self.gen_expr(*test, context)?);
                 code_list.push(OPCode::JumpIfFalse(break_label));
-                code_list.append(&mut self.gen_stmt(body.to_stmt(), context));
+                code_list.append(&mut self.gen_stmt(body.to_stmt(), context)?);
                 code_list.push(OPCode::Jump(continue_label));
                 code_list.push(OPCode::JumpTarget(break_label));
 
@@ -629,11 +628,11 @@ impl Function {
                 self.continue_stack.push(continue_label);
                 self.break_stack.push(break_label);
 
-                code_list.append(&mut self.gen_expr(*right, context));
+                code_list.append(&mut self.gen_expr(*right, context)?);
                 code_list.push(OPCode::JumpTarget(continue_label));
                 code_list.push(OPCode::For(break_label));
                 code_list.push(OPCode::StoreLocal(self.add_local_name(&left.name)));
-                code_list.append(&mut self.gen_stmt(body.to_stmt(), context));
+                code_list.append(&mut self.gen_stmt(body.to_stmt(), context)?);
                 code_list.push(OPCode::Jump(continue_label));
                 code_list.push(OPCode::JumpTarget(break_label));
                 code_list.push(OPCode::Pop);
@@ -642,13 +641,21 @@ impl Function {
                 self.break_stack.pop();
             }
             StmtKind::Break => {
-                code_list.push(OPCode::Jump(*self.break_stack.last().unwrap()));
+                code_list.push(OPCode::Jump(match self.break_stack.last() {
+                    Some(v) => *v,
+                    None => return Err(LucyError::CodegenError(CodegenErrorKind::BreakOutOfLoop)),
+                }));
             }
             StmtKind::Continue => {
-                code_list.push(OPCode::Jump(*self.continue_stack.last().unwrap()));
+                code_list.push(OPCode::Jump(match self.continue_stack.last() {
+                    Some(v) => *v,
+                    None => {
+                        return Err(LucyError::CodegenError(CodegenErrorKind::ContinueOutOfLoop))
+                    }
+                }));
             }
             StmtKind::Return { argument } => {
-                code_list.append(&mut self.gen_expr(*argument, context));
+                code_list.append(&mut self.gen_expr(*argument, context)?);
                 code_list.push(OPCode::Return);
             }
             StmtKind::Global { arguments } => {
@@ -684,7 +691,7 @@ impl Function {
             }
             StmtKind::Assign { left, right } => match left.kind.clone() {
                 ExprKind::Ident(ident) => {
-                    code_list.append(&mut self.gen_expr(*right, context));
+                    code_list.append(&mut self.gen_expr(*right, context)?);
                     code_list.push(self.get_store(&ident.name, context));
                 }
                 ExprKind::Member {
@@ -692,15 +699,15 @@ impl Function {
                     property: _,
                     kind,
                 } => {
-                    code_list.append(&mut self.gen_expr(*left, context));
+                    code_list.append(&mut self.gen_expr(*left, context)?);
                     code_list.pop();
-                    code_list.append(&mut self.gen_expr(*right, context));
+                    code_list.append(&mut self.gen_expr(*right, context)?);
                     code_list.push(match kind {
                         MemberExprKind::OpenBracket => OPCode::SetItem,
                         MemberExprKind::Dot | MemberExprKind::DoubleColon => OPCode::SetAttr,
                     });
                 }
-                _ => panic!(),
+                _ => return Err(LucyError::CodegenError(CodegenErrorKind::IllegalAst)),
             },
             StmtKind::AssignOp {
                 operator,
@@ -708,9 +715,9 @@ impl Function {
                 right,
             } => match left.kind.clone() {
                 ExprKind::Ident(ident) => {
-                    code_list.append(&mut self.gen_expr(*left, context));
-                    code_list.append(&mut self.gen_expr(*right, context));
-                    code_list.push(OPCode::from_bin_op(operator));
+                    code_list.append(&mut self.gen_expr(*left, context)?);
+                    code_list.append(&mut self.gen_expr(*right, context)?);
+                    code_list.push(OPCode::from_bin_op(operator)?);
                     code_list.push(self.get_store(&ident.name, context));
                 }
                 ExprKind::Member {
@@ -718,29 +725,32 @@ impl Function {
                     property: _,
                     kind,
                 } => {
-                    code_list.append(&mut self.gen_expr(*left, context));
-                    let temp = code_list.pop().unwrap();
+                    code_list.append(&mut self.gen_expr(*left, context)?);
+                    let temp = match code_list.pop() {
+                        Some(v) => v,
+                        None => return Err(LucyError::CodegenError(CodegenErrorKind::IllegalAst)),
+                    };
                     code_list.push(OPCode::DupTwo);
                     code_list.push(temp);
-                    code_list.append(&mut self.gen_expr(*right, context));
-                    code_list.push(OPCode::from_bin_op(operator));
+                    code_list.append(&mut self.gen_expr(*right, context)?);
+                    code_list.push(OPCode::from_bin_op(operator)?);
                     code_list.push(match kind {
                         MemberExprKind::OpenBracket => OPCode::SetItem,
                         MemberExprKind::Dot | MemberExprKind::DoubleColon => OPCode::SetAttr,
                     });
                 }
-                _ => panic!(),
+                _ => return Err(LucyError::CodegenError(CodegenErrorKind::IllegalAst)),
             },
             StmtKind::Block(block) => {
                 for stmt in block.body {
-                    code_list.append(&mut self.gen_stmt(stmt, context));
+                    code_list.append(&mut self.gen_stmt(stmt, context)?);
                 }
             }
             StmtKind::Expr(expr) => {
-                code_list.append(&mut self.gen_expr(*expr, context));
+                code_list.append(&mut self.gen_expr(*expr, context)?);
                 code_list.push(OPCode::Pop);
             }
         }
-        code_list
+        Ok(code_list)
     }
 }

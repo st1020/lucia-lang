@@ -2,6 +2,8 @@ use std::str::Chars;
 
 use unicode_xid;
 
+use crate::errors::LexerErrorKind;
+
 use self::LiteralValue::*;
 use self::TokenKind::*;
 
@@ -96,7 +98,7 @@ impl<'a> Cursor<'a> {
     }
 }
 
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug, Copy, PartialEq)]
 pub struct Location {
     pub lineno: u32,
     pub column: u32,
@@ -106,7 +108,7 @@ pub struct Location {
 /// Parsed token.
 /// It doesn't contain information about data that has been parsed,
 /// only the type of the token and its size.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Token {
     pub kind: TokenKind,
     pub start: Location,
@@ -120,7 +122,7 @@ impl Token {
 
     pub fn dummy() -> Self {
         Token {
-            kind: Unknown,
+            kind: Unknown(None),
             start: Location {
                 lineno: 1,
                 column: 1,
@@ -136,7 +138,7 @@ impl Token {
 }
 
 /// Enum representing common lexeme types.
-#[derive(Clone, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum TokenKind {
     // Multi-char tokens:
     /// "if"
@@ -267,10 +269,10 @@ pub enum TokenKind {
     /// "12", "1.0e-40", ""123"". See `LiteralKind` for more details.
     Literal(LiteralValue),
     /// Unknown token, not expected by the lexer, e.g. "№"
-    Unknown,
+    Unknown(Option<LexerErrorKind>),
 }
 
-#[derive(Clone, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum LiteralValue {
     /// "null"
     Null,
@@ -303,11 +305,12 @@ pub fn tokenize(input: &str) -> impl Iterator<Item = Token> + '_ {
     std::iter::from_fn(move || loop {
         if cursor.is_eof() {
             break None;
-        }
-        let t = cursor.advance_token();
-        match t.kind {
-            LineComment | BlockComment | Whitespace => (),
-            _ => break Some(t),
+        } else {
+            let t = cursor.advance_token();
+            match t.kind {
+                LineComment | BlockComment | Whitespace => (),
+                _ => break Some(t),
+            }
         }
     })
 }
@@ -372,7 +375,7 @@ pub fn is_ident(string: &str) -> bool {
 impl Cursor<'_> {
     pub fn advance_token(&mut self) -> Token {
         let start = self.location();
-        let first_char = self.bump().unwrap();
+        let first_char = self.bump().unwrap_or(EOF_CHAR);
         let token_kind = match first_char {
             // Slash, comment or block comment.
             '/' => match self.first() {
@@ -390,10 +393,10 @@ impl Cursor<'_> {
             c if is_id_start(c) => self.ident_or_reserved_word(c),
 
             // Numeric literal.
-            c @ '0'..='9' => Literal(self.number(c)),
+            c @ '0'..='9' => self.number(c),
 
             // String literal.
-            c @ ('"' | '\'') => Literal(self.string(c)),
+            c @ ('"' | '\'') => self.string(c),
 
             // Two-char tokens.
             ':' if self.first() == ':' => {
@@ -460,7 +463,7 @@ impl Cursor<'_> {
             '*' => Mul,
             '%' => Mod,
             '^' => Caret,
-            _ => Unknown,
+            _ => Unknown(None),
         };
         Token::new(token_kind, start, self.location())
     }
@@ -535,14 +538,14 @@ impl Cursor<'_> {
             "and" => And,
             "or" => Or,
             "func" => Func,
-            "null" => return Literal(Null),
-            "trur" => return Literal(Bool(true)),
-            "false" => return Literal(Bool(false)),
-            _ => return Ident(value),
+            "null" => Literal(Null),
+            "trur" => Literal(Bool(true)),
+            "false" => Literal(Bool(false)),
+            _ => Ident(value),
         }
     }
 
-    fn number(&mut self, first_digit: char) -> LiteralValue {
+    fn number(&mut self, first_digit: char) -> TokenKind {
         debug_assert!('0' <= self.prev() && self.prev() <= '9');
         let mut base = Base::Decimal;
         let mut value = String::new();
@@ -569,55 +572,52 @@ impl Cursor<'_> {
                     value.push('0');
                 }
                 // Just a 0.
-                _ => return Int(0),
+                _ => return Literal(Int(0)),
             };
         } else {
             value.push(first_digit);
         }
         loop {
-            match self.first() {
+            let t = self.first();
+            match t {
                 '_' => {
                     self.bump();
+                    continue;
                 }
                 '.' if base == Base::Decimal => {
                     if has_point {
-                        panic!()
+                        return Unknown(Some(LexerErrorKind::NumberFormatError));
                     }
                     has_point = true;
-                    value.push(self.bump().unwrap());
                 }
                 'e' | 'E' if base == Base::Decimal => {
                     if has_exponent {
-                        panic!()
+                        return Unknown(Some(LexerErrorKind::NumberFormatError));
                     }
                     has_exponent = true;
-                    value.push(self.bump().unwrap());
                 }
-                '0'..='1' if base == Base::Binary => {
-                    value.push(self.bump().unwrap());
-                }
-                '0'..='7' if base == Base::Octal => {
-                    value.push(self.bump().unwrap());
-                }
-                '0'..='9' if base == Base::Decimal => {
-                    value.push(self.bump().unwrap());
-                }
-                '0'..='9' | 'a'..='f' | 'A'..='F' if base == Base::Hexadecimal => {
-                    value.push(self.bump().unwrap());
-                }
+                '0'..='1' if base == Base::Binary => {}
+                '0'..='7' if base == Base::Octal => {}
+                '0'..='9' if base == Base::Decimal => {}
+                '0'..='9' | 'a'..='f' | 'A'..='F' if base == Base::Hexadecimal => {}
                 _ => break,
             }
+            value.push(t);
+            self.bump();
         }
 
         if has_point || has_exponent {
             // only support decimal float literal
             if base != Base::Decimal {
-                panic!()
+                return Unknown(Some(LexerErrorKind::NumberFormatError));
             } else {
-                Float(value.parse::<f64>().unwrap())
+                match value.parse::<f64>() {
+                    Ok(v) => Literal(Float(v)),
+                    Err(e) => Unknown(Some(LexerErrorKind::ParseFloatError(e))),
+                }
             }
         } else {
-            Int(i64::from_str_radix(
+            match i64::from_str_radix(
                 &value,
                 match base {
                     Base::Binary => 2,
@@ -625,39 +625,45 @@ impl Cursor<'_> {
                     Base::Hexadecimal => 16,
                     Base::Decimal => 10,
                 },
-            )
-            .unwrap())
+            ) {
+                Ok(v) => Literal(Int(v)),
+                Err(e) => Unknown(Some(LexerErrorKind::ParseIntError(e))),
+            }
         }
     }
 
-    fn string(&mut self, quoted: char) -> LiteralValue {
+    fn string(&mut self, quoted: char) -> TokenKind {
         debug_assert!(self.prev() == '"' || self.prev() == '\'');
         let mut value = String::new();
-        while let Some(c) = self.bump() {
-            if c == quoted {
-                break;
-            }
-            match c {
-                '\\' => {
-                    let c = match self.first() {
-                        '"' => '"',
-                        'n' => '\n',
-                        'r' => '\r',
-                        't' => '\t',
-                        '\\' => '\\',
-                        '\'' => '\'',
-                        '0' => '\0',
-                        c @ _ => {
-                            value.push('\\');
-                            c
-                        }
-                    };
-                    value.push(c);
-                    self.bump();
+        loop {
+            if let Some(c) = self.bump() {
+                if c == quoted {
+                    break;
                 }
-                _ => value.push(c),
+                match c {
+                    '\\' => {
+                        let c = match self.first() {
+                            '"' => '"',
+                            'n' => '\n',
+                            'r' => '\r',
+                            't' => '\t',
+                            '\\' => '\\',
+                            '\'' => '\'',
+                            '0' => '\0',
+                            c @ _ => {
+                                value.push('\\');
+                                c
+                            }
+                        };
+                        value.push(c);
+                        self.bump();
+                    }
+                    _ => value.push(c),
+                }
+            } else {
+                return Unknown(Some(LexerErrorKind::UnterminatedStringError));
             }
         }
-        Str(value)
+        Literal(Str(value))
     }
 }

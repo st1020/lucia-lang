@@ -288,7 +288,7 @@ impl IntoIterator for LucyTable {
 
 #[derive(Debug, Clone)]
 pub struct Closuer {
-    pub module_id: u32,
+    pub module_id: usize,
     pub function: Function,
     pub base_closuer: Option<NonNull<GCObject>>,
     pub variables: Vec<LucyValue>,

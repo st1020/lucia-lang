@@ -1,4 +1,5 @@
 use crate::ast::*;
+use crate::errors::{LResult, LucyError, ParserErrorKind};
 use crate::lexer::{LiteralValue, Token, TokenKind};
 
 pub struct Parser<'a> {
@@ -35,49 +36,49 @@ impl<'a> Parser<'a> {
         };
     }
 
-    pub fn expect(&self, t: TokenKind) {
+    pub fn expect(&self, t: TokenKind) -> LResult<()> {
         if self.token.kind != t {
             if self.is_eof {
-                panic!("Unexpect EOF");
+                Err(LucyError::ParserError(ParserErrorKind::UnexpectEOF))
             } else {
-                panic!("Expect token {:?} , but {:?} was given", t, self.token);
+                Err(LucyError::ParserError(ParserErrorKind::UnexpectToken {
+                    token: self.token.clone(),
+                    expect_token_kind: Some(t),
+                }))
             }
+        } else {
+            Ok(())
         }
     }
 
-    pub fn bump_expect(&mut self, t: TokenKind) {
-        self.bump();
-        self.expect(t);
-    }
-
-    pub fn parse(&mut self) -> Box<Block> {
-        Box::new(Block {
+    pub fn parse(&mut self) -> LResult<Box<Block>> {
+        Ok(Box::new(Block {
             start: self.token.start,
             body: {
                 let mut temp = Vec::new();
                 while !self.is_eof {
-                    temp.push(*self.parse_stmt());
+                    temp.push(*self.parse_stmt()?);
                 }
                 temp
             },
             end: self.prev_token.end,
-        })
+        }))
     }
 
-    fn parse_stmt(&mut self) -> Box<Stmt> {
-        Box::new(match self.token.kind {
+    fn parse_stmt(&mut self) -> LResult<Box<Stmt>> {
+        Ok(Box::new(match self.token.kind {
             TokenKind::If => Stmt {
                 start: self.token.start,
                 kind: StmtKind::If {
                     test: {
                         self.bump();
-                        self.parse_expr(1)
+                        self.parse_expr(1)?
                     },
-                    consequent: self.parse_block(),
+                    consequent: self.parse_block()?,
                     alternate: match self.token.kind {
                         TokenKind::Else => {
                             self.bump();
-                            Some(self.parse_block())
+                            Some(self.parse_block()?)
                         }
                         _ => None,
                     },
@@ -89,7 +90,7 @@ impl<'a> Parser<'a> {
                 kind: StmtKind::Loop {
                     body: {
                         self.bump();
-                        self.parse_block()
+                        self.parse_block()?
                     },
                 },
                 end: self.prev_token.end,
@@ -99,9 +100,9 @@ impl<'a> Parser<'a> {
                 kind: StmtKind::While {
                     test: {
                         self.bump();
-                        self.parse_expr(1)
+                        self.parse_expr(1)?
                     },
-                    body: self.parse_block(),
+                    body: self.parse_block()?,
                 },
                 end: self.prev_token.end,
             },
@@ -110,21 +111,22 @@ impl<'a> Parser<'a> {
                 kind: StmtKind::For {
                     left: {
                         self.bump();
-                        self.parse_ident()
+                        self.parse_ident()?
                     },
                     right: {
-                        self.expect(TokenKind::In);
+                        self.expect(TokenKind::In)?;
                         self.bump();
-                        self.parse_expr(1)
+                        self.parse_expr(1)?
                     },
-                    body: self.parse_block(),
+                    body: self.parse_block()?,
                 },
                 end: self.prev_token.end,
             },
             TokenKind::Break => Stmt {
                 start: self.token.start,
                 kind: {
-                    self.bump_expect(TokenKind::Semi);
+                    self.bump();
+                    self.expect(TokenKind::Semi)?;
                     self.bump();
                     StmtKind::Break
                 },
@@ -133,7 +135,8 @@ impl<'a> Parser<'a> {
             TokenKind::Continue => Stmt {
                 start: self.token.start,
                 kind: {
-                    self.bump_expect(TokenKind::Semi);
+                    self.bump();
+                    self.expect(TokenKind::Semi)?;
                     self.bump();
                     StmtKind::Continue
                 },
@@ -144,8 +147,8 @@ impl<'a> Parser<'a> {
                 kind: StmtKind::Return {
                     argument: {
                         self.bump();
-                        let temp = self.parse_expr(1);
-                        self.expect(TokenKind::Semi);
+                        let temp = self.parse_expr(1)?;
+                        self.expect(TokenKind::Semi)?;
                         self.bump();
                         temp
                     },
@@ -159,10 +162,10 @@ impl<'a> Parser<'a> {
                         let mut temp = Vec::new();
                         while self.token.kind != TokenKind::Semi {
                             self.bump();
-                            temp.push(*self.parse_ident());
+                            temp.push(*self.parse_ident()?);
                             match self.token.kind {
                                 TokenKind::Semi => break,
-                                _ => self.expect(TokenKind::Comma),
+                                _ => self.expect(TokenKind::Comma)?,
                             }
                         }
                         self.bump();
@@ -183,15 +186,16 @@ impl<'a> Parser<'a> {
                             TokenKind::Semi | TokenKind::As | TokenKind::OpenBrace => break,
                             TokenKind::Mul => {
                                 glob = true;
-                                self.bump_expect(TokenKind::Semi);
+                                self.bump();
+                                self.expect(TokenKind::Semi)?;
                                 break;
                             }
                             _ => {
-                                path.push(*self.parse_ident());
+                                path.push(*self.parse_ident()?);
                                 match self.token.kind {
                                     TokenKind::Semi | TokenKind::As | TokenKind::OpenBrace => break,
                                     _ => {
-                                        self.expect(TokenKind::DoubleColon);
+                                        self.expect(TokenKind::DoubleColon)?;
                                         self.bump();
                                     }
                                 };
@@ -200,16 +204,23 @@ impl<'a> Parser<'a> {
                     }
                     match self.token.kind {
                         TokenKind::Semi => {
-                            kind = if !glob {
-                                ImportKind::Simple(path.last().unwrap().clone())
-                            } else {
+                            kind = if glob {
                                 ImportKind::Glob
+                            } else {
+                                match path.last() {
+                                    Some(v) => ImportKind::Simple(v.clone()),
+                                    None => {
+                                        return Err(LucyError::ParserError(
+                                            ParserErrorKind::ParserImportStmtError,
+                                        ))
+                                    }
+                                }
                             };
                         }
                         TokenKind::As => {
                             self.bump();
-                            kind = ImportKind::Simple(*self.parse_ident());
-                            self.expect(TokenKind::Semi);
+                            kind = ImportKind::Simple(*self.parse_ident()?);
+                            self.expect(TokenKind::Semi)?;
                         }
                         TokenKind::OpenBrace => {
                             self.bump();
@@ -218,13 +229,13 @@ impl<'a> Parser<'a> {
                                 match self.token.kind {
                                     TokenKind::CloseBrace => break,
                                     TokenKind::Ident(_) => {
-                                        let t = *self.parse_ident();
+                                        let t = *self.parse_ident()?;
                                         temp.push((
                                             t.clone(),
                                             match self.token.kind {
                                                 TokenKind::As => {
                                                     self.bump();
-                                                    let t = *self.parse_ident();
+                                                    let t = *self.parse_ident()?;
                                                     t
                                                 }
                                                 _ => t,
@@ -233,18 +244,21 @@ impl<'a> Parser<'a> {
                                         if self.token.kind == TokenKind::CloseBrace {
                                             break;
                                         }
-                                        self.expect(TokenKind::Comma);
+                                        self.expect(TokenKind::Comma)?;
                                         self.bump()
                                     }
-                                    _ => self.expect(TokenKind::CloseBrace),
+                                    _ => self.expect(TokenKind::CloseBrace)?,
                                 }
                             }
                             kind = ImportKind::Nested(temp);
-                            self.bump_expect(TokenKind::Semi);
+                            self.bump();
+                            self.expect(TokenKind::Semi)?;
                         }
                         _ => {
-                            self.expect(TokenKind::Semi);
-                            panic!();
+                            self.expect(TokenKind::Semi)?;
+                            return Err(LucyError::ParserError(
+                                ParserErrorKind::ParserImportStmtError,
+                            ));
                         }
                     }
                     self.bump();
@@ -253,7 +267,7 @@ impl<'a> Parser<'a> {
                 end: self.prev_token.end,
             },
             TokenKind::OpenBrace => {
-                let temp = self.parse_block();
+                let temp = self.parse_block()?;
                 Stmt {
                     start: temp.start,
                     end: temp.end,
@@ -261,11 +275,24 @@ impl<'a> Parser<'a> {
                 }
             }
             _ => {
-                let ast_node = self.parse_expr(1);
+                let ast_node = self.parse_expr(1)?;
                 let temp = match self.token.kind.clone() {
                     TokenKind::Assign => {
+                        match ast_node.kind {
+                            ExprKind::Ident(_)
+                            | ExprKind::Member {
+                                table: _,
+                                property: _,
+                                kind: _,
+                            } => (),
+                            _ => {
+                                return Err(LucyError::ParserError(
+                                    ParserErrorKind::ParserAssignStmtError,
+                                ))
+                            }
+                        }
                         self.bump();
-                        let right = self.parse_expr(1);
+                        let right = self.parse_expr(1)?;
                         Stmt {
                             start: ast_node.start,
                             end: right.end,
@@ -280,13 +307,26 @@ impl<'a> Parser<'a> {
                     | TokenKind::MulAssign
                     | TokenKind::DivAssign
                     | TokenKind::ModAssign) => {
+                        match ast_node.kind {
+                            ExprKind::Ident(_)
+                            | ExprKind::Member {
+                                table: _,
+                                property: _,
+                                kind: _,
+                            } => (),
+                            _ => {
+                                return Err(LucyError::ParserError(
+                                    ParserErrorKind::ParserAssignStmtError,
+                                ))
+                            }
+                        }
                         self.bump();
-                        let right = self.parse_expr(1);
+                        let right = self.parse_expr(1)?;
                         Stmt {
                             start: ast_node.start,
                             end: right.end,
                             kind: StmtKind::AssignOp {
-                                operator: BinOp::from_assign_token(&token_kind),
+                                operator: BinOp::from_assign_token(&token_kind)?,
                                 left: ast_node,
                                 right,
                             },
@@ -298,33 +338,33 @@ impl<'a> Parser<'a> {
                         kind: StmtKind::Expr(ast_node),
                     },
                 };
-                self.expect(TokenKind::Semi);
+                self.expect(TokenKind::Semi)?;
                 self.bump();
                 temp
             }
-        })
+        }))
     }
 
-    fn parse_block(&mut self) -> Box<Block> {
-        self.expect(TokenKind::OpenBrace);
-        Box::new(Block {
+    fn parse_block(&mut self) -> LResult<Box<Block>> {
+        self.expect(TokenKind::OpenBrace)?;
+        Ok(Box::new(Block {
             start: self.token.start,
             body: {
                 let mut temp = Vec::new();
                 self.bump();
                 while self.token.kind != TokenKind::CloseBrace {
-                    temp.push(*self.parse_stmt());
+                    temp.push(*self.parse_stmt()?);
                 }
                 self.bump();
                 temp
             },
             end: self.prev_token.end,
-        })
+        }))
     }
 
-    fn parse_expr(&mut self, min_precedence: u32) -> Box<Expr> {
+    fn parse_expr(&mut self, min_precedence: u32) -> LResult<Box<Expr>> {
         let start = self.token.start;
-        let mut left = self.parse_expr_unary();
+        let mut left = self.parse_expr_unary()?;
         loop {
             let op_info = BinOp::from_token(&self.token.kind);
             match op_info {
@@ -334,7 +374,7 @@ impl<'a> Parser<'a> {
                         break;
                     }
                     self.bump();
-                    let right = self.parse_expr(precedence + 1);
+                    let right = self.parse_expr(precedence + 1)?;
                     left = Box::new(Expr {
                         kind: ExprKind::Binary {
                             operator,
@@ -348,10 +388,10 @@ impl<'a> Parser<'a> {
                 Err(_) => break,
             }
         }
-        left
+        Ok(left)
     }
 
-    fn parse_expr_unary(&mut self) -> Box<Expr> {
+    fn parse_expr_unary(&mut self) -> LResult<Box<Expr>> {
         match self.token.kind {
             TokenKind::Literal(_)
             | TokenKind::Ident(_)
@@ -361,24 +401,27 @@ impl<'a> Parser<'a> {
             | TokenKind::OpenParen => self.parse_expr_primary(),
             TokenKind::Not | TokenKind::Sub => {
                 let start = self.token.start;
-                let operator = UnOp::from_token(&self.token.kind).unwrap();
+                let operator = UnOp::from_token(&self.token.kind)?;
                 self.bump();
-                Box::new(Expr {
+                Ok(Box::new(Expr {
                     start,
                     kind: ExprKind::Unary {
                         operator,
-                        argument: self.parse_expr_primary(),
+                        argument: self.parse_expr_primary()?,
                     },
                     end: self.prev_token.end,
-                })
+                }))
             }
-            _ => panic!("Unexpect token: {:?}", self.token),
+            _ => Err(LucyError::ParserError(ParserErrorKind::UnexpectToken {
+                token: self.token.clone(),
+                expect_token_kind: None,
+            })),
         }
     }
 
-    fn parse_expr_primary(&mut self) -> Box<Expr> {
+    fn parse_expr_primary(&mut self) -> LResult<Box<Expr>> {
         let start = self.token.start;
-        let mut ast_node = self.parse_expr_atom();
+        let mut ast_node = self.parse_expr_atom()?;
         loop {
             match &self.token.kind {
                 TokenKind::OpenParen => {
@@ -389,11 +432,11 @@ impl<'a> Parser<'a> {
                                 let mut temp = Vec::new();
                                 self.bump();
                                 while self.token.kind != TokenKind::CloseParen {
-                                    temp.push(*self.parse_expr(1));
+                                    temp.push(*self.parse_expr(1)?);
                                     if self.token.kind == TokenKind::CloseParen {
                                         break;
                                     }
-                                    self.expect(TokenKind::Comma);
+                                    self.expect(TokenKind::Comma)?;
                                     self.bump()
                                 }
                                 temp
@@ -411,23 +454,23 @@ impl<'a> Parser<'a> {
                             kind: MemberExprKind::OpenBracket,
                             property: {
                                 self.bump();
-                                self.parse_expr(1)
+                                self.parse_expr(1)?
                             },
                         },
                         start,
                         end: self.prev_token.end,
                     });
-                    self.expect(TokenKind::CloseBracket);
+                    self.expect(TokenKind::CloseBracket)?;
                     self.bump()
                 }
                 TokenKind::Dot | TokenKind::DoubleColon => {
                     ast_node = Box::new(Expr {
                         kind: ExprKind::Member {
                             table: ast_node,
-                            kind: MemberExprKind::from_token(&self.token.kind).unwrap(),
+                            kind: MemberExprKind::from_token(&self.token.kind)?,
                             property: {
                                 self.bump();
-                                self.parse_expr_ident()
+                                self.parse_expr_ident()?
                             },
                         },
                         start,
@@ -437,17 +480,17 @@ impl<'a> Parser<'a> {
                 _ => break,
             }
         }
-        ast_node
+        Ok(ast_node)
     }
 
-    fn parse_expr_atom(&mut self) -> Box<Expr> {
+    fn parse_expr_atom(&mut self) -> LResult<Box<Expr>> {
         match &self.token.kind {
             TokenKind::OpenParen => {
                 self.bump();
-                let temp = self.parse_expr(1);
-                self.expect(TokenKind::CloseParen);
+                let temp = self.parse_expr(1)?;
+                self.expect(TokenKind::CloseParen)?;
                 self.bump();
-                temp
+                Ok(temp)
             }
             TokenKind::Literal(v) => {
                 let temp = Box::new(Expr {
@@ -460,26 +503,29 @@ impl<'a> Parser<'a> {
                     end: self.token.end,
                 });
                 self.bump();
-                temp
+                Ok(temp)
             }
             TokenKind::Ident(_) => self.parse_expr_ident(),
             TokenKind::OpenBrace => self.parse_expr_table(),
             TokenKind::Func | TokenKind::VBar => self.parse_expr_func(),
-            _ => panic!("Unexpect token: {:?}", self.token),
+            _ => Err(LucyError::ParserError(ParserErrorKind::UnexpectToken {
+                token: self.token.clone(),
+                expect_token_kind: None,
+            })),
         }
     }
 
-    fn parse_expr_ident(&mut self) -> Box<Expr> {
-        let temp = self.parse_ident();
-        Box::new(Expr {
+    fn parse_expr_ident(&mut self) -> LResult<Box<Expr>> {
+        let temp = self.parse_ident()?;
+        Ok(Box::new(Expr {
             start: temp.start,
             end: temp.end,
             kind: ExprKind::Ident(temp),
-        })
+        }))
     }
 
-    fn parse_expr_table(&mut self) -> Box<Expr> {
-        Box::new(Expr {
+    fn parse_expr_table(&mut self) -> LResult<Box<Expr>> {
+        Ok(Box::new(Expr {
             start: self.token.start,
             kind: ExprKind::Table {
                 properties: {
@@ -488,13 +534,13 @@ impl<'a> Parser<'a> {
                     self.bump();
                     while self.token.kind != TokenKind::CloseBrace {
                         let start = self.token.start;
-                        let temp_expr = self.parse_expr(1);
+                        let temp_expr = self.parse_expr(1)?;
                         let key: Box<Expr>;
                         let value: Box<Expr>;
                         if self.token.kind == TokenKind::Colon {
                             key = temp_expr;
                             self.bump();
-                            value = self.parse_expr(1);
+                            value = self.parse_expr(1)?;
                         } else {
                             key = Box::new(Expr {
                                 kind: ExprKind::Lit(Box::new(Lit {
@@ -517,7 +563,7 @@ impl<'a> Parser<'a> {
                         if self.token.kind == TokenKind::CloseBrace {
                             break;
                         }
-                        self.expect(TokenKind::Comma);
+                        self.expect(TokenKind::Comma)?;
                         self.bump();
                     }
                     self.bump();
@@ -525,18 +571,19 @@ impl<'a> Parser<'a> {
                 },
             },
             end: self.prev_token.end,
-        })
+        }))
     }
 
-    fn parse_expr_func(&mut self) -> Box<Expr> {
+    fn parse_expr_func(&mut self) -> LResult<Box<Expr>> {
         let end_token;
-        Box::new(Expr {
+        Ok(Box::new(Expr {
             start: self.token.start,
             kind: ExprKind::Function {
                 is_closure: {
                     match self.token.kind {
                         TokenKind::Func => {
-                            self.bump_expect(TokenKind::OpenParen);
+                            self.bump();
+                            self.expect(TokenKind::OpenParen)?;
                             end_token = TokenKind::CloseParen;
                             false
                         }
@@ -544,30 +591,35 @@ impl<'a> Parser<'a> {
                             end_token = TokenKind::VBar;
                             true
                         }
-                        _ => panic!("Unexpect token: {:?}", self.token),
+                        _ => {
+                            return Err(LucyError::ParserError(ParserErrorKind::UnexpectToken {
+                                token: self.token.clone(),
+                                expect_token_kind: None,
+                            }))
+                        }
                     }
                 },
                 params: {
                     let mut temp = Vec::new();
                     self.bump();
                     while self.token.kind != end_token {
-                        temp.push(*self.parse_ident());
+                        temp.push(*self.parse_ident()?);
                         if self.token.kind == end_token {
                             break;
                         }
-                        self.expect(TokenKind::Comma);
+                        self.expect(TokenKind::Comma)?;
                         self.bump()
                     }
                     self.bump();
                     temp
                 },
-                body: self.parse_block(),
+                body: self.parse_block()?,
             },
             end: self.prev_token.end,
-        })
+        }))
     }
 
-    fn parse_ident(&mut self) -> Box<Ident> {
+    fn parse_ident(&mut self) -> LResult<Box<Ident>> {
         match &self.token.kind {
             TokenKind::Ident(v) => {
                 let temp = Ident {
@@ -576,9 +628,12 @@ impl<'a> Parser<'a> {
                     end: self.token.end,
                 };
                 self.bump();
-                Box::new(temp)
+                Ok(Box::new(temp))
             }
-            _ => panic!("Expect token Ident , but {:?} was given", self.token),
+            _ => Err(LucyError::ParserError(ParserErrorKind::UnexpectToken {
+                token: self.token.clone(),
+                expect_token_kind: None,
+            })),
         }
     }
 }

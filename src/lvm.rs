@@ -12,7 +12,9 @@ use crate::{lexer, parser};
 
 macro_rules! str_to_program {
     ($input:expr) => {
-        parser::Parser::new(&mut lexer::tokenize($input)).parse()
+        parser::Parser::new(&mut lexer::tokenize($input))
+            .parse()
+            .unwrap()
     };
 }
 
@@ -25,7 +27,7 @@ macro_rules! str_to_value {
 
 #[derive(Debug, Clone)]
 pub struct Frame {
-    pc: u32,
+    pc: usize,
     closuer: *mut GCObject,
     operate_stack: Vec<LucyValue>,
     prev_frame: Option<NonNull<Frame>>,
@@ -37,12 +39,12 @@ impl Frame {
         closuer: *mut GCObject,
         lvm: *mut Lvm,
         prev_frame: Option<NonNull<Frame>>,
-        stack_size: u32,
+        stack_size: usize,
     ) -> Self {
         Frame {
             pc: 0,
             closuer,
-            operate_stack: Vec::with_capacity(stack_size.try_into().unwrap()),
+            operate_stack: Vec::with_capacity(stack_size),
             prev_frame,
             lvm,
         }
@@ -238,9 +240,9 @@ impl Frame {
                             path.push(v);
                             path.set_extension("lucy");
                             let input_file = fs::read_to_string(path).expect("Read file error!");
-                            lvm.module_list.push(gen_code(str_to_program!(&input_file)));
-                            let module =
-                                lvm.run_module((lvm.module_list.len() - 1).try_into().unwrap());
+                            lvm.module_list
+                                .push(gen_code(str_to_program!(&input_file)).unwrap());
+                            let module = lvm.run_module(lvm.module_list.len() - 1);
                             match <&LucyTable>::try_from(module) {
                                 Ok(_) => self.operate_stack.push(module),
                                 Err(_) => panic!("Import error"),
@@ -478,8 +480,8 @@ impl Frame {
         }
     }
 
-    fn call(&mut self, arg_num: u32, pop: bool) {
-        let mut arguments = Vec::with_capacity(arg_num.try_into().unwrap());
+    fn call(&mut self, arg_num: usize, pop: bool) {
+        let mut arguments = Vec::with_capacity(arg_num);
         for _ in 0..arg_num {
             arguments.push(self.operate_stack.pop().unwrap());
         }
@@ -501,7 +503,7 @@ impl Frame {
                 }
                 _ => panic!(),
             };
-            if v.function.params.len() != arg_num.try_into().unwrap() {
+            if v.function.params.len() != arg_num {
                 panic!()
             }
             for i in 0..v.function.params.len() {
@@ -548,14 +550,14 @@ impl Lvm {
     }
 
     pub fn from_str(input: &str) -> Self {
-        Lvm::new(gen_code(str_to_program!(input)))
+        Lvm::new(gen_code(str_to_program!(input)).unwrap())
     }
 
     pub fn run(&mut self) -> LucyValue {
         self.run_module(0)
     }
 
-    pub fn run_module(&mut self, module_id: u32) -> LucyValue {
+    pub fn run_module(&mut self, module_id: usize) -> LucyValue {
         let func = self.module_list[module_id as usize]
             .func_list
             .first()

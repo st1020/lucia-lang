@@ -21,8 +21,10 @@ fn temp() {
     return l['a'];
     ";
     let start = Instant::now();
-    let a = parser::Parser::new(&mut lexer::tokenize(input)).parse();
-    let b = codegen::gen_code(a);
+    let a = parser::Parser::new(&mut lexer::tokenize(input))
+        .parse()
+        .unwrap();
+    let b = codegen::gen_code(a).unwrap();
     // println!("{:#?}", b);
     // println!("{:?}", std::mem::size_of::<object::LucyValue>());
     let mut c = lvm::Lvm::new(b);
