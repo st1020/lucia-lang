@@ -722,7 +722,6 @@ impl FunctionBuilder {
                             ));
                             code_list.push(OPCode::StoreGlobal(self.add_global_name(&alias.name)));
                         }
-                        code_list.push(OPCode::Pop);
                     }
                     ImportKind::Glob => {
                         code_list.push(OPCode::ImportGlob);
