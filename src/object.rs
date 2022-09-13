@@ -3,7 +3,9 @@ use std::convert::{TryFrom, TryInto};
 use std::fmt::Debug;
 
 use crate::codegen::Function;
+use crate::errors::{LucyError, LvmErrorKind};
 use crate::lvm::Lvm;
+use crate::type_convert_error;
 
 #[derive(Clone, Copy)]
 pub enum LucyValue {
@@ -65,7 +67,7 @@ impl ToString for LucyValue {
 }
 
 macro_rules! impl_from_for_value {
-    ($ty:ty, $kind:tt) => {
+    ($ty:ty, $kind:tt, $type_name:expr) => {
         impl From<$ty> for LucyValue {
             fn from(value: $ty) -> Self {
                 LucyValue::$kind(value)
@@ -73,62 +75,62 @@ macro_rules! impl_from_for_value {
         }
 
         impl TryFrom<LucyValue> for $ty {
-            type Error = &'static str;
+            type Error = LucyError;
 
             fn try_from(value: LucyValue) -> Result<Self, Self::Error> {
                 match value {
                     LucyValue::$kind(v) => Ok(v),
-                    _ => Err("Type Error!"),
+                    _ => Err(type_convert_error!($type_name, value)),
                 }
             }
         }
     };
 }
 
-impl_from_for_value!(bool, Bool);
-impl_from_for_value!(i64, Int);
-impl_from_for_value!(f64, Float);
+impl_from_for_value!(bool, Bool, "Bool");
+impl_from_for_value!(i64, Int, "Int");
+impl_from_for_value!(f64, Float, "Float");
 
 impl TryFrom<LucyValue> for String {
-    type Error = &'static str;
+    type Error = LucyError;
 
     fn try_from(value: LucyValue) -> Result<Self, Self::Error> {
         match value {
             LucyValue::GCObject(v) => unsafe {
                 match &(*v).kind {
                     GCObjectKind::Str(v) => Ok(v.clone()),
-                    _ => Err("Type Error!"),
+                    _ => Err(type_convert_error!("String", value)),
                 }
             },
-            _ => Err("Type Error!"),
+            _ => Err(type_convert_error!("String", value)),
         }
     }
 }
 
 macro_rules! impl_try_from_value {
-    ($ty:ty, $kind:tt) => {
+    ($ty:ty, $kind:tt, $type_name:expr) => {
         impl TryFrom<LucyValue> for $ty {
-            type Error = &'static str;
+            type Error = LucyError;
 
             fn try_from(value: LucyValue) -> Result<Self, Self::Error> {
                 match value {
                     LucyValue::GCObject(v) => unsafe {
                         match &mut (*v).kind {
                             GCObjectKind::$kind(v) => Ok(v),
-                            _ => Err("Type Error!"),
+                            _ => Err(type_convert_error!($type_name, value)),
                         }
                     },
-                    _ => Err("Type Error!"),
+                    _ => Err(type_convert_error!($type_name, value)),
                 }
             }
         }
     };
 }
 
-impl_try_from_value!(&LucyTable, Table);
-impl_try_from_value!(&Closuer, Closuer);
-impl_try_from_value!(&mut LucyTable, Table);
-impl_try_from_value!(&mut Closuer, Closuer);
+impl_try_from_value!(&LucyTable, Table, "Table");
+impl_try_from_value!(&Closuer, Closuer, "Closuer");
+impl_try_from_value!(&mut LucyTable, Table, "Table");
+impl_try_from_value!(&mut Closuer, Closuer, "Closuer");
 
 pub enum GCObjectKind {
     Str(String),
@@ -303,5 +305,53 @@ impl PartialEq for Closuer {
 impl ToString for Closuer {
     fn to_string(&self) -> String {
         format!("function")
+    }
+}
+
+impl TryFrom<NonNull<GCObject>> for &Closuer {
+    type Error = LucyError;
+
+    fn try_from(value: NonNull<GCObject>) -> Result<Self, Self::Error> {
+        unsafe {
+            match &value.as_ref().kind {
+                GCObjectKind::Closuer(v) => Ok(v),
+                _ => Err(type_convert_error!(
+                    "Closuer",
+                    format!("{:?}", value.as_ref())
+                )),
+            }
+        }
+    }
+}
+
+impl TryFrom<NonNull<GCObject>> for &mut Closuer {
+    type Error = LucyError;
+
+    fn try_from(mut value: NonNull<GCObject>) -> Result<Self, Self::Error> {
+        unsafe {
+            match &mut value.as_mut().kind {
+                GCObjectKind::Closuer(v) => Ok(v),
+                _ => Err(type_convert_error!(
+                    "Closuer",
+                    format!("{:?}", value.as_ref())
+                )),
+            }
+        }
+    }
+}
+
+impl TryFrom<*mut GCObject> for &mut Closuer {
+    type Error = LucyError;
+
+    fn try_from(value: *mut GCObject) -> Result<Self, Self::Error> {
+        unsafe {
+            match &mut value.as_mut().unwrap().kind {
+                GCObjectKind::Closuer(v) => Ok(v),
+                _ => Err(type_convert_error!(
+                    "Closuer",
+                    format!("{:?}", value.as_ref())
+                )),
+            }
+        }
     }
 }

@@ -1,6 +1,9 @@
+use std::convert::TryFrom;
+
 use crate::ast::*;
 use crate::errors::{CodegenErrorKind, LResult, LucyError};
-use crate::lexer::LiteralValue;
+use crate::lexer::{tokenize, LiteralValue};
+use crate::parser::Parser;
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub enum LucylData {
@@ -249,6 +252,22 @@ impl From<Context> for Program {
             func_list: Vec::from_iter(value.func_list.iter().map(|x| Function::from(x.clone()))),
             const_list: value.const_list,
         }
+    }
+}
+
+impl TryFrom<&str> for Program {
+    type Error = LucyError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        gen_code(Parser::new(&mut tokenize(value)).parse()?)
+    }
+}
+
+impl TryFrom<&String> for Program {
+    type Error = LucyError;
+
+    fn try_from(value: &String) -> Result<Self, Self::Error> {
+        gen_code(Parser::new(&mut tokenize(value)).parse()?)
     }
 }
 

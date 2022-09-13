@@ -52,4 +52,10 @@ pub enum CodegenErrorKind {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum LvmErrorKind {}
+pub enum LvmErrorKind {
+    ProgramError,
+    ImportError,
+    BuildTableError,
+    TypeError(String),
+    RuntimeError(String),
+}
