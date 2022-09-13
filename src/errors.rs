@@ -32,8 +32,8 @@ pub enum LexerErrorKind {
 #[derive(Clone, Debug, PartialEq)]
 pub enum ParserErrorKind {
     UnexpectToken {
-        token: Token,
-        expect_token_kind: Option<TokenKind>,
+        token: Box<Token>,
+        expect_token_kind: Option<Box<TokenKind>>,
     },
     UnexpectEOF,
     ParserUnOpError,

@@ -42,8 +42,8 @@ impl<'a> Parser<'a> {
                 Err(LucyError::ParserError(ParserErrorKind::UnexpectEOF))
             } else {
                 Err(LucyError::ParserError(ParserErrorKind::UnexpectToken {
-                    token: self.token.clone(),
-                    expect_token_kind: Some(t),
+                    token: Box::new(self.token.clone()),
+                    expect_token_kind: Some(Box::new(t)),
                 }))
             }
         } else {
@@ -413,7 +413,7 @@ impl<'a> Parser<'a> {
                 }))
             }
             _ => Err(LucyError::ParserError(ParserErrorKind::UnexpectToken {
-                token: self.token.clone(),
+                token: Box::new(self.token.clone()),
                 expect_token_kind: None,
             })),
         }
@@ -509,7 +509,7 @@ impl<'a> Parser<'a> {
             TokenKind::OpenBrace => self.parse_expr_table(),
             TokenKind::Func | TokenKind::VBar => self.parse_expr_func(),
             _ => Err(LucyError::ParserError(ParserErrorKind::UnexpectToken {
-                token: self.token.clone(),
+                token: Box::new(self.token.clone()),
                 expect_token_kind: None,
             })),
         }
@@ -593,7 +593,7 @@ impl<'a> Parser<'a> {
                         }
                         _ => {
                             return Err(LucyError::ParserError(ParserErrorKind::UnexpectToken {
-                                token: self.token.clone(),
+                                token: Box::new(self.token.clone()),
                                 expect_token_kind: None,
                             }))
                         }
@@ -631,7 +631,7 @@ impl<'a> Parser<'a> {
                 Ok(Box::new(temp))
             }
             _ => Err(LucyError::ParserError(ParserErrorKind::UnexpectToken {
-                token: self.token.clone(),
+                token: Box::new(self.token.clone()),
                 expect_token_kind: None,
             })),
         }

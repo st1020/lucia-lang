@@ -4,14 +4,27 @@ use std::time::Instant;
 #[test]
 fn temp() -> errors::LResult<()> {
     let input = "
-    a = true;
-    return true;
+    import std::io::{println};
+    import std::table::{raw_get};
+    l = {
+        '__base__': {
+            'lll': 1,
+            '__setitem__': func (self, key, value) {
+                self.a = key;
+            },
+            '__getitem__': func (self, key) {
+                return 0;
+            },
+        },
+    };
+    l[1] = 2;
+    return l['a'];
     ";
     let start = Instant::now();
     let a = parser::Parser::new(&mut lexer::tokenize(input)).parse()?;
     let b = codegen::gen_code(a)?;
     // println!("{:#?}", b);
-    // println!("{:?}", std::mem::size_of::<object::LucyValue>());
+    println!("{:?}", std::mem::size_of::<errors::LucyError>());
     let mut c = lvm::Lvm::new(b);
     println!("{:?}", c.run());
     let duration = start.elapsed();
