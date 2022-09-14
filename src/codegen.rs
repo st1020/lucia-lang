@@ -1,9 +1,16 @@
 use std::convert::TryFrom;
 
 use crate::ast::*;
-use crate::errors::{CodegenErrorKind, LResult, LucyError};
+use crate::errors::{CodegenErrorKind, LResult, LucyError, SyntaxErrorKind};
 use crate::lexer::{tokenize, LiteralValue};
 use crate::parser::Parser;
+
+#[macro_export]
+macro_rules! codegen_error {
+    ($error_kind:expr) => {
+        LucyError::SyntaxError(SyntaxErrorKind::CodegenError($error_kind))
+    };
+}
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub enum LucylData {
@@ -104,7 +111,7 @@ impl OPCode {
             BinOp::Ge => OPCode::Ge,
             BinOp::Gt => OPCode::Gt,
             BinOp::Is => OPCode::Is,
-            _ => return Err(LucyError::CodegenError(CodegenErrorKind::IllegalAst)),
+            _ => return Err(codegen_error!(CodegenErrorKind::IllegalAst)),
         })
     }
 
@@ -564,7 +571,7 @@ impl FunctionBuilder {
                                     context.add_const(LucylData::Str(ident.name)),
                                 ));
                             }
-                            _ => return Err(LucyError::CodegenError(CodegenErrorKind::IllegalAst)),
+                            _ => return Err(codegen_error!(CodegenErrorKind::IllegalAst)),
                         }
                         code_list.push(OPCode::GetAttr);
                     }
@@ -587,11 +594,7 @@ impl FunctionBuilder {
                                         context.add_const(LucylData::Str(ident.name)),
                                     ));
                                 }
-                                _ => {
-                                    return Err(LucyError::CodegenError(
-                                        CodegenErrorKind::IllegalAst,
-                                    ))
-                                }
+                                _ => return Err(codegen_error!(CodegenErrorKind::IllegalAst)),
                             }
                             code_list.push(OPCode::GetAttr);
                             code_list.push(OPCode::Rot);
@@ -703,15 +706,13 @@ impl FunctionBuilder {
             StmtKind::Break => {
                 code_list.push(OPCode::Jump(match self.break_stack.last() {
                     Some(v) => *v,
-                    None => return Err(LucyError::CodegenError(CodegenErrorKind::BreakOutOfLoop)),
+                    None => return Err(codegen_error!(CodegenErrorKind::BreakOutOfLoop)),
                 }));
             }
             StmtKind::Continue => {
                 code_list.push(OPCode::Jump(match self.continue_stack.last() {
                     Some(v) => *v,
-                    None => {
-                        return Err(LucyError::CodegenError(CodegenErrorKind::ContinueOutOfLoop))
-                    }
+                    None => return Err(codegen_error!(CodegenErrorKind::ContinueOutOfLoop)),
                 }));
             }
             StmtKind::Return { argument } => {
@@ -766,7 +767,7 @@ impl FunctionBuilder {
                         MemberExprKind::Dot | MemberExprKind::DoubleColon => OPCode::SetAttr,
                     });
                 }
-                _ => return Err(LucyError::CodegenError(CodegenErrorKind::IllegalAst)),
+                _ => return Err(codegen_error!(CodegenErrorKind::IllegalAst)),
             },
             StmtKind::AssignOp {
                 operator,
@@ -787,7 +788,7 @@ impl FunctionBuilder {
                     code_list.append(&mut self.gen_expr(*left, context)?);
                     let temp = match code_list.pop() {
                         Some(v) => v,
-                        None => return Err(LucyError::CodegenError(CodegenErrorKind::IllegalAst)),
+                        None => return Err(codegen_error!(CodegenErrorKind::IllegalAst)),
                     };
                     code_list.push(OPCode::DupTwo);
                     code_list.push(temp);
@@ -798,7 +799,7 @@ impl FunctionBuilder {
                         MemberExprKind::Dot | MemberExprKind::DoubleColon => OPCode::SetAttr,
                     });
                 }
-                _ => return Err(LucyError::CodegenError(CodegenErrorKind::IllegalAst)),
+                _ => return Err(codegen_error!(CodegenErrorKind::IllegalAst)),
             },
             StmtKind::Block(block) => {
                 for stmt in block.body {

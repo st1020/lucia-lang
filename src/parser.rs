@@ -1,6 +1,13 @@
 use crate::ast::*;
-use crate::errors::{LResult, LucyError, ParserErrorKind};
+use crate::errors::{LResult, LucyError, ParserErrorKind, SyntaxErrorKind};
 use crate::lexer::{LiteralValue, Token, TokenKind};
+
+#[macro_export]
+macro_rules! parser_error {
+    ($error_kind:expr) => {
+        LucyError::SyntaxError(SyntaxErrorKind::ParserError($error_kind))
+    };
+}
 
 pub struct Parser<'a> {
     /// The current token.
@@ -39,9 +46,9 @@ impl<'a> Parser<'a> {
     pub fn expect(&self, t: TokenKind) -> LResult<()> {
         if self.token.kind != t {
             if self.is_eof {
-                Err(LucyError::ParserError(ParserErrorKind::UnexpectEOF))
+                Err(parser_error!(ParserErrorKind::UnexpectEOF))
             } else {
-                Err(LucyError::ParserError(ParserErrorKind::UnexpectToken {
+                Err(parser_error!(ParserErrorKind::UnexpectToken {
                     token: Box::new(self.token.clone()),
                     expect_token_kind: Some(Box::new(t)),
                 }))
@@ -210,8 +217,8 @@ impl<'a> Parser<'a> {
                                 match path.last() {
                                     Some(v) => ImportKind::Simple(v.clone()),
                                     None => {
-                                        return Err(LucyError::ParserError(
-                                            ParserErrorKind::ParserImportStmtError,
+                                        return Err(parser_error!(
+                                            ParserErrorKind::ParserImportStmtError
                                         ))
                                     }
                                 }
@@ -256,9 +263,7 @@ impl<'a> Parser<'a> {
                         }
                         _ => {
                             self.expect(TokenKind::Semi)?;
-                            return Err(LucyError::ParserError(
-                                ParserErrorKind::ParserImportStmtError,
-                            ));
+                            return Err(parser_error!(ParserErrorKind::ParserImportStmtError));
                         }
                     }
                     self.bump();
@@ -285,11 +290,7 @@ impl<'a> Parser<'a> {
                                 property: _,
                                 kind: _,
                             } => (),
-                            _ => {
-                                return Err(LucyError::ParserError(
-                                    ParserErrorKind::ParserAssignStmtError,
-                                ))
-                            }
+                            _ => return Err(parser_error!(ParserErrorKind::ParserAssignStmtError)),
                         }
                         self.bump();
                         let right = self.parse_expr(1)?;
@@ -314,11 +315,7 @@ impl<'a> Parser<'a> {
                                 property: _,
                                 kind: _,
                             } => (),
-                            _ => {
-                                return Err(LucyError::ParserError(
-                                    ParserErrorKind::ParserAssignStmtError,
-                                ))
-                            }
+                            _ => return Err(parser_error!(ParserErrorKind::ParserAssignStmtError)),
                         }
                         self.bump();
                         let right = self.parse_expr(1)?;
@@ -412,7 +409,7 @@ impl<'a> Parser<'a> {
                     end: self.prev_token.end,
                 }))
             }
-            _ => Err(LucyError::ParserError(ParserErrorKind::UnexpectToken {
+            _ => Err(parser_error!(ParserErrorKind::UnexpectToken {
                 token: Box::new(self.token.clone()),
                 expect_token_kind: None,
             })),
@@ -508,7 +505,7 @@ impl<'a> Parser<'a> {
             TokenKind::Ident(_) => self.parse_expr_ident(),
             TokenKind::OpenBrace => self.parse_expr_table(),
             TokenKind::Func | TokenKind::VBar => self.parse_expr_func(),
-            _ => Err(LucyError::ParserError(ParserErrorKind::UnexpectToken {
+            _ => Err(parser_error!(ParserErrorKind::UnexpectToken {
                 token: Box::new(self.token.clone()),
                 expect_token_kind: None,
             })),
@@ -592,7 +589,7 @@ impl<'a> Parser<'a> {
                             true
                         }
                         _ => {
-                            return Err(LucyError::ParserError(ParserErrorKind::UnexpectToken {
+                            return Err(parser_error!(ParserErrorKind::UnexpectToken {
                                 token: Box::new(self.token.clone()),
                                 expect_token_kind: None,
                             }))
@@ -630,7 +627,7 @@ impl<'a> Parser<'a> {
                 self.bump();
                 Ok(Box::new(temp))
             }
-            _ => Err(LucyError::ParserError(ParserErrorKind::UnexpectToken {
+            _ => Err(parser_error!(ParserErrorKind::UnexpectToken {
                 token: Box::new(self.token.clone()),
                 expect_token_kind: None,
             })),

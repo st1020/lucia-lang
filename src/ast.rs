@@ -1,10 +1,10 @@
-use crate::errors::{LResult, LucyError, ParserErrorKind};
+use crate::errors::{LResult, LucyError, ParserErrorKind, SyntaxErrorKind};
 use crate::lexer::{LiteralValue, Location, TokenKind};
+use crate::parser_error;
 
 #[derive(Debug, Clone)]
 pub struct Lit {
     pub value: LiteralValue,
-
     pub start: Location,
     pub end: Location,
 }
@@ -136,7 +136,7 @@ impl UnOp {
         Ok(match token_kind {
             TokenKind::Not => UnOp::Not,
             TokenKind::Sub => UnOp::Neg,
-            _ => return Err(LucyError::ParserError(ParserErrorKind::ParserUnOpError)),
+            _ => return Err(parser_error!(ParserErrorKind::ParserUnOpError)),
         })
     }
 }
@@ -190,7 +190,7 @@ impl BinOp {
             TokenKind::Mul => BinOp::Mul,
             TokenKind::Div => BinOp::Div,
             TokenKind::Mod => BinOp::Mod,
-            _ => return Err(LucyError::ParserError(ParserErrorKind::ParserBinOpError)),
+            _ => return Err(parser_error!(ParserErrorKind::ParserBinOpError)),
         })
     }
 
@@ -201,7 +201,7 @@ impl BinOp {
             TokenKind::MulAssign => Self::Mul,
             TokenKind::DivAssign => Self::Div,
             TokenKind::ModAssign => Self::Mod,
-            _ => return Err(LucyError::ParserError(ParserErrorKind::ParserBinOpError)),
+            _ => return Err(parser_error!(ParserErrorKind::ParserBinOpError)),
         })
     }
 
@@ -241,11 +241,7 @@ impl MemberExprKind {
             TokenKind::OpenBracket => MemberExprKind::OpenBracket,
             TokenKind::Dot => MemberExprKind::Dot,
             TokenKind::DoubleColon => MemberExprKind::DoubleColon,
-            _ => {
-                return Err(LucyError::ParserError(
-                    ParserErrorKind::ParserMemberExprError,
-                ))
-            }
+            _ => return Err(parser_error!(ParserErrorKind::ParserMemberExprError)),
         })
     }
 }

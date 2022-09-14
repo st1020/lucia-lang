@@ -2,16 +2,23 @@ use std::error::Error;
 use std::fmt::Display;
 use std::num::{ParseFloatError, ParseIntError};
 
+use crate::codegen::OPCode;
 use crate::lexer::{Token, TokenKind};
-use crate::object::LucyValueType;
+use crate::object::{Closuer, LucyValueType};
 
 pub type LResult<T> = Result<T, LucyError>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum LucyError {
-    ParserError(ParserErrorKind),
-    CodegenError(CodegenErrorKind),
-    LvmError(LvmErrorKind),
+    SyntaxError(SyntaxErrorKind),
+    RuntimeError(RuntimeErrorKind),
+    ImportError,
+    BuildTableError,
+    TypeError(TypeErrorKind),
+    ConvertError {
+        from: LucyValueType,
+        to: LucyValueType,
+    },
 }
 
 impl Display for LucyError {
@@ -21,6 +28,13 @@ impl Display for LucyError {
 }
 
 impl Error for LucyError {}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum SyntaxErrorKind {
+    LexerError(LexerErrorKind),
+    ParserError(ParserErrorKind),
+    CodegenError(CodegenErrorKind),
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum LexerErrorKind {
@@ -53,14 +67,22 @@ pub enum CodegenErrorKind {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum LvmErrorKind {
+pub enum RuntimeErrorKind {
+    StackError,
+    UpvalueError,
     ProgramError,
-    ImportError,
-    BuildTableError,
-    TypeError(String),
-    RuntimeError(String),
-    ConvertError {
-        from: LucyValueType,
-        to: LucyValueType,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum TypeErrorKind {
+    OperatorError {
+        operator: OPCode,
+        operand: (Option<LucyValueType>, Option<LucyValueType>),
+    },
+    NotCallableError(LucyValueType),
+    CallArgumentsError {
+        value: Box<Closuer>,
+        require: usize,
+        give: usize,
     },
 }
