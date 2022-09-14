@@ -3,6 +3,7 @@ use std::fmt::Display;
 use std::num::{ParseFloatError, ParseIntError};
 
 use crate::lexer::{Token, TokenKind};
+use crate::object::LucyValueType;
 
 pub type LResult<T> = Result<T, LucyError>;
 
@@ -58,4 +59,8 @@ pub enum LvmErrorKind {
     BuildTableError,
     TypeError(String),
     RuntimeError(String),
+    ConvertError {
+        from: LucyValueType,
+        to: LucyValueType,
+    },
 }

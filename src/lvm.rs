@@ -38,12 +38,11 @@ macro_rules! unsupported_operand_type {
 
 #[macro_export]
 macro_rules! type_convert_error {
-    ($type_name:expr, $value:expr) => {
-        LucyError::LvmError(LvmErrorKind::TypeError(format!(
-            "can not convert to type {}: \"{}\"",
-            $type_name,
-            $value.to_string()
-        )))
+    ($from:expr, $to:expr) => {
+        LucyError::LvmError(LvmErrorKind::ConvertError {
+            from: $from,
+            to: $to,
+        })
     };
 }
 
@@ -113,8 +112,11 @@ impl Frame {
     pub fn run(&mut self) -> LResult<LucyValue> {
         macro_rules! run_default {
             ($block:expr, $arg1:ident, $arg2:ident, $special_name:expr, $operator:expr) => {
-                match <&LucyTable>::try_from($arg1) {
-                    Ok(v) => match v.get_by_str($special_name) {
+                if $arg1.value_type() == LucyValueType::Table {
+                    match <&LucyTable>::try_from($arg1)
+                        .or_else(|_| Err(unexpect_error!()))?
+                        .get_by_str($special_name)
+                    {
                         Some(v) => {
                             self.operate_stack.push(v);
                             self.operate_stack.push($arg1);
@@ -122,8 +124,9 @@ impl Frame {
                             self.call(2, true)?;
                         }
                         None => return Err(unsupported_operand_type!($operator, $arg1, $arg2)),
-                    },
-                    Err(_) => $block,
+                    }
+                } else {
+                    $block
                 }
             };
         }
@@ -131,8 +134,8 @@ impl Frame {
         macro_rules! run_bin_op {
             ($op: tt, $special_name:expr, $operator:expr) => {
                 {
-                    let arg2 = self.operate_stack.pop().ok_or(stack_error!())?;
-                    let arg1 = self.operate_stack.pop().ok_or(stack_error!())?;
+                    let arg2 = self.operate_stack.pop().ok_or_else(||stack_error!())?;
+                    let arg1 = self.operate_stack.pop().ok_or_else(||stack_error!())?;
                     run_default!({
                         self.operate_stack.push(match (arg1, arg2) {
                             (LucyValue::Int(v1), LucyValue::Int(v2)) => LucyValue::Int(v1 $op v2),
@@ -147,8 +150,8 @@ impl Frame {
         macro_rules! run_eq_ne {
             ($op: tt, $special_name:expr, $operator:expr) => {
                 {
-                    let arg2 = self.operate_stack.pop().ok_or(stack_error!())?;
-                    let arg1 = self.operate_stack.pop().ok_or(stack_error!())?;
+                    let arg2 = self.operate_stack.pop().ok_or_else(||stack_error!())?;
+                    let arg1 = self.operate_stack.pop().ok_or_else(||stack_error!())?;
                     run_default!({
                         self.operate_stack.push(LucyValue::Bool(arg1 $op arg2));
                     }, arg1, arg2, $special_name, $operator)
@@ -159,8 +162,8 @@ impl Frame {
         macro_rules! run_compare {
             ($op: tt, $special_name:expr, $operator:expr) => {
                 {
-                    let arg2 = self.operate_stack.pop().ok_or(stack_error!())?;
-                    let arg1 = self.operate_stack.pop().ok_or(stack_error!())?;
+                    let arg2 = self.operate_stack.pop().ok_or_else(||stack_error!())?;
+                    let arg1 = self.operate_stack.pop().ok_or_else(||stack_error!())?;
                     run_default!({
                         self.operate_stack.push(LucyValue::Bool(match (arg1, arg2) {
                             (LucyValue::Int(v1), LucyValue::Int(v2)) => v1 $op v2,
@@ -172,31 +175,36 @@ impl Frame {
             };
         }
 
-        let lvm = unsafe { self.lvm.as_mut().ok_or(unexpect_error!())? };
-        let closuer = <&mut Closuer>::try_from(self.closuer)?;
+        let lvm = unsafe { self.lvm.as_mut().ok_or_else(|| unexpect_error!())? };
+        let closuer = unsafe {
+            match &mut self.closuer.as_mut().unwrap().kind {
+                GCObjectKind::Closuer(v) => v,
+                _ => panic!(),
+            }
+        };
         loop {
             let code = closuer
                 .function
                 .code_list
                 .get(self.pc)
-                .ok_or(program_error!())?;
+                .ok_or_else(|| program_error!())?;
             match code {
                 OPCode::Pop => {
-                    self.operate_stack.pop().ok_or(stack_error!())?;
+                    self.operate_stack.pop().ok_or_else(|| stack_error!())?;
                 }
                 OPCode::Dup => {
                     self.operate_stack
-                        .push(*self.operate_stack.last().ok_or(stack_error!())?);
+                        .push(*self.operate_stack.last().ok_or_else(|| stack_error!())?);
                 }
                 OPCode::DupTwo => {
-                    let a = self.operate_stack.pop().ok_or(stack_error!())?;
-                    let b = self.operate_stack.pop().ok_or(stack_error!())?;
+                    let a = self.operate_stack.pop().ok_or_else(|| stack_error!())?;
+                    let b = self.operate_stack.pop().ok_or_else(|| stack_error!())?;
                     self.operate_stack.push(b);
                     self.operate_stack.push(a);
                 }
                 OPCode::Rot => {
-                    let a = self.operate_stack.pop().ok_or(stack_error!())?;
-                    let b = self.operate_stack.pop().ok_or(stack_error!())?;
+                    let a = self.operate_stack.pop().ok_or_else(|| stack_error!())?;
+                    let b = self.operate_stack.pop().ok_or_else(|| stack_error!())?;
                     self.operate_stack.push(a);
                     self.operate_stack.push(b);
                 }
@@ -214,13 +222,19 @@ impl Frame {
                     let (_, func_count, upvalue_id) = closuer.function.upvalue_names[*i];
                     let mut base_closuer = closuer.base_closuer;
                     for _ in 0..func_count {
-                        base_closuer = <&Closuer>::try_from(base_closuer.ok_or(program_error!())?)?
-                            .base_closuer;
+                        base_closuer = match unsafe {
+                            &base_closuer.ok_or_else(|| stack_error!())?.as_ref().kind
+                        } {
+                            GCObjectKind::Closuer(v) => v.base_closuer,
+                            _ => return Err(program_error!()),
+                        };
                     }
-                    self.operate_stack.push(
-                        <&Closuer>::try_from(base_closuer.ok_or(program_error!())?)?.variables
-                            [upvalue_id],
-                    );
+                    match unsafe { &base_closuer.ok_or_else(|| stack_error!())?.as_ref().kind } {
+                        GCObjectKind::Closuer(v) => {
+                            self.operate_stack.push(v.variables[upvalue_id])
+                        }
+                        _ => return Err(program_error!()),
+                    };
                 }
                 OPCode::LoadConst(i) => {
                     let t = lvm.module_list[closuer.module_id].const_list[*i].clone();
@@ -254,23 +268,34 @@ impl Frame {
                     self.operate_stack.push(v);
                 }
                 OPCode::StoreLocal(i) => {
-                    closuer.variables[*i] = self.operate_stack.pop().ok_or(stack_error!())?;
+                    closuer.variables[*i] =
+                        self.operate_stack.pop().ok_or_else(|| stack_error!())?;
                 }
                 OPCode::StoreGlobal(i) => {
                     lvm.set_global_variable(
                         closuer.function.global_names[*i].clone(),
-                        self.operate_stack.pop().ok_or(stack_error!())?,
+                        self.operate_stack.pop().ok_or_else(|| stack_error!())?,
                     );
                 }
                 OPCode::StoreUpvalue(i) => {
                     let (_, func_count, upvalue_id) = closuer.function.upvalue_names[*i];
                     let mut base_closuer = closuer.base_closuer;
                     for _ in 0..func_count {
-                        base_closuer = <&Closuer>::try_from(base_closuer.ok_or(program_error!())?)?
-                            .base_closuer;
+                        base_closuer = match unsafe {
+                            &base_closuer.ok_or_else(|| program_error!())?.as_ref().kind
+                        } {
+                            GCObjectKind::Closuer(v) => v.base_closuer,
+                            _ => return Err(program_error!()),
+                        };
                     }
-                    <&mut Closuer>::try_from(base_closuer.ok_or(program_error!())?)?.variables
-                        [upvalue_id] = self.operate_stack.pop().ok_or(stack_error!())?;
+                    match unsafe { &mut base_closuer.ok_or_else(|| stack_error!())?.as_mut().kind }
+                    {
+                        GCObjectKind::Closuer(v) => {
+                            v.variables[upvalue_id] =
+                                self.operate_stack.pop().ok_or_else(|| stack_error!())?
+                        }
+                        _ => return Err(program_error!()),
+                    };
                 }
                 OPCode::Import(i) => {
                     if let LucylData::Str(v) =
@@ -304,18 +329,20 @@ impl Frame {
                     }
                 }
                 OPCode::ImportFrom(i) => {
-                    let module =
-                        <&LucyTable>::try_from(*self.operate_stack.last().ok_or(stack_error!())?)?;
+                    let module = <&LucyTable>::try_from(
+                        *self.operate_stack.last().ok_or_else(|| stack_error!())?,
+                    )?;
                     if let LucylData::Str(t) = &lvm.module_list[closuer.module_id].const_list[*i] {
                         self.operate_stack
-                            .push(module.raw_get_by_str(t).ok_or(import_error!())?);
+                            .push(module.raw_get_by_str(t).ok_or_else(|| import_error!())?);
                     } else {
                         return Err(import_error!());
                     }
                 }
                 OPCode::ImportGlob => {
-                    let module =
-                        <&LucyTable>::try_from(self.operate_stack.pop().ok_or(stack_error!())?)?;
+                    let module = <&LucyTable>::try_from(
+                        self.operate_stack.pop().ok_or_else(|| stack_error!())?,
+                    )?;
                     for (k, v) in module.clone() {
                         lvm.set_global_variable(String::try_from(k)?, v);
                     }
@@ -323,12 +350,12 @@ impl Frame {
                 OPCode::BuildTable(i) => {
                     let mut temp: Vec<LucyValue> = Vec::new();
                     for _ in 0..(*i * 2) {
-                        temp.push(self.operate_stack.pop().ok_or(stack_error!())?);
+                        temp.push(self.operate_stack.pop().ok_or_else(|| stack_error!())?);
                     }
                     let mut table: Vec<(LucyValue, LucyValue)> = Vec::new();
                     for _ in 0..*i {
-                        let arg1 = temp.pop().ok_or(unexpect_error!())?;
-                        let arg2 = temp.pop().ok_or(unexpect_error!())?;
+                        let arg1 = temp.pop().ok_or_else(|| unexpect_error!())?;
+                        let arg2 = temp.pop().ok_or_else(|| unexpect_error!())?;
                         if let LucyValue::GCObject(_) = arg1 {
                             if String::try_from(arg1).is_err() {
                                 return Err(LucyError::LvmError(LvmErrorKind::BuildTableError));
@@ -340,8 +367,8 @@ impl Frame {
                         .push(lvm.new_gc_value(GCObjectKind::Table(LucyTable(table))));
                 }
                 OPCode::GetAttr | OPCode::GetItem => {
-                    let arg2 = self.operate_stack.pop().ok_or(stack_error!())?;
-                    let arg1 = self.operate_stack.pop().ok_or(stack_error!())?;
+                    let arg2 = self.operate_stack.pop().ok_or_else(|| stack_error!())?;
+                    let arg1 = self.operate_stack.pop().ok_or_else(|| stack_error!())?;
                     let t = <&mut LucyTable>::try_from(arg1)?;
                     match t.get_by_str(match code {
                         OPCode::GetAttr => "__getattr__",
@@ -360,9 +387,9 @@ impl Frame {
                     }
                 }
                 OPCode::SetAttr | OPCode::SetItem => {
-                    let arg3 = self.operate_stack.pop().ok_or(stack_error!())?;
-                    let arg2 = self.operate_stack.pop().ok_or(stack_error!())?;
-                    let arg1 = self.operate_stack.pop().ok_or(stack_error!())?;
+                    let arg3 = self.operate_stack.pop().ok_or_else(|| stack_error!())?;
+                    let arg2 = self.operate_stack.pop().ok_or_else(|| stack_error!())?;
+                    let arg1 = self.operate_stack.pop().ok_or_else(|| stack_error!())?;
                     let t = <&mut LucyTable>::try_from(arg1)?;
                     match t.get_by_str(match code {
                         OPCode::SetAttr => "__setattr__",
@@ -380,7 +407,7 @@ impl Frame {
                     }
                 }
                 OPCode::Neg => {
-                    let arg1 = self.operate_stack.pop().ok_or(stack_error!())?;
+                    let arg1 = self.operate_stack.pop().ok_or_else(|| stack_error!())?;
                     match <&LucyTable>::try_from(arg1) {
                         Ok(v) => match v.get_by_str("__neg__") {
                             Some(v) => {
@@ -398,38 +425,39 @@ impl Frame {
                     }
                 }
                 OPCode::Not => {
-                    let arg1 = self.operate_stack.pop().ok_or(stack_error!())?;
+                    let arg1 = self.operate_stack.pop().ok_or_else(|| stack_error!())?;
                     self.operate_stack
                         .push(LucyValue::Bool(!bool::try_from(arg1)?));
                 }
                 OPCode::Add => {
-                    let arg2 = self.operate_stack.pop().ok_or(stack_error!())?;
-                    let arg1 = self.operate_stack.pop().ok_or(stack_error!())?;
-                    match <&LucyTable>::try_from(arg1) {
-                        Ok(v) => match v.get_by_str("__add__") {
-                            Some(v) => {
-                                self.operate_stack.push(v);
-                                self.operate_stack.push(arg1);
-                                self.operate_stack.push(arg2);
-                                self.call(2, true)?;
+                    let arg2 = self.operate_stack.pop().ok_or_else(|| stack_error!())?;
+                    let arg1 = self.operate_stack.pop().ok_or_else(|| stack_error!())?;
+                    match arg1.value_type() {
+                        LucyValueType::Str => {
+                            match (String::try_from(arg1), String::try_from(arg2)) {
+                                (Ok(v1), Ok(v2)) => lvm.new_gc_value(GCObjectKind::Str(v1 + &v2)),
+                                _ => return Err(unsupported_operand_type!("+", arg1, arg2)),
+                            };
+                        }
+                        LucyValueType::Table => {
+                            match <&LucyTable>::try_from(arg1)
+                                .or_else(|_| Err(unexpect_error!()))?
+                                .get_by_str("__add__")
+                            {
+                                Some(v) => {
+                                    self.operate_stack.push(v);
+                                    self.operate_stack.push(arg1);
+                                    self.operate_stack.push(arg2);
+                                    self.call(2, true)?;
+                                }
+                                None => return Err(unsupported_operand_type!("+", arg1, arg2)),
                             }
-                            None => return Err(unsupported_operand_type!("+", arg1, arg2)),
-                        },
-                        Err(_) => {
+                        }
+                        _ => {
                             self.operate_stack.push(match (arg1, arg2) {
                                 (LucyValue::Int(v1), LucyValue::Int(v2)) => LucyValue::Int(v1 + v2),
                                 (LucyValue::Float(v1), LucyValue::Float(v2)) => {
                                     LucyValue::Float(v1 + v2)
-                                }
-                                (LucyValue::GCObject(_), LucyValue::GCObject(_)) => {
-                                    match (String::try_from(arg1), String::try_from(arg2)) {
-                                        (Ok(v1), Ok(v2)) => {
-                                            lvm.new_gc_value(GCObjectKind::Str(v1 + &v2))
-                                        }
-                                        _ => {
-                                            return Err(unsupported_operand_type!("+", arg1, arg2))
-                                        }
-                                    }
                                 }
                                 _ => return Err(unsupported_operand_type!("+", arg1, arg2)),
                             });
@@ -447,8 +475,8 @@ impl Frame {
                 OPCode::Lt => run_compare!(<, "__lt__", "<"),
                 OPCode::Le => run_compare!(<=, "__le__", "<="),
                 OPCode::Is => {
-                    let arg2 = self.operate_stack.pop().ok_or(stack_error!())?;
-                    let arg1 = self.operate_stack.pop().ok_or(stack_error!())?;
+                    let arg2 = self.operate_stack.pop().ok_or_else(|| stack_error!())?;
+                    let arg1 = self.operate_stack.pop().ok_or_else(|| stack_error!())?;
                     self.operate_stack.push(LucyValue::Bool(match (arg1, arg2) {
                         (LucyValue::Null, LucyValue::Null) => true,
                         (LucyValue::Bool(v1), LucyValue::Bool(v2)) => v1 == v2,
@@ -460,8 +488,9 @@ impl Frame {
                 }
                 OPCode::For(JumpTarget(i)) => {
                     self.call(0, false)?;
-                    if self.operate_stack.last().ok_or(stack_error!())? == &LucyValue::Null {
-                        self.operate_stack.pop().ok_or(stack_error!())?;
+                    if self.operate_stack.last().ok_or_else(|| stack_error!())? == &LucyValue::Null
+                    {
+                        self.operate_stack.pop().ok_or_else(|| stack_error!())?;
                         self.pc = *i;
                         continue;
                     }
@@ -471,7 +500,7 @@ impl Frame {
                     continue;
                 }
                 OPCode::JumpIfFalse(JumpTarget(i)) => {
-                    let arg1 = self.operate_stack.pop().ok_or(stack_error!())?;
+                    let arg1 = self.operate_stack.pop().ok_or_else(|| stack_error!())?;
                     if let Ok(v) = bool::try_from(arg1) {
                         if !v {
                             self.pc = *i;
@@ -480,24 +509,24 @@ impl Frame {
                     }
                 }
                 OPCode::JumpIfTureOrPop(JumpTarget(i)) => {
-                    let arg1 = self.operate_stack.pop().ok_or(stack_error!())?;
+                    let arg1 = self.operate_stack.pop().ok_or_else(|| stack_error!())?;
                     if let Ok(v) = bool::try_from(arg1) {
                         if v {
                             self.pc = *i;
                             continue;
                         } else {
-                            self.operate_stack.pop().ok_or(stack_error!())?;
+                            self.operate_stack.pop().ok_or_else(|| stack_error!())?;
                         }
                     }
                 }
                 OPCode::JumpIfFalseOrPop(JumpTarget(i)) => {
-                    let arg1 = self.operate_stack.pop().ok_or(stack_error!())?;
+                    let arg1 = self.operate_stack.pop().ok_or_else(|| stack_error!())?;
                     if let Ok(v) = bool::try_from(arg1) {
                         if !v {
                             self.pc = *i;
                             continue;
                         } else {
-                            self.operate_stack.pop().ok_or(stack_error!())?;
+                            self.operate_stack.pop().ok_or_else(|| stack_error!())?;
                         }
                     }
                 }
@@ -505,7 +534,7 @@ impl Frame {
                     self.call(*i, true)?;
                 }
                 OPCode::Return => {
-                    return Ok(self.operate_stack.pop().ok_or(stack_error!())?);
+                    return Ok(self.operate_stack.pop().ok_or_else(|| stack_error!())?);
                 }
                 OPCode::JumpTarget(_) => return Err(program_error!()),
             }
@@ -514,26 +543,26 @@ impl Frame {
     }
 
     fn call(&mut self, arg_num: usize, pop: bool) -> LResult<()> {
-        let lvm = unsafe { self.lvm.as_mut().ok_or(unexpect_error!())? };
+        let lvm = unsafe { self.lvm.as_mut().ok_or_else(|| unexpect_error!())? };
 
         let mut arguments = Vec::with_capacity(arg_num);
         for _ in 0..arg_num {
-            arguments.push(self.operate_stack.pop().ok_or(stack_error!())?);
+            arguments.push(self.operate_stack.pop().ok_or_else(|| stack_error!())?);
         }
 
         let callee = if pop {
-            self.operate_stack.pop().ok_or(stack_error!())?
+            self.operate_stack.pop().ok_or_else(|| stack_error!())?
         } else {
-            *self.operate_stack.last().ok_or(stack_error!())?
+            *self.operate_stack.last().ok_or_else(|| stack_error!())?
         };
         if let LucyValue::GCObject(gc_obj) = callee {
-            let v = match unsafe { &mut gc_obj.as_mut().ok_or(unexpect_error!())?.kind } {
+            let v = match unsafe { &mut gc_obj.as_mut().ok_or_else(|| unexpect_error!())?.kind } {
                 GCObjectKind::Closuer(v) => v,
                 GCObjectKind::Table(v) => <&mut Closuer>::try_from(
                     v.get_by_str("__call__")
-                        .ok_or(not_callable_error!(callee))?,
+                        .ok_or_else(|| not_callable_error!(callee))?,
                 )
-                .or(Err(not_callable_error!(callee)))?,
+                .or_else(|_| Err(not_callable_error!(callee)))?,
                 GCObjectKind::ExtClosuer(v) => {
                     arguments.reverse();
                     self.operate_stack.push(v(arguments, lvm));
@@ -550,7 +579,7 @@ impl Frame {
                 ))));
             }
             for i in 0..v.function.params.len() {
-                v.variables[i] = arguments.pop().ok_or(unexpect_error!())?;
+                v.variables[i] = arguments.pop().ok_or_else(|| unexpect_error!())?;
             }
             let mut frame = Frame::new(gc_obj, self.lvm, NonNull::new(self), v.function.stack_size);
             self.operate_stack.push(frame.run()?);
@@ -600,7 +629,7 @@ impl Lvm {
         let func = self.module_list[module_id]
             .func_list
             .first()
-            .ok_or(program_error!())?
+            .ok_or_else(|| program_error!())?
             .clone();
         let stack_size = func.stack_size;
         let mut frame = Frame::new(
@@ -620,7 +649,7 @@ impl Lvm {
             None,
             stack_size,
         );
-        self.current_frame = NonNull::new(&mut frame).ok_or(unexpect_error!())?;
+        self.current_frame = NonNull::new(&mut frame).ok_or_else(|| unexpect_error!())?;
         frame.run()
     }
 
