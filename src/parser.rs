@@ -573,6 +573,7 @@ impl<'a> Parser<'a> {
 
     fn parse_expr_func(&mut self) -> LResult<Box<Expr>> {
         let end_token;
+        let mut variadic = None;
         Ok(Box::new(Expr {
             start: self.token.start,
             kind: ExprKind::Function {
@@ -600,16 +601,24 @@ impl<'a> Parser<'a> {
                     let mut temp = Vec::new();
                     self.bump();
                     while self.token.kind != end_token {
-                        temp.push(*self.parse_ident()?);
-                        if self.token.kind == end_token {
+                        if self.token.kind == TokenKind::Mul {
+                            self.bump();
+                            variadic = Some(self.parse_ident()?);
+                            self.expect(end_token.clone())?;
                             break;
+                        } else {
+                            temp.push(*self.parse_ident()?);
+                            if self.token.kind == end_token {
+                                break;
+                            }
+                            self.expect(TokenKind::Comma)?;
+                            self.bump();
                         }
-                        self.expect(TokenKind::Comma)?;
-                        self.bump()
                     }
                     self.bump();
                     temp
                 },
+                variadic,
                 body: self.parse_block()?,
             },
             end: self.prev_token.end,

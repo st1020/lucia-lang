@@ -125,7 +125,7 @@ impl OPCode {
 
 pub fn gen_code(ast_root: Box<Block>) -> LResult<Program> {
     let mut context = Context::new();
-    let func = FunctionBuilder::new(ast_root, 0, None, Vec::new(), false);
+    let func = FunctionBuilder::new(ast_root, 0, None, Vec::new(), None, false);
     context.func_list.push(func);
 
     let mut func_count = 0;
@@ -319,6 +319,7 @@ enum LoadStore {
 pub struct Function {
     pub function_id: usize,
     pub params: Vec<String>,
+    pub variadic: Option<Box<String>>,
     pub code_list: Vec<OPCode>,
     pub is_closure: bool,
     pub base_function: Option<usize>,
@@ -335,6 +336,7 @@ impl From<FunctionBuilder> for Function {
         Function {
             function_id: value.function_id,
             params: value.params,
+            variadic: value.variadic,
             code_list: value.code_list,
             is_closure: value.is_closure,
             base_function: value.base_function,
@@ -352,6 +354,7 @@ pub struct FunctionBuilder {
 
     pub function_id: usize,
     pub params: Vec<String>,
+    pub variadic: Option<Box<String>>,
     pub code_list: Vec<OPCode>,
     pub is_closure: bool,
     pub base_function: Option<usize>,
@@ -372,12 +375,14 @@ impl FunctionBuilder {
         function_id: usize,
         base_function: Option<usize>,
         params: Vec<String>,
+        variadic: Option<Box<String>>,
         is_closure: bool,
     ) -> Self {
         FunctionBuilder {
             code,
             function_id,
             params,
+            variadic,
             code_list: Vec::new(),
             is_closure,
             base_function,
@@ -469,6 +474,12 @@ impl FunctionBuilder {
         for param in self.params.clone() {
             self.add_local_name(&param);
         }
+        match self.variadic.clone() {
+            Some(v) => {
+                self.add_local_name(&v);
+            }
+            None => (),
+        };
 
         let t = &mut self.gen_stmt(self.code.clone().to_stmt(), context)?;
         self.code_list.append(t);
@@ -489,6 +500,7 @@ impl FunctionBuilder {
             ExprKind::Ident(ident) => code_list.push(self.get_load(&ident.name, context)),
             ExprKind::Function {
                 params,
+                variadic,
                 body,
                 is_closure,
             } => {
@@ -502,6 +514,10 @@ impl FunctionBuilder {
                             temp.push(param.name);
                         }
                         temp
+                    },
+                    match variadic {
+                        Some(v) => Some(Box::new(v.name)),
+                        None => None,
                     },
                     is_closure,
                 );

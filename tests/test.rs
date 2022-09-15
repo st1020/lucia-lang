@@ -33,6 +33,20 @@ fn temp() -> errors::LResult<()> {
 }
 
 #[test]
+fn variadic() -> errors::LResult<()> {
+    let input = "
+    import std::io::{println};
+    test = func (a, *b) {
+        println(a);
+        println(b);
+    };
+    test(1, 2, 3);
+    ";
+    lvm::Lvm::new(codegen::Program::try_from(input)?).run()?;
+    Ok(())
+}
+
+#[test]
 fn import() -> errors::LResult<()> {
     let input = "
     import std::io::{input, println};

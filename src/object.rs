@@ -340,6 +340,16 @@ impl IntoIterator for LucyTable {
     }
 }
 
+impl From<Vec<LucyValue>> for LucyTable {
+    fn from(value: Vec<LucyValue>) -> Self {
+        let mut temp: Vec<(LucyValue, LucyValue)> = Vec::new();
+        for (i, v) in value.iter().enumerate() {
+            temp.push((LucyValue::Int(i.try_into().unwrap()), *v))
+        }
+        LucyTable(temp)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Closuer {
     pub module_id: usize,

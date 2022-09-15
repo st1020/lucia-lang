@@ -566,15 +566,20 @@ impl Frame {
                 }
                 _ => return Err(not_callable_error!(callee)),
             };
-            if v.function.params.len() != arg_num {
+            let params_num = v.function.params.len();
+            if arg_num < params_num || (v.function.variadic == None && arg_num != params_num) {
                 return Err(LucyError::TypeError(TypeErrorKind::CallArgumentsError {
                     value: Box::new(v.clone()),
-                    require: arg_num,
-                    give: v.function.params.len(),
+                    require: params_num,
+                    give: arg_num,
                 }));
             }
-            for i in 0..v.function.params.len() {
+            for i in 0..params_num {
                 v.variables[i] = arguments.pop().expect("unexpect error");
+            }
+            if v.function.variadic != None {
+                v.variables[params_num] =
+                    lvm.new_gc_value(GCObjectKind::Table(LucyTable::from(arguments)));
             }
             let mut frame = Frame::new(gc_obj, self.lvm, NonNull::new(self), v.function.stack_size);
             self.operate_stack.push(frame.run()?);

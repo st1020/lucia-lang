@@ -97,6 +97,7 @@ pub enum ExprKind {
     Ident(Box<Ident>),
     Function {
         params: Vec<Ident>,
+        variadic: Option<Box<Ident>>,
         body: Box<Block>,
         is_closure: bool,
     },
