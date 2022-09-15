@@ -24,7 +24,7 @@ fn temp() -> errors::LResult<()> {
     let a = parser::Parser::new(&mut lexer::tokenize(input)).parse()?;
     let b = codegen::gen_code(a)?;
     // println!("{:#?}", b);
-    println!("{:?}", std::mem::size_of::<errors::LucyError>());
+    // println!("{:?}", std::mem::size_of::<errors::LucyError>());
     let mut c = lvm::Lvm::new(b);
     println!("{:?}", c.run());
     let duration = start.elapsed();
@@ -70,9 +70,11 @@ fn add_pref() -> errors::LResult<()> {
     }
     ";
     let start = Instant::now();
-    lvm::Lvm::new(codegen::Program::try_from(input)?).run()?;
+    for _ in 0..100 {
+        lvm::Lvm::new(codegen::Program::try_from(input)?).run()?;
+    }
     let duration = start.elapsed();
-    println!("Time: {:?}", duration);
+    println!("Time: {:?}", duration / 100);
     Ok(())
 }
 
@@ -99,9 +101,11 @@ fn gcd_pref() -> errors::LResult<()> {
     }
     ";
     let start = Instant::now();
-    lvm::Lvm::new(codegen::Program::try_from(input)?).run()?;
+    for _ in 0..100 {
+        lvm::Lvm::new(codegen::Program::try_from(input)?).run()?;
+    }
     let duration = start.elapsed();
-    println!("Time: {:?}", duration);
+    println!("Time: {:?}", duration / 100);
     Ok(())
 }
 

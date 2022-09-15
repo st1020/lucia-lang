@@ -423,7 +423,9 @@ impl Frame {
                     match arg1.value_type() {
                         LucyValueType::Str => {
                             match (String::try_from(arg1), String::try_from(arg2)) {
-                                (Ok(v1), Ok(v2)) => lvm.new_gc_value(GCObjectKind::Str(v1 + &v2)),
+                                (Ok(v1), Ok(v2)) => self
+                                    .operate_stack
+                                    .push(lvm.new_gc_value(GCObjectKind::Str(v1 + &v2))),
                                 _ => {
                                     return Err(unsupported_operand_type!(code.clone(), arg1, arg2))
                                 }
