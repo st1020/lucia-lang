@@ -15,10 +15,6 @@ pub enum LucyError {
     ImportError,
     BuildTableError,
     TypeError(TypeErrorKind),
-    ConvertError {
-        from: LucyValueType,
-        to: LucyValueType,
-    },
 }
 
 impl Display for LucyError {
@@ -75,6 +71,10 @@ pub enum RuntimeErrorKind {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum TypeErrorKind {
+    ConvertError {
+        from: LucyValueType,
+        to: LucyValueType,
+    },
     OperatorError {
         operator: OPCode,
         operand: (Option<LucyValueType>, Option<LucyValueType>),

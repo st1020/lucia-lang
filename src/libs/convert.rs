@@ -10,7 +10,7 @@ pub fn libs(lvm: &mut Lvm) -> LucyTable {
             if args.len() != 1 {
                 panic!()
             }
-            LucyValue::Bool(match args.first().unwrap() {
+            Ok(LucyValue::Bool(match args.first().unwrap() {
                 LucyValue::Null => false,
                 LucyValue::Bool(v) => *v,
                 LucyValue::Int(v) => {
@@ -29,7 +29,7 @@ pub fn libs(lvm: &mut Lvm) -> LucyTable {
                 }
                 LucyValue::ExtFunction(_) => true,
                 LucyValue::GCObject(_) => true,
-            })
+            }))
         }),
     );
     t.set(
@@ -38,7 +38,7 @@ pub fn libs(lvm: &mut Lvm) -> LucyTable {
             if args.len() != 1 {
                 panic!()
             }
-            LucyValue::Int(match args.first().unwrap() {
+            Ok(LucyValue::Int(match args.first().unwrap() {
                 LucyValue::Null => 0,
                 LucyValue::Bool(v) => i64::from(*v),
                 LucyValue::Int(v) => *v,
@@ -50,7 +50,7 @@ pub fn libs(lvm: &mut Lvm) -> LucyTable {
                         _ => panic!(),
                     }
                 },
-            })
+            }))
         }),
     );
     t.set(
@@ -59,7 +59,7 @@ pub fn libs(lvm: &mut Lvm) -> LucyTable {
             if args.len() != 1 {
                 panic!()
             }
-            LucyValue::Float(match args.first().unwrap() {
+            Ok(LucyValue::Float(match args.first().unwrap() {
                 LucyValue::Null => 0.0,
                 LucyValue::Bool(v) => f64::from(u8::from(*v)),
                 LucyValue::Int(v) => *v as f64,
@@ -71,7 +71,7 @@ pub fn libs(lvm: &mut Lvm) -> LucyTable {
                         _ => panic!(),
                     }
                 },
-            })
+            }))
         }),
     );
     t.set(
@@ -80,7 +80,7 @@ pub fn libs(lvm: &mut Lvm) -> LucyTable {
             if args.len() != 1 {
                 panic!()
             }
-            lvm.new_gc_value(GCObjectKind::Str(args.first().unwrap().to_string()))
+            Ok(lvm.new_gc_value(GCObjectKind::Str(args.first().unwrap().to_string())))
         }),
     );
     t

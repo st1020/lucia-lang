@@ -12,15 +12,17 @@ pub fn libs(lvm: &mut Lvm) -> LucyTable {
             }
             let table: &mut LucyTable = (*args.first().unwrap()).try_into().unwrap();
             let mut i = 0;
-            lvm.new_gc_value(GCObjectKind::ExtClosuer(Box::new(move |_, _| {
-                if i >= table.len().try_into().unwrap() {
-                    LucyValue::Null
-                } else {
-                    let (k, _) = table.get_by_index(i.try_into().unwrap()).unwrap();
-                    i += 1;
-                    *k
-                }
-            })))
+            Ok(
+                lvm.new_gc_value(GCObjectKind::ExtClosuer(Box::new(move |_, _| {
+                    Ok(if i >= table.len().try_into().unwrap() {
+                        LucyValue::Null
+                    } else {
+                        let (k, _) = table.get_by_index(i.try_into().unwrap()).unwrap();
+                        i += 1;
+                        *k
+                    })
+                }))),
+            )
         }),
     );
     t.set(
@@ -31,15 +33,17 @@ pub fn libs(lvm: &mut Lvm) -> LucyTable {
             }
             let table: &mut LucyTable = (*args.first().unwrap()).try_into().unwrap();
             let mut i = 0;
-            lvm.new_gc_value(GCObjectKind::ExtClosuer(Box::new(move |_, _| {
-                if i >= table.len().try_into().unwrap() {
-                    LucyValue::Null
-                } else {
-                    let (_, v) = table.get_by_index(i.try_into().unwrap()).unwrap();
-                    i += 1;
-                    *v
-                }
-            })))
+            Ok(
+                lvm.new_gc_value(GCObjectKind::ExtClosuer(Box::new(move |_, _| {
+                    Ok(if i >= table.len().try_into().unwrap() {
+                        LucyValue::Null
+                    } else {
+                        let (_, v) = table.get_by_index(i.try_into().unwrap()).unwrap();
+                        i += 1;
+                        *v
+                    })
+                }))),
+            )
         }),
     );
     t.set(
@@ -49,7 +53,7 @@ pub fn libs(lvm: &mut Lvm) -> LucyTable {
                 panic!()
             }
             let table: &mut LucyTable = (*args.first().unwrap()).try_into().unwrap();
-            LucyValue::Int(table.len().try_into().unwrap())
+            Ok(LucyValue::Int(table.len().try_into().unwrap()))
         }),
     );
     t.set(
@@ -59,10 +63,10 @@ pub fn libs(lvm: &mut Lvm) -> LucyTable {
                 panic!()
             }
             let table: &mut LucyTable = (*args.first().unwrap()).try_into().unwrap();
-            match table.raw_get(args.last().unwrap()) {
+            Ok(match table.raw_get(args.last().unwrap()) {
                 Some(v) => v,
                 None => LucyValue::Null,
-            }
+            })
         }),
     );
     t.set(
@@ -75,7 +79,7 @@ pub fn libs(lvm: &mut Lvm) -> LucyTable {
             let key = args.get(1).unwrap();
             let value = args.get(2).unwrap();
             table.set(key, *value);
-            LucyValue::Null
+            Ok(LucyValue::Null)
         }),
     );
     t

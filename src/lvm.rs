@@ -36,10 +36,10 @@ macro_rules! unsupported_operand_type {
 #[macro_export]
 macro_rules! type_convert_error {
     ($from:expr, $to:expr) => {
-        LucyError::ConvertError {
+        LucyError::TypeError(TypeErrorKind::ConvertError {
             from: $from,
             to: $to,
-        }
+        })
     };
 }
 
@@ -561,7 +561,7 @@ impl Frame {
                 .or_else(|_| Err(not_callable_error!(callee)))?,
                 GCObjectKind::ExtClosuer(v) => {
                     arguments.reverse();
-                    self.operate_stack.push(v(arguments, lvm));
+                    self.operate_stack.push(v(arguments, lvm)?);
                     return Ok(());
                 }
                 _ => return Err(not_callable_error!(callee)),
@@ -580,7 +580,7 @@ impl Frame {
             self.operate_stack.push(frame.run()?);
         } else if let LucyValue::ExtFunction(f) = callee {
             arguments.reverse();
-            self.operate_stack.push(f(arguments, lvm));
+            self.operate_stack.push(f(arguments, lvm)?);
         } else {
             return Err(not_callable_error!(callee));
         }

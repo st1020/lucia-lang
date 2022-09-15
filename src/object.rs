@@ -3,7 +3,7 @@ use std::convert::{TryFrom, TryInto};
 use std::fmt::Debug;
 
 use crate::codegen::Function;
-use crate::errors::LucyError;
+use crate::errors::{LResult, LucyError, TypeErrorKind};
 use crate::lvm::Lvm;
 use crate::type_convert_error;
 
@@ -13,7 +13,7 @@ pub enum LucyValue {
     Bool(bool),
     Int(i64),
     Float(f64),
-    ExtFunction(fn(Vec<LucyValue>, &mut Lvm) -> LucyValue),
+    ExtFunction(fn(Vec<LucyValue>, &mut Lvm) -> LResult<LucyValue>),
     GCObject(*mut GCObject),
 }
 
@@ -188,7 +188,7 @@ pub enum GCObjectKind {
     Str(String),
     Table(LucyTable),
     Closuer(Closuer),
-    ExtClosuer(Box<dyn FnMut(Vec<LucyValue>, &mut Lvm) -> LucyValue>),
+    ExtClosuer(Box<dyn FnMut(Vec<LucyValue>, &mut Lvm) -> LResult<LucyValue>>),
 }
 
 impl Debug for GCObjectKind {

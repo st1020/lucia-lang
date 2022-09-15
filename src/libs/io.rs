@@ -13,7 +13,7 @@ pub fn libs(lvm: &mut Lvm) -> LucyTable {
                 panic!()
             }
             print!("{}", args.first().unwrap().to_string());
-            LucyValue::Null
+            Ok(LucyValue::Null)
         }),
     );
     t.set(
@@ -23,7 +23,7 @@ pub fn libs(lvm: &mut Lvm) -> LucyTable {
                 panic!()
             }
             println!("{}", args.first().unwrap().to_string());
-            LucyValue::Null
+            Ok(LucyValue::Null)
         }),
     );
     t.set(
@@ -34,9 +34,9 @@ pub fn libs(lvm: &mut Lvm) -> LucyTable {
             }
             let mut t = String::new();
             io::stdin().read_line(&mut t).unwrap();
-            lvm.new_gc_value(GCObjectKind::Str(String::from(
+            Ok(lvm.new_gc_value(GCObjectKind::Str(String::from(
                 t.strip_suffix("\n").unwrap(),
-            )))
+            ))))
         }),
     );
     t

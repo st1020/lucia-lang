@@ -10,10 +10,10 @@ pub fn builtin_variables() -> HashMap<String, LucyValue> {
             if args.len() != 1 {
                 panic!()
             }
-            match args.first().unwrap() {
+            Ok(match args.first().unwrap() {
                 LucyValue::GCObject(v) => LucyValue::Int((*v as usize).try_into().unwrap()),
                 _ => LucyValue::Null,
-            }
+            })
         }),
     );
     t.insert(
@@ -22,7 +22,7 @@ pub fn builtin_variables() -> HashMap<String, LucyValue> {
             if args.len() != 1 {
                 panic!()
             }
-            lvm.new_gc_value(GCObjectKind::Str(String::from(
+            Ok(lvm.new_gc_value(GCObjectKind::Str(String::from(
                 match args.first().unwrap() {
                     LucyValue::Null => "null",
                     LucyValue::Bool(_) => "bool",
@@ -38,7 +38,7 @@ pub fn builtin_variables() -> HashMap<String, LucyValue> {
                         }
                     },
                 },
-            )))
+            ))))
         }),
     );
     t
