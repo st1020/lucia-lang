@@ -250,7 +250,7 @@ impl MemberExprKind {
 #[derive(Debug, Clone)]
 pub enum ImportKind {
     /// `import path::xxx`
-    Simple(Ident),
+    Simple(Box<Ident>),
     /// `import path::{...}`
     Nested(Vec<(Ident, Ident)>),
     /// `import path::*`

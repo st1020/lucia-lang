@@ -215,7 +215,7 @@ impl<'a> Parser<'a> {
                                 ImportKind::Glob
                             } else {
                                 match path.last() {
-                                    Some(v) => ImportKind::Simple(v.clone()),
+                                    Some(v) => ImportKind::Simple(Box::new(v.clone())),
                                     None => {
                                         return Err(parser_error!(
                                             ParserErrorKind::ParserImportStmtError
@@ -226,7 +226,7 @@ impl<'a> Parser<'a> {
                         }
                         TokenKind::As => {
                             self.bump();
-                            kind = ImportKind::Simple(*self.parse_ident()?);
+                            kind = ImportKind::Simple(Box::new(*self.parse_ident()?));
                             self.expect(TokenKind::Semi)?;
                         }
                         TokenKind::OpenBrace => {
