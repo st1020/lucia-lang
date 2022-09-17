@@ -68,6 +68,17 @@ macro_rules! not_callable_error {
     };
 }
 
+#[macro_export]
+macro_rules! call_arguments_error {
+    ($value:expr, $require:expr, $give:expr) => {
+        LucyError::TypeError(TypeErrorKind::CallArgumentsError {
+            value: $value,
+            require: $require,
+            give: $give,
+        })
+    };
+}
+
 #[derive(Debug, Clone)]
 pub struct Frame {
     pc: usize,
@@ -568,11 +579,11 @@ impl Frame {
             };
             let params_num = v.function.params.len();
             if arg_num < params_num || (v.function.variadic == None && arg_num != params_num) {
-                return Err(LucyError::TypeError(TypeErrorKind::CallArgumentsError {
-                    value: Box::new(v.clone()),
-                    require: params_num,
-                    give: arg_num,
-                }));
+                return Err(call_arguments_error!(
+                    Some(Box::new(v.clone())),
+                    params_num,
+                    arg_num
+                ));
             }
             for i in 0..params_num {
                 v.variables[i] = arguments.pop().expect("unexpect error");

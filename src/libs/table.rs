@@ -1,6 +1,7 @@
+use crate::errors::{LucyError, TypeErrorKind};
 use crate::lvm::Lvm;
 use crate::object::{GCObjectKind, LucyTable, LucyValue};
-use crate::str_to_value;
+use crate::{call_arguments_error, str_to_value};
 
 pub fn libs(lvm: &mut Lvm) -> LucyTable {
     let mut t = LucyTable::new();
@@ -8,7 +9,7 @@ pub fn libs(lvm: &mut Lvm) -> LucyTable {
         &str_to_value!(lvm, "keys"),
         LucyValue::ExtFunction(|args, lvm| {
             if args.len() != 1 {
-                panic!()
+                return Err(call_arguments_error!(None, 1, args.len()));
             }
             let table: &mut LucyTable = (*args.first().unwrap()).try_into().unwrap();
             let mut i = 0;
@@ -29,7 +30,7 @@ pub fn libs(lvm: &mut Lvm) -> LucyTable {
         &str_to_value!(lvm, "values"),
         LucyValue::ExtFunction(|args, lvm| {
             if args.len() != 1 {
-                panic!()
+                return Err(call_arguments_error!(None, 1, args.len()));
             }
             let table: &mut LucyTable = (*args.first().unwrap()).try_into().unwrap();
             let mut i = 0;
@@ -50,7 +51,7 @@ pub fn libs(lvm: &mut Lvm) -> LucyTable {
         &str_to_value!(lvm, "raw_len"),
         LucyValue::ExtFunction(|args, _| {
             if args.len() != 1 {
-                panic!()
+                return Err(call_arguments_error!(None, 1, args.len()));
             }
             let table: &mut LucyTable = (*args.first().unwrap()).try_into().unwrap();
             Ok(LucyValue::Int(table.len().try_into().unwrap()))
@@ -60,7 +61,7 @@ pub fn libs(lvm: &mut Lvm) -> LucyTable {
         &str_to_value!(lvm, "raw_get"),
         LucyValue::ExtFunction(|args, _| {
             if args.len() != 2 {
-                panic!()
+                return Err(call_arguments_error!(None, 2, args.len()));
             }
             let table: &mut LucyTable = (*args.first().unwrap()).try_into().unwrap();
             Ok(match table.raw_get(args.last().unwrap()) {
@@ -73,7 +74,7 @@ pub fn libs(lvm: &mut Lvm) -> LucyTable {
         &str_to_value!(lvm, "raw_set"),
         LucyValue::ExtFunction(|args, _| {
             if args.len() != 3 {
-                panic!()
+                return Err(call_arguments_error!(None, 3, args.len()));
             }
             let table: &mut LucyTable = (*args.first().unwrap()).try_into().unwrap();
             let key = args.get(1).unwrap();

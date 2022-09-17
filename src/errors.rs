@@ -81,7 +81,7 @@ pub enum TypeErrorKind {
     },
     NotCallableError(LucyValueType),
     CallArgumentsError {
-        value: Box<Closuer>,
+        value: Option<Box<Closuer>>,
         require: usize,
         give: usize,
     },

@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use crate::call_arguments_error;
+use crate::errors::{LucyError, TypeErrorKind};
 use crate::object::{GCObjectKind, LucyValue};
 
 pub fn builtin_variables() -> HashMap<String, LucyValue> {
@@ -8,7 +10,7 @@ pub fn builtin_variables() -> HashMap<String, LucyValue> {
         String::from("id"),
         LucyValue::ExtFunction(|args, _| {
             if args.len() != 1 {
-                panic!()
+                return Err(call_arguments_error!(None, 1, args.len()));
             }
             Ok(match args.first().unwrap() {
                 LucyValue::GCObject(v) => LucyValue::Int((*v as usize).try_into().unwrap()),
@@ -20,25 +22,11 @@ pub fn builtin_variables() -> HashMap<String, LucyValue> {
         String::from("type"),
         LucyValue::ExtFunction(|args, lvm| {
             if args.len() != 1 {
-                panic!()
+                return Err(call_arguments_error!(None, 1, args.len()));
             }
-            Ok(lvm.new_gc_value(GCObjectKind::Str(String::from(
-                match args.first().unwrap() {
-                    LucyValue::Null => "null",
-                    LucyValue::Bool(_) => "bool",
-                    LucyValue::Int(_) => "int",
-                    LucyValue::Float(_) => "float",
-                    LucyValue::ExtFunction(_) => "function",
-                    LucyValue::GCObject(v) => unsafe {
-                        match &(**v).kind {
-                            GCObjectKind::Str(_) => "str",
-                            GCObjectKind::Table(_) => "table",
-                            GCObjectKind::Closuer(_) => "function",
-                            GCObjectKind::ExtClosuer(_) => "function",
-                        }
-                    },
-                },
-            ))))
+            Ok(lvm.new_gc_value(GCObjectKind::Str(
+                args.first().unwrap().value_type().to_string(),
+            )))
         }),
     );
     t
