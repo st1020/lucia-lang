@@ -1,13 +1,8 @@
-use crate::ast::*;
-use crate::errors::{LResult, LucyError, ParserErrorKind, SyntaxErrorKind};
-use crate::lexer::{LiteralValue, Token, TokenKind};
+use std::convert::TryFrom;
 
-#[macro_export]
-macro_rules! parser_error {
-    ($error_kind:expr) => {
-        LucyError::SyntaxError(SyntaxErrorKind::ParserError($error_kind))
-    };
-}
+use crate::ast::*;
+use crate::errors::{ExpectedToken, LResult, LucyError, SyntaxErrorKind};
+use crate::lexer::{Token, TokenKind};
 
 pub struct Parser<'a> {
     /// The current token.
@@ -46,11 +41,11 @@ impl<'a> Parser<'a> {
     pub fn expect(&self, t: TokenKind) -> LResult<()> {
         if self.token.kind != t {
             if self.is_eof {
-                Err(parser_error!(ParserErrorKind::UnexpectEOF))
+                Err(LucyError::SyntaxError(SyntaxErrorKind::UnexpectEOF))
             } else {
-                Err(parser_error!(ParserErrorKind::UnexpectToken {
+                Err(LucyError::SyntaxError(SyntaxErrorKind::UnexpectToken {
                     token: Box::new(self.token.clone()),
-                    expect_token_kind: Some(Box::new(t)),
+                    expected: ExpectedToken::TokenKind(Box::new(t)),
                 }))
             }
         } else {
@@ -214,14 +209,16 @@ impl<'a> Parser<'a> {
                             kind = if glob {
                                 ImportKind::Glob
                             } else {
-                                match path.last() {
-                                    Some(v) => ImportKind::Simple(Box::new(v.clone())),
-                                    None => {
-                                        return Err(parser_error!(
-                                            ParserErrorKind::ParserImportStmtError
-                                        ))
-                                    }
-                                }
+                                ImportKind::Simple(Box::new(
+                                    path.last()
+                                        .ok_or_else(|| {
+                                            LucyError::SyntaxError(SyntaxErrorKind::UnexpectToken {
+                                                token: Box::new(self.token.clone()),
+                                                expected: ExpectedToken::Ident,
+                                            })
+                                        })?
+                                        .clone(),
+                                ))
                             };
                         }
                         TokenKind::As => {
@@ -262,8 +259,10 @@ impl<'a> Parser<'a> {
                             self.expect(TokenKind::Semi)?;
                         }
                         _ => {
-                            self.expect(TokenKind::Semi)?;
-                            return Err(parser_error!(ParserErrorKind::ParserImportStmtError));
+                            return Err(LucyError::SyntaxError(SyntaxErrorKind::UnexpectToken {
+                                token: Box::new(self.token.clone()),
+                                expected: ExpectedToken::TokenKind(Box::new(TokenKind::Semi)),
+                            }));
                         }
                     }
                     self.bump();
@@ -290,7 +289,11 @@ impl<'a> Parser<'a> {
                                 property: _,
                                 kind: _,
                             } => (),
-                            _ => return Err(parser_error!(ParserErrorKind::ParserAssignStmtError)),
+                            _ => {
+                                return Err(LucyError::SyntaxError(
+                                    SyntaxErrorKind::ParseAssignStmtError,
+                                ))
+                            }
                         }
                         self.bump();
                         let right = self.parse_expr(1)?;
@@ -315,7 +318,11 @@ impl<'a> Parser<'a> {
                                 property: _,
                                 kind: _,
                             } => (),
-                            _ => return Err(parser_error!(ParserErrorKind::ParserAssignStmtError)),
+                            _ => {
+                                return Err(LucyError::SyntaxError(
+                                    SyntaxErrorKind::ParseAssignStmtError,
+                                ))
+                            }
                         }
                         self.bump();
                         let right = self.parse_expr(1)?;
@@ -323,7 +330,14 @@ impl<'a> Parser<'a> {
                             start: ast_node.start,
                             end: right.end,
                             kind: StmtKind::AssignOp {
-                                operator: BinOp::from_assign_token(&token_kind)?,
+                                operator: match token_kind {
+                                    TokenKind::AddAssign => BinOp::Add,
+                                    TokenKind::SubAssign => BinOp::Sub,
+                                    TokenKind::MulAssign => BinOp::Mul,
+                                    TokenKind::DivAssign => BinOp::Div,
+                                    TokenKind::ModAssign => BinOp::Mod,
+                                    _ => panic!("unexpect error"),
+                                },
                                 left: ast_node,
                                 right,
                             },
@@ -363,42 +377,50 @@ impl<'a> Parser<'a> {
         let start = self.token.start;
         let mut left = self.parse_expr_unary()?;
         loop {
-            let op_info = BinOp::from_token(&self.token.kind);
-            match op_info {
-                Ok(operator) => {
-                    let precedence = operator.get_precedence();
-                    if precedence < min_precedence {
-                        break;
-                    }
-                    self.bump();
-                    let right = self.parse_expr(precedence + 1)?;
-                    left = Box::new(Expr {
-                        kind: ExprKind::Binary {
-                            operator,
-                            left,
-                            right,
-                        },
-                        start,
-                        end: self.prev_token.end,
-                    })
-                }
-                Err(_) => break,
+            let operator = match self.token.kind {
+                TokenKind::Is => BinOp::Is,
+                TokenKind::And => BinOp::And,
+                TokenKind::Or => BinOp::Or,
+                TokenKind::Eq => BinOp::Eq,
+                TokenKind::NotEq => BinOp::Ne,
+                TokenKind::LtEq => BinOp::Le,
+                TokenKind::GtEq => BinOp::Ge,
+                TokenKind::Lt => BinOp::Lt,
+                TokenKind::Gt => BinOp::Gt,
+                TokenKind::Add => BinOp::Add,
+                TokenKind::Sub => BinOp::Sub,
+                TokenKind::Mul => BinOp::Mul,
+                TokenKind::Div => BinOp::Div,
+                TokenKind::Mod => BinOp::Mod,
+                _ => break,
+            };
+            if operator.precedence() < min_precedence {
+                break;
             }
+            self.bump();
+            let right = self.parse_expr(operator.precedence() + 1)?;
+            left = Box::new(Expr {
+                kind: ExprKind::Binary {
+                    operator,
+                    left,
+                    right,
+                },
+                start,
+                end: self.prev_token.end,
+            })
         }
         Ok(left)
     }
 
     fn parse_expr_unary(&mut self) -> LResult<Box<Expr>> {
         match self.token.kind {
-            TokenKind::Literal(_)
-            | TokenKind::Ident(_)
-            | TokenKind::Func
-            | TokenKind::VBar
-            | TokenKind::OpenBrace
-            | TokenKind::OpenParen => self.parse_expr_primary(),
             TokenKind::Not | TokenKind::Sub => {
                 let start = self.token.start;
-                let operator = UnOp::from_token(&self.token.kind)?;
+                let operator = match self.token.kind {
+                    TokenKind::Not => UnOp::Not,
+                    TokenKind::Sub => UnOp::Neg,
+                    _ => panic!("unexpect error"),
+                };
                 self.bump();
                 Ok(Box::new(Expr {
                     start,
@@ -409,10 +431,7 @@ impl<'a> Parser<'a> {
                     end: self.prev_token.end,
                 }))
             }
-            _ => Err(parser_error!(ParserErrorKind::UnexpectToken {
-                token: Box::new(self.token.clone()),
-                expect_token_kind: None,
-            })),
+            _ => self.parse_expr_primary(),
         }
     }
 
@@ -464,7 +483,11 @@ impl<'a> Parser<'a> {
                     ast_node = Box::new(Expr {
                         kind: ExprKind::Member {
                             table: ast_node,
-                            kind: MemberExprKind::from_token(&self.token.kind)?,
+                            kind: match self.token.kind {
+                                TokenKind::Dot => MemberExprKind::Dot,
+                                TokenKind::DoubleColon => MemberExprKind::DoubleColon,
+                                _ => panic!("unexpect error"),
+                            },
                             property: {
                                 self.bump();
                                 self.parse_expr_ident()?
@@ -489,10 +512,28 @@ impl<'a> Parser<'a> {
                 self.bump();
                 Ok(temp)
             }
+            TokenKind::Null | TokenKind::True | TokenKind::False => {
+                let temp = Box::new(Expr {
+                    kind: ExprKind::Lit(Box::new(Lit {
+                        value: match &self.token.kind {
+                            TokenKind::Null => LitKind::Null,
+                            TokenKind::True => LitKind::Bool(true),
+                            TokenKind::False => LitKind::Bool(false),
+                            _ => panic!("unexpect error"),
+                        },
+                        start: self.token.start,
+                        end: self.token.end,
+                    })),
+                    start: self.token.start,
+                    end: self.token.end,
+                });
+                self.bump();
+                Ok(temp)
+            }
             TokenKind::Literal(v) => {
                 let temp = Box::new(Expr {
                     kind: ExprKind::Lit(Box::new(Lit {
-                        value: v.clone(),
+                        value: LitKind::try_from(v.clone())?,
                         start: self.token.start,
                         end: self.token.end,
                     })),
@@ -505,9 +546,9 @@ impl<'a> Parser<'a> {
             TokenKind::Ident(_) => self.parse_expr_ident(),
             TokenKind::OpenBrace => self.parse_expr_table(),
             TokenKind::Func | TokenKind::VBar => self.parse_expr_func(),
-            _ => Err(parser_error!(ParserErrorKind::UnexpectToken {
+            _ => Err(LucyError::SyntaxError(SyntaxErrorKind::UnexpectToken {
                 token: Box::new(self.token.clone()),
-                expect_token_kind: None,
+                expected: ExpectedToken::AtomExpr,
             })),
         }
     }
@@ -541,7 +582,7 @@ impl<'a> Parser<'a> {
                         } else {
                             key = Box::new(Expr {
                                 kind: ExprKind::Lit(Box::new(Lit {
-                                    value: LiteralValue::Int(c),
+                                    value: LitKind::Int(c),
                                     start: self.token.start,
                                     end: self.token.end,
                                 })),
@@ -590,9 +631,9 @@ impl<'a> Parser<'a> {
                             true
                         }
                         _ => {
-                            return Err(parser_error!(ParserErrorKind::UnexpectToken {
+                            return Err(LucyError::SyntaxError(SyntaxErrorKind::UnexpectToken {
                                 token: Box::new(self.token.clone()),
-                                expect_token_kind: None,
+                                expected: ExpectedToken::FuncExpr,
                             }))
                         }
                     }
@@ -636,9 +677,9 @@ impl<'a> Parser<'a> {
                 self.bump();
                 Ok(Box::new(temp))
             }
-            _ => Err(parser_error!(ParserErrorKind::UnexpectToken {
+            _ => Err(LucyError::SyntaxError(SyntaxErrorKind::UnexpectToken {
                 token: Box::new(self.token.clone()),
-                expect_token_kind: None,
+                expected: ExpectedToken::Ident,
             })),
         }
     }

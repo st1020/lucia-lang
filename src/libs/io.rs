@@ -13,7 +13,7 @@ pub fn libs(lvm: &mut Lvm) -> LucyTable {
             if args.len() == 1 {
                 return Err(call_arguments_error!(None, 1, args.len()));
             }
-            print!("{}", args.first().unwrap().to_string());
+            print!("{}", args.first().unwrap());
             Ok(LucyValue::Null)
         }),
     );
@@ -23,7 +23,7 @@ pub fn libs(lvm: &mut Lvm) -> LucyTable {
             if args.len() != 1 {
                 return Err(call_arguments_error!(None, 1, args.len()));
             }
-            println!("{}", args.first().unwrap().to_string());
+            println!("{}", args.first().unwrap());
             Ok(LucyValue::Null)
         }),
     );

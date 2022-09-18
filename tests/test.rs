@@ -23,7 +23,6 @@ fn temp() -> errors::LResult<()> {
     let start = Instant::now();
     let a = parser::Parser::new(&mut lexer::tokenize(input)).parse()?;
     let b = codegen::gen_code(a)?;
-    println!("{:#?}", b);
     // println!("{:#?}", b);
     // println!("{:?}", std::mem::size_of::<errors::LucyError>());
     let mut c = lvm::Lvm::new(b);

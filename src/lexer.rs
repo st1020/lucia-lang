@@ -2,9 +2,9 @@ use std::str::Chars;
 
 use unicode_xid;
 
-use crate::errors::LexerErrorKind;
+use crate::errors::{LucyError, SyntaxErrorKind};
 
-use self::LiteralValue::*;
+use self::LiteralKind::*;
 use self::TokenKind::*;
 
 /// Peekable iterator over a char sequence.
@@ -122,7 +122,7 @@ impl Token {
 
     pub fn dummy() -> Self {
         Token {
-            kind: Unknown(None),
+            kind: Unknown,
             start: Location {
                 lineno: 1,
                 column: 1,
@@ -175,6 +175,12 @@ pub enum TokenKind {
     Or,
     /// "func"
     Func,
+    /// "null"
+    Null,
+    /// "true"
+    True,
+    /// "false"
+    False,
 
     // Two-char tokens:
     /// "::"
@@ -267,23 +273,19 @@ pub enum TokenKind {
     /// Ident
     Ident(String),
     /// "12", "1.0e-40", ""123"". See `LiteralKind` for more details.
-    Literal(LiteralValue),
+    Literal(LiteralKind),
     /// Unknown token, not expected by the lexer, e.g. "№"
-    Unknown(Option<LexerErrorKind>),
+    Unknown,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum LiteralValue {
-    /// "null"
-    Null,
-    /// "true", "false"
-    Bool(bool),
+pub enum LiteralKind {
     /// "12", "0o100", "0b110"
-    Int(i64),
+    Int(Result<i64, LucyError>),
     /// "12.34", "0b100.100"
-    Float(f64),
+    Float(Result<f64, LucyError>),
     /// ""abc"", ""abc"
-    Str(String),
+    Str(Result<String, LucyError>),
 }
 
 /// Base of numeric literal encoding according to its prefix.
@@ -463,7 +465,7 @@ impl Cursor<'_> {
             '*' => Mul,
             '%' => Mod,
             '^' => Caret,
-            _ => Unknown(None),
+            _ => Unknown,
         };
         Token::new(token_kind, start, self.location())
     }
@@ -538,9 +540,9 @@ impl Cursor<'_> {
             "and" => And,
             "or" => Or,
             "func" => Func,
-            "null" => Literal(Null),
-            "true" => Literal(Bool(true)),
-            "false" => Literal(Bool(false)),
+            "null" => Null,
+            "true" => True,
+            "false" => False,
             _ => Ident(value),
         }
     }
@@ -572,7 +574,7 @@ impl Cursor<'_> {
                     value.push('0');
                 }
                 // Just a 0.
-                _ => return Literal(Int(0)),
+                _ => return Literal(Int(Ok(0))),
             };
         } else {
             value.push(first_digit);
@@ -586,13 +588,17 @@ impl Cursor<'_> {
                 }
                 '.' if base == Base::Decimal => {
                     if has_point {
-                        return Unknown(Some(LexerErrorKind::NumberFormatError));
+                        return Literal(Float(Err(LucyError::SyntaxError(
+                            SyntaxErrorKind::NumberFormatError,
+                        ))));
                     }
                     has_point = true;
                 }
                 'e' | 'E' if base == Base::Decimal => {
                     if has_exponent {
-                        return Unknown(Some(LexerErrorKind::NumberFormatError));
+                        return Literal(Float(Err(LucyError::SyntaxError(
+                            SyntaxErrorKind::NumberFormatError,
+                        ))));
                     }
                     has_exponent = true;
                 }
@@ -609,11 +615,15 @@ impl Cursor<'_> {
         if has_point || has_exponent {
             // only support decimal float literal
             if base != Base::Decimal {
-                return Unknown(Some(LexerErrorKind::NumberFormatError));
+                return Literal(Float(Err(LucyError::SyntaxError(
+                    SyntaxErrorKind::NumberFormatError,
+                ))));
             } else {
                 match value.parse::<f64>() {
-                    Ok(v) => Literal(Float(v)),
-                    Err(e) => Unknown(Some(LexerErrorKind::ParseFloatError(e))),
+                    Ok(v) => Literal(Float(Ok(v))),
+                    Err(e) => Literal(Float(Err(LucyError::SyntaxError(
+                        SyntaxErrorKind::ParseFloatError(e),
+                    )))),
                 }
             }
         } else {
@@ -626,8 +636,10 @@ impl Cursor<'_> {
                     Base::Decimal => 10,
                 },
             ) {
-                Ok(v) => Literal(Int(v)),
-                Err(e) => Unknown(Some(LexerErrorKind::ParseIntError(e))),
+                Ok(v) => Literal(Int(Ok(v))),
+                Err(e) => Literal(Int(Err(LucyError::SyntaxError(
+                    SyntaxErrorKind::ParseIntError(e),
+                )))),
             }
         }
     }
@@ -661,9 +673,11 @@ impl Cursor<'_> {
                     _ => value.push(c),
                 }
             } else {
-                return Unknown(Some(LexerErrorKind::UnterminatedStringError));
+                return Literal(Str(Err(LucyError::SyntaxError(
+                    SyntaxErrorKind::UnterminatedStringError,
+                ))));
             }
         }
-        Literal(Str(value))
+        Literal(Str(Ok(value)))
     }
 }

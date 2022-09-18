@@ -1,16 +1,9 @@
 use std::convert::TryFrom;
 
 use crate::ast::*;
-use crate::errors::{CodegenErrorKind, LResult, LucyError, SyntaxErrorKind};
-use crate::lexer::{tokenize, LiteralValue};
+use crate::errors::{LResult, LucyError, SyntaxErrorKind};
+use crate::lexer::tokenize;
 use crate::parser::Parser;
-
-#[macro_export]
-macro_rules! codegen_error {
-    ($error_kind:expr) => {
-        LucyError::SyntaxError(SyntaxErrorKind::CodegenError($error_kind))
-    };
-}
 
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub enum LucylData {
@@ -28,14 +21,14 @@ pub enum LucylData {
     Func(usize),
 }
 
-impl LucylData {
-    pub fn from(value: LiteralValue) -> Self {
+impl From<LitKind> for LucylData {
+    fn from(value: LitKind) -> Self {
         match value {
-            LiteralValue::Null => LucylData::Null,
-            LiteralValue::Bool(v) => LucylData::Bool(v),
-            LiteralValue::Int(v) => LucylData::Int(v),
-            LiteralValue::Float(v) => LucylData::Float(v),
-            LiteralValue::Str(v) => LucylData::Str(v),
+            LitKind::Null => LucylData::Null,
+            LitKind::Bool(v) => LucylData::Bool(v),
+            LitKind::Int(v) => LucylData::Int(v),
+            LitKind::Float(v) => LucylData::Float(v),
+            LitKind::Str(v) => LucylData::Str(v),
         }
     }
 }
@@ -96,9 +89,11 @@ pub enum OPCode {
     JumpTarget(JumpTarget),
 }
 
-impl OPCode {
-    pub fn from_bin_op(bin_op: BinOp) -> LResult<Self> {
-        Ok(match bin_op {
+impl TryFrom<BinOp> for OPCode {
+    type Error = LucyError;
+
+    fn try_from(value: BinOp) -> Result<Self, Self::Error> {
+        Ok(match value {
             BinOp::Add => OPCode::Add,
             BinOp::Sub => OPCode::Sub,
             BinOp::Mul => OPCode::Mul,
@@ -111,12 +106,14 @@ impl OPCode {
             BinOp::Ge => OPCode::Ge,
             BinOp::Gt => OPCode::Gt,
             BinOp::Is => OPCode::Is,
-            _ => return Err(codegen_error!(CodegenErrorKind::IllegalAst)),
+            _ => return Err(LucyError::SyntaxError(SyntaxErrorKind::IllegalAst)),
         })
     }
+}
 
-    pub fn from_un_op(un_op: UnOp) -> Self {
-        match un_op {
+impl From<UnOp> for OPCode {
+    fn from(value: UnOp) -> Self {
+        match value {
             UnOp::Not => OPCode::Not,
             UnOp::Neg => OPCode::Neg,
         }
@@ -542,7 +539,7 @@ impl FunctionBuilder {
             }
             ExprKind::Unary { operator, argument } => {
                 code_list.append(&mut self.gen_expr(*argument, context)?);
-                code_list.push(OPCode::from_un_op(operator));
+                code_list.push(OPCode::from(operator));
             }
             ExprKind::Binary {
                 operator,
@@ -566,7 +563,7 @@ impl FunctionBuilder {
                 operator @ _ => {
                     code_list.append(&mut self.gen_expr(*left, context)?);
                     code_list.append(&mut self.gen_expr(*right, context)?);
-                    code_list.push(OPCode::from_bin_op(operator)?);
+                    code_list.push(OPCode::try_from(operator)?);
                 }
             },
             ExprKind::Member {
@@ -587,7 +584,7 @@ impl FunctionBuilder {
                                     context.add_const(LucylData::Str(ident.name)),
                                 ));
                             }
-                            _ => return Err(codegen_error!(CodegenErrorKind::IllegalAst)),
+                            _ => return Err(LucyError::SyntaxError(SyntaxErrorKind::IllegalAst)),
                         }
                         code_list.push(OPCode::GetAttr);
                     }
@@ -610,7 +607,9 @@ impl FunctionBuilder {
                                         context.add_const(LucylData::Str(ident.name)),
                                     ));
                                 }
-                                _ => return Err(codegen_error!(CodegenErrorKind::IllegalAst)),
+                                _ => {
+                                    return Err(LucyError::SyntaxError(SyntaxErrorKind::IllegalAst))
+                                }
                             }
                             code_list.push(OPCode::GetAttr);
                             code_list.push(OPCode::Rot);
@@ -722,13 +721,15 @@ impl FunctionBuilder {
             StmtKind::Break => {
                 code_list.push(OPCode::Jump(match self.break_stack.last() {
                     Some(v) => *v,
-                    None => return Err(codegen_error!(CodegenErrorKind::BreakOutOfLoop)),
+                    None => return Err(LucyError::SyntaxError(SyntaxErrorKind::BreakOutsideLoop)),
                 }));
             }
             StmtKind::Continue => {
                 code_list.push(OPCode::Jump(match self.continue_stack.last() {
                     Some(v) => *v,
-                    None => return Err(codegen_error!(CodegenErrorKind::ContinueOutOfLoop)),
+                    None => {
+                        return Err(LucyError::SyntaxError(SyntaxErrorKind::ContinueOutsideLoop))
+                    }
                 }));
             }
             StmtKind::Return { argument } => {
@@ -783,7 +784,7 @@ impl FunctionBuilder {
                         MemberExprKind::Dot | MemberExprKind::DoubleColon => OPCode::SetAttr,
                     });
                 }
-                _ => return Err(codegen_error!(CodegenErrorKind::IllegalAst)),
+                _ => return Err(LucyError::SyntaxError(SyntaxErrorKind::IllegalAst)),
             },
             StmtKind::AssignOp {
                 operator,
@@ -793,7 +794,7 @@ impl FunctionBuilder {
                 ExprKind::Ident(ident) => {
                     code_list.append(&mut self.gen_expr(*left, context)?);
                     code_list.append(&mut self.gen_expr(*right, context)?);
-                    code_list.push(OPCode::from_bin_op(operator)?);
+                    code_list.push(OPCode::try_from(operator)?);
                     code_list.push(self.get_store(&ident.name, context));
                 }
                 ExprKind::Member {
@@ -804,18 +805,18 @@ impl FunctionBuilder {
                     code_list.append(&mut self.gen_expr(*left, context)?);
                     let temp = match code_list.pop() {
                         Some(v) => v,
-                        None => return Err(codegen_error!(CodegenErrorKind::IllegalAst)),
+                        None => return Err(LucyError::SyntaxError(SyntaxErrorKind::IllegalAst)),
                     };
                     code_list.push(OPCode::DupTwo);
                     code_list.push(temp);
                     code_list.append(&mut self.gen_expr(*right, context)?);
-                    code_list.push(OPCode::from_bin_op(operator)?);
+                    code_list.push(OPCode::try_from(operator)?);
                     code_list.push(match kind {
                         MemberExprKind::OpenBracket => OPCode::SetItem,
                         MemberExprKind::Dot | MemberExprKind::DoubleColon => OPCode::SetAttr,
                     });
                 }
-                _ => return Err(codegen_error!(CodegenErrorKind::IllegalAst)),
+                _ => return Err(LucyError::SyntaxError(SyntaxErrorKind::IllegalAst)),
             },
             StmtKind::Block(block) => {
                 for stmt in block.body {

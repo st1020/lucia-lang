@@ -1,6 +1,6 @@
 use core::ptr::NonNull;
 use std::convert::{TryFrom, TryInto};
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 
 use crate::codegen::Function;
 use crate::errors::{LResult, LucyError, TypeErrorKind};
@@ -46,20 +46,20 @@ impl PartialEq for LucyValue {
     }
 }
 
-impl ToString for LucyValue {
-    fn to_string(&self) -> String {
+impl Display for LucyValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LucyValue::Null => String::from("null"),
-            LucyValue::Bool(v) => String::from(if *v { "true" } else { "false" }),
-            LucyValue::Int(v) => String::from(v.to_string()),
-            LucyValue::Float(v) => String::from(v.to_string()),
-            LucyValue::ExtFunction(_) => String::from("function: ext_function"),
+            LucyValue::Null => write!(f, "null"),
+            LucyValue::Bool(v) => write!(f, "{}", if *v { "true" } else { "false" }),
+            LucyValue::Int(v) => write!(f, "{}", v),
+            LucyValue::Float(v) => write!(f, "{}", v),
+            LucyValue::ExtFunction(_) => write!(f, "function: ext_function"),
             LucyValue::GCObject(v) => unsafe {
                 match &(**v).kind {
-                    GCObjectKind::Str(v) => v.clone(),
-                    GCObjectKind::Table(v) => v.to_string(),
-                    GCObjectKind::Closuer(v) => v.to_string(),
-                    GCObjectKind::ExtClosuer(_) => String::from("function: ext_closuer"),
+                    GCObjectKind::Str(v) => write!(f, "{}", v),
+                    GCObjectKind::Table(v) => write!(f, "{}", v),
+                    GCObjectKind::Closuer(v) => write!(f, "{}", v),
+                    GCObjectKind::ExtClosuer(_) => write!(f, "function: ext_closuer"),
                 }
             },
         }
@@ -167,20 +167,24 @@ pub enum LucyValueType {
     ExtClosuer,
 }
 
-impl ToString for LucyValueType {
-    fn to_string(&self) -> String {
-        String::from(match self {
-            LucyValueType::Null => "null",
-            LucyValueType::Bool => "bool",
-            LucyValueType::Int => "int",
-            LucyValueType::Float => "float",
-            LucyValueType::ExtFunction => "function",
-            LucyValueType::UnknownGCObject => "unknown_object",
-            LucyValueType::Str => "str",
-            LucyValueType::Table => "table",
-            LucyValueType::Closuer => "function",
-            LucyValueType::ExtClosuer => "function",
-        })
+impl Display for LucyValueType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                LucyValueType::Null => "null",
+                LucyValueType::Bool => "bool",
+                LucyValueType::Int => "int",
+                LucyValueType::Float => "float",
+                LucyValueType::ExtFunction => "function",
+                LucyValueType::UnknownGCObject => "unknown_object",
+                LucyValueType::Str => "str",
+                LucyValueType::Table => "table",
+                LucyValueType::Closuer => "function",
+                LucyValueType::ExtClosuer => "function",
+            }
+        )
     }
 }
 
@@ -318,13 +322,14 @@ impl LucyTable {
     }
 }
 
-impl ToString for LucyTable {
-    fn to_string(&self) -> String {
-        format!(
+impl Display for LucyTable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
             "{{{}}}",
             self.clone()
                 .into_iter()
-                .map(|(k, v)| format!("{}: {}", k.to_string(), v.to_string()))
+                .map(|(k, v)| format!("{}: {}", k, v))
                 .collect::<Vec<String>>()
                 .join(", ")
         )
@@ -364,8 +369,8 @@ impl PartialEq for Closuer {
     }
 }
 
-impl ToString for Closuer {
-    fn to_string(&self) -> String {
-        format!("function")
+impl Display for Closuer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "function")
     }
 }

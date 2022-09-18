@@ -1,12 +1,39 @@
-use crate::errors::{LResult, LucyError, ParserErrorKind, SyntaxErrorKind};
-use crate::lexer::{LiteralValue, Location, TokenKind};
-use crate::parser_error;
+use std::convert::TryFrom;
+
+use crate::errors::LucyError;
+use crate::lexer::{LiteralKind, Location};
 
 #[derive(Debug, Clone)]
 pub struct Lit {
-    pub value: LiteralValue,
+    pub value: LitKind,
     pub start: Location,
     pub end: Location,
+}
+
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
+pub enum LitKind {
+    /// "null"
+    Null,
+    /// "true", "false"
+    Bool(bool),
+    /// "12", "0o100", "0b110"
+    Int(i64),
+    /// "12.34", "0b100.100"
+    Float(f64),
+    /// ""abc"", ""abc"
+    Str(String),
+}
+
+impl TryFrom<LiteralKind> for LitKind {
+    type Error = LucyError;
+
+    fn try_from(value: LiteralKind) -> Result<Self, Self::Error> {
+        Ok(match value {
+            LiteralKind::Int(v) => LitKind::Int(v?),
+            LiteralKind::Float(v) => LitKind::Float(v?),
+            LiteralKind::Str(v) => LitKind::Str(v?),
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -132,16 +159,6 @@ pub enum UnOp {
     Neg,
 }
 
-impl UnOp {
-    pub fn from_token(token_kind: &TokenKind) -> LResult<Self> {
-        Ok(match token_kind {
-            TokenKind::Not => UnOp::Not,
-            TokenKind::Sub => UnOp::Neg,
-            _ => return Err(parser_error!(ParserErrorKind::ParserUnOpError)),
-        })
-    }
-}
-
 #[derive(Clone, PartialEq, Eq, Debug, Copy)]
 pub enum BinOp {
     /// The `+` operator (addition)
@@ -175,38 +192,7 @@ pub enum BinOp {
 }
 
 impl BinOp {
-    pub fn from_token(token_kind: &TokenKind) -> LResult<Self> {
-        Ok(match token_kind {
-            TokenKind::Is => BinOp::Is,
-            TokenKind::And => BinOp::And,
-            TokenKind::Or => BinOp::Or,
-            TokenKind::Eq => BinOp::Eq,
-            TokenKind::NotEq => BinOp::Ne,
-            TokenKind::LtEq => BinOp::Le,
-            TokenKind::GtEq => BinOp::Ge,
-            TokenKind::Lt => BinOp::Lt,
-            TokenKind::Gt => BinOp::Gt,
-            TokenKind::Add => BinOp::Add,
-            TokenKind::Sub => BinOp::Sub,
-            TokenKind::Mul => BinOp::Mul,
-            TokenKind::Div => BinOp::Div,
-            TokenKind::Mod => BinOp::Mod,
-            _ => return Err(parser_error!(ParserErrorKind::ParserBinOpError)),
-        })
-    }
-
-    pub fn from_assign_token(token_kind: &TokenKind) -> LResult<Self> {
-        Ok(match token_kind {
-            TokenKind::AddAssign => Self::Add,
-            TokenKind::SubAssign => Self::Sub,
-            TokenKind::MulAssign => Self::Mul,
-            TokenKind::DivAssign => Self::Div,
-            TokenKind::ModAssign => Self::Mod,
-            _ => return Err(parser_error!(ParserErrorKind::ParserBinOpError)),
-        })
-    }
-
-    pub fn get_precedence(&self) -> u32 {
+    pub fn precedence(&self) -> u32 {
         match self {
             BinOp::Mul => 5,
             BinOp::Div => 5,
@@ -224,6 +210,7 @@ impl BinOp {
             BinOp::Is => 3,
 
             BinOp::And => 2,
+
             BinOp::Or => 1,
         }
     }
@@ -234,17 +221,6 @@ pub enum MemberExprKind {
     OpenBracket,
     Dot,
     DoubleColon,
-}
-
-impl MemberExprKind {
-    pub fn from_token(token_kind: &TokenKind) -> LResult<Self> {
-        Ok(match token_kind {
-            TokenKind::OpenBracket => MemberExprKind::OpenBracket,
-            TokenKind::Dot => MemberExprKind::Dot,
-            TokenKind::DoubleColon => MemberExprKind::DoubleColon,
-            _ => return Err(parser_error!(ParserErrorKind::ParserMemberExprError)),
-        })
-    }
 }
 
 #[derive(Debug, Clone)]

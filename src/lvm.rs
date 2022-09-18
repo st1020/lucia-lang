@@ -73,8 +73,8 @@ macro_rules! call_arguments_error {
     ($value:expr, $require:expr, $give:expr) => {
         LucyError::TypeError(TypeErrorKind::CallArgumentsError {
             value: $value,
-            require: $require,
-            give: $give,
+            required: $require,
+            given: $give,
         })
     };
 }
