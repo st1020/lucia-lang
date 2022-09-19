@@ -424,6 +424,22 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expr_primary(&mut self) -> LResult<Box<Expr>> {
+        macro_rules! member_expr {
+            ($ast_node:ident, $start:ident, $member_expr_kind:expr) => {
+                $ast_node = Box::new(Expr {
+                    kind: ExprKind::Member {
+                        table: $ast_node,
+                        kind: $member_expr_kind,
+                        property: {
+                            self.bump();
+                            self.parse_expr_ident()?
+                        },
+                    },
+                    $start,
+                    end: self.prev_token.end,
+                })
+            };
+        }
         let start = self.token.start;
         let mut ast_node = self.parse_expr_atom()?;
         loop {
@@ -467,23 +483,9 @@ impl<'a> Parser<'a> {
                     self.expect(TokenKind::CloseBracket)?;
                     self.bump()
                 }
-                TokenKind::Dot | TokenKind::DoubleColon => {
-                    ast_node = Box::new(Expr {
-                        kind: ExprKind::Member {
-                            table: ast_node,
-                            kind: match self.token.kind {
-                                TokenKind::Dot => MemberExprKind::Dot,
-                                TokenKind::DoubleColon => MemberExprKind::DoubleColon,
-                                _ => panic!("unexpect error"),
-                            },
-                            property: {
-                                self.bump();
-                                self.parse_expr_ident()?
-                            },
-                        },
-                        start,
-                        end: self.prev_token.end,
-                    });
+                TokenKind::Dot => member_expr!(ast_node, start, MemberExprKind::Dot),
+                TokenKind::DoubleColon => {
+                    member_expr!(ast_node, start, MemberExprKind::DoubleColon)
                 }
                 _ => break,
             }
@@ -492,6 +494,17 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expr_atom(&mut self) -> LResult<Box<Expr>> {
+        macro_rules! lit_expr {
+            ($lit_kind:expr) => {{
+                let temp = Box::new(Expr::from(Lit {
+                    value: $lit_kind,
+                    start: self.token.start,
+                    end: self.token.end,
+                }));
+                self.bump();
+                Ok(temp)
+            }};
+        }
         match &self.token.kind {
             TokenKind::OpenParen => {
                 self.bump();
@@ -500,24 +513,9 @@ impl<'a> Parser<'a> {
                 self.bump();
                 Ok(temp)
             }
-            TokenKind::Null | TokenKind::True | TokenKind::False => {
-                let temp = Box::new(Expr {
-                    kind: ExprKind::Lit(Box::new(Lit {
-                        value: match &self.token.kind {
-                            TokenKind::Null => LitKind::Null,
-                            TokenKind::True => LitKind::Bool(true),
-                            TokenKind::False => LitKind::Bool(false),
-                            _ => panic!("unexpect error"),
-                        },
-                        start: self.token.start,
-                        end: self.token.end,
-                    })),
-                    start: self.token.start,
-                    end: self.token.end,
-                });
-                self.bump();
-                Ok(temp)
-            }
+            TokenKind::Null => lit_expr!(LitKind::Null),
+            TokenKind::True => lit_expr!(LitKind::Bool(true)),
+            TokenKind::False => lit_expr!(LitKind::Bool(false)),
             TokenKind::Literal(v) => {
                 let temp = Box::new(Expr {
                     kind: ExprKind::Lit(Box::new(Lit {
@@ -542,12 +540,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expr_ident(&mut self) -> LResult<Box<Expr>> {
-        let temp = self.parse_ident()?;
-        Ok(Box::new(Expr {
-            start: temp.start,
-            end: temp.end,
-            kind: ExprKind::Ident(temp),
-        }))
+        Ok(Box::new(Expr::from(*self.parse_ident()?)))
     }
 
     fn parse_expr_table(&mut self) -> LResult<Box<Expr>> {

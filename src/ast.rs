@@ -50,6 +50,13 @@ pub struct Block {
     pub end: Location,
 }
 
+#[derive(Debug, Clone)]
+pub struct Stmt {
+    pub kind: StmtKind,
+    pub start: Location,
+    pub end: Location,
+}
+
 impl From<Block> for Stmt {
     fn from(value: Block) -> Self {
         Stmt {
@@ -60,11 +67,14 @@ impl From<Block> for Stmt {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Stmt {
-    pub kind: StmtKind,
-    pub start: Location,
-    pub end: Location,
+impl From<Expr> for Stmt {
+    fn from(value: Expr) -> Self {
+        Stmt {
+            start: value.start,
+            end: value.end,
+            kind: StmtKind::Expr(Box::new(value)),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -149,6 +159,26 @@ pub enum ExprKind {
         callee: Box<Expr>,
         arguments: Vec<Expr>,
     },
+}
+
+impl From<Lit> for Expr {
+    fn from(value: Lit) -> Self {
+        Expr {
+            start: value.start,
+            end: value.end,
+            kind: ExprKind::Lit(Box::new(value)),
+        }
+    }
+}
+
+impl From<Ident> for Expr {
+    fn from(value: Ident) -> Self {
+        Expr {
+            start: value.start,
+            end: value.end,
+            kind: ExprKind::Ident(Box::new(value)),
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Copy)]
