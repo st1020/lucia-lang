@@ -26,12 +26,10 @@ pub enum LucyError {
     SyntaxError(#[source] SyntaxErrorKind),
     #[error("runtime error: {0}")]
     RuntimeError(#[source] RuntimeErrorKind),
-    #[error("import error")]
-    ImportError,
-    #[error("build table error")]
-    BuildTableError,
     #[error("type error: {0}")]
     TypeError(#[source] TypeErrorKind),
+    #[error("user error: {0}")]
+    UserError(String),
 }
 
 #[derive(Error, Debug, Clone, PartialEq)]
@@ -93,6 +91,8 @@ pub enum RuntimeErrorKind {
     UpvalueError,
     #[error("program error")]
     ProgramError,
+    #[error("import error")]
+    ImportError,
 }
 
 #[derive(Error, Debug, Clone, PartialEq)]
@@ -102,10 +102,15 @@ pub enum TypeErrorKind {
         from: LucyValueType,
         to: LucyValueType,
     },
-    #[error("operator error (unsupported operand type(s) for {operator:?}: {operand:?})")]
-    OperatorError {
+    #[error("operator error (unsupported operand type(s) for {operator:?}: {operand})")]
+    UnOperatorError {
         operator: OPCode,
-        operand: (Option<LucyValueType>, Option<LucyValueType>),
+        operand: LucyValueType,
+    },
+    #[error("operator error (unsupported operand type(s) for {operator:?}: {} and {})", .operand.0, .operand.1)]
+    BinOperatorError {
+        operator: OPCode,
+        operand: (LucyValueType, LucyValueType),
     },
     #[error("not callable error ({0} value is not callable)")]
     NotCallableError(LucyValueType),
@@ -115,4 +120,6 @@ pub enum TypeErrorKind {
         required: usize,
         given: usize,
     },
+    #[error("build table error ({0} value can't be table key)")]
+    BuildTableError(LucyValueType),
 }
