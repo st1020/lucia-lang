@@ -478,7 +478,7 @@ impl FunctionBuilder {
             None => (),
         };
 
-        let t = &mut self.gen_stmt(self.code.clone().to_stmt(), context)?;
+        let t = &mut self.gen_stmt(Stmt::from(*self.code.clone()), context)?;
         self.code_list.append(t);
         if *self.code_list.last().unwrap_or(&OPCode::Pop) != OPCode::Return {
             self.code_list
@@ -657,16 +657,16 @@ impl FunctionBuilder {
                     let end_label = context.get_jump_target();
                     code_list.append(&mut self.gen_expr(*test, context)?);
                     code_list.push(OPCode::JumpIfFalse(false_label));
-                    code_list.append(&mut self.gen_stmt(consequent.to_stmt(), context)?);
+                    code_list.append(&mut self.gen_stmt(Stmt::from(*consequent), context)?);
                     code_list.push(OPCode::Jump(end_label));
                     code_list.push(OPCode::JumpTarget(false_label));
-                    code_list.append(&mut self.gen_stmt(alternate.to_stmt(), context)?);
+                    code_list.append(&mut self.gen_stmt(Stmt::from(*alternate), context)?);
                     code_list.push(OPCode::JumpTarget(end_label));
                 } else {
                     let end_label = context.get_jump_target();
                     code_list.append(&mut self.gen_expr(*test, context)?);
                     code_list.push(OPCode::JumpIfFalse(end_label));
-                    code_list.append(&mut self.gen_stmt(consequent.to_stmt(), context)?);
+                    code_list.append(&mut self.gen_stmt(Stmt::from(*consequent), context)?);
                     code_list.push(OPCode::JumpTarget(end_label));
                 }
             }
@@ -677,7 +677,7 @@ impl FunctionBuilder {
                 self.break_stack.push(break_label);
 
                 code_list.push(OPCode::JumpTarget(continue_label));
-                code_list.append(&mut self.gen_stmt(body.to_stmt(), context)?);
+                code_list.append(&mut self.gen_stmt(Stmt::from(*body), context)?);
                 code_list.push(OPCode::Jump(continue_label));
                 code_list.push(OPCode::JumpTarget(break_label));
 
@@ -693,7 +693,7 @@ impl FunctionBuilder {
                 code_list.push(OPCode::JumpTarget(continue_label));
                 code_list.append(&mut self.gen_expr(*test, context)?);
                 code_list.push(OPCode::JumpIfFalse(break_label));
-                code_list.append(&mut self.gen_stmt(body.to_stmt(), context)?);
+                code_list.append(&mut self.gen_stmt(Stmt::from(*body), context)?);
                 code_list.push(OPCode::Jump(continue_label));
                 code_list.push(OPCode::JumpTarget(break_label));
 
@@ -710,7 +710,7 @@ impl FunctionBuilder {
                 code_list.push(OPCode::JumpTarget(continue_label));
                 code_list.push(OPCode::For(break_label));
                 code_list.push(OPCode::StoreLocal(self.add_local_name(&left.name)));
-                code_list.append(&mut self.gen_stmt(body.to_stmt(), context)?);
+                code_list.append(&mut self.gen_stmt(Stmt::from(*body), context)?);
                 code_list.push(OPCode::Jump(continue_label));
                 code_list.push(OPCode::JumpTarget(break_label));
                 code_list.push(OPCode::Pop);

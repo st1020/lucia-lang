@@ -279,10 +279,9 @@ impl<'a> Parser<'a> {
                 }
             }
             _ => {
-                let ast_node = self.parse_expr(1)?;
-                let temp = match self.token.kind.clone() {
-                    TokenKind::Assign => {
-                        match ast_node.kind {
+                macro_rules! assign_error {
+                    ($ast_node:ident) => {
+                        match $ast_node.kind {
                             ExprKind::Ident(_)
                             | ExprKind::Member {
                                 table: _,
@@ -295,6 +294,28 @@ impl<'a> Parser<'a> {
                                 ))
                             }
                         }
+                    };
+                }
+                macro_rules! assign_op_stmt {
+                    ($ast_node:ident, $bin_op:expr) => {{
+                        assign_error!($ast_node);
+                        self.bump();
+                        let right = self.parse_expr(1)?;
+                        Stmt {
+                            start: $ast_node.start,
+                            end: right.end,
+                            kind: StmtKind::AssignOp {
+                                operator: $bin_op,
+                                left: $ast_node,
+                                right,
+                            },
+                        }
+                    }};
+                }
+                let ast_node = self.parse_expr(1)?;
+                let temp = match self.token.kind.clone() {
+                    TokenKind::Assign => {
+                        assign_error!(ast_node);
                         self.bump();
                         let right = self.parse_expr(1)?;
                         Stmt {
@@ -306,43 +327,11 @@ impl<'a> Parser<'a> {
                             },
                         }
                     }
-                    token_kind @ (TokenKind::AddAssign
-                    | TokenKind::SubAssign
-                    | TokenKind::MulAssign
-                    | TokenKind::DivAssign
-                    | TokenKind::ModAssign) => {
-                        match ast_node.kind {
-                            ExprKind::Ident(_)
-                            | ExprKind::Member {
-                                table: _,
-                                property: _,
-                                kind: _,
-                            } => (),
-                            _ => {
-                                return Err(LucyError::SyntaxError(
-                                    SyntaxErrorKind::ParseAssignStmtError,
-                                ))
-                            }
-                        }
-                        self.bump();
-                        let right = self.parse_expr(1)?;
-                        Stmt {
-                            start: ast_node.start,
-                            end: right.end,
-                            kind: StmtKind::AssignOp {
-                                operator: match token_kind {
-                                    TokenKind::AddAssign => BinOp::Add,
-                                    TokenKind::SubAssign => BinOp::Sub,
-                                    TokenKind::MulAssign => BinOp::Mul,
-                                    TokenKind::DivAssign => BinOp::Div,
-                                    TokenKind::ModAssign => BinOp::Mod,
-                                    _ => panic!("unexpect error"),
-                                },
-                                left: ast_node,
-                                right,
-                            },
-                        }
-                    }
+                    TokenKind::AddAssign => assign_op_stmt!(ast_node, BinOp::Add),
+                    TokenKind::SubAssign => assign_op_stmt!(ast_node, BinOp::Sub),
+                    TokenKind::MulAssign => assign_op_stmt!(ast_node, BinOp::Sub),
+                    TokenKind::DivAssign => assign_op_stmt!(ast_node, BinOp::Div),
+                    TokenKind::ModAssign => assign_op_stmt!(ast_node, BinOp::Mod),
                     _ => Stmt {
                         start: ast_node.start,
                         end: ast_node.end,
@@ -413,24 +402,23 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expr_unary(&mut self) -> LResult<Box<Expr>> {
-        match self.token.kind {
-            TokenKind::Not | TokenKind::Sub => {
+        macro_rules! unary_expr {
+            ($un_op:expr) => {{
                 let start = self.token.start;
-                let operator = match self.token.kind {
-                    TokenKind::Not => UnOp::Not,
-                    TokenKind::Sub => UnOp::Neg,
-                    _ => panic!("unexpect error"),
-                };
                 self.bump();
                 Ok(Box::new(Expr {
                     start,
                     kind: ExprKind::Unary {
-                        operator,
+                        operator: $un_op,
                         argument: self.parse_expr_primary()?,
                     },
                     end: self.prev_token.end,
                 }))
-            }
+            }};
+        }
+        match self.token.kind {
+            TokenKind::Not => unary_expr!(UnOp::Not),
+            TokenKind::Sub => unary_expr!(UnOp::Neg),
             _ => self.parse_expr_primary(),
         }
     }

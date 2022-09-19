@@ -127,47 +127,79 @@ impl Frame {
         }
 
         macro_rules! run_bin_op {
-            ($op: tt, $special_name:expr, $operator:expr) => {
-                {
-                    let arg2 = self.operate_stack.pop().ok_or_else(||stack_error!())?;
-                    let arg1 = self.operate_stack.pop().ok_or_else(||stack_error!())?;
-                    run_default!({
-                        self.operate_stack.push(match (arg1, arg2) {
-                            (LucyValue::Int(v1), LucyValue::Int(v2)) => LucyValue::Int(v1 $op v2),
-                            (LucyValue::Float(v1), LucyValue::Float(v2)) => LucyValue::Float(v1 $op v2),
-                            _ => return Err(unsupported_operand_type!($operator, arg1, arg2)),
-                        });
-                    }, arg1, arg2, $special_name, $operator)
-                }
-            };
+            ($op: tt, $special_name:expr, $operator:expr) => {{
+                let arg2 = self.operate_stack.pop().ok_or_else(||stack_error!())?;
+                let arg1 = self.operate_stack.pop().ok_or_else(||stack_error!())?;
+                run_default!({
+                    self.operate_stack.push(match (arg1, arg2) {
+                        (LucyValue::Int(v1), LucyValue::Int(v2)) => LucyValue::Int(v1 $op v2),
+                        (LucyValue::Float(v1), LucyValue::Float(v2)) => LucyValue::Float(v1 $op v2),
+                        _ => return Err(unsupported_operand_type!($operator, arg1, arg2)),
+                    });
+                }, arg1, arg2, $special_name, $operator)
+            }};
         }
 
         macro_rules! run_eq_ne {
-            ($op: tt, $special_name:expr, $operator:expr) => {
-                {
-                    let arg2 = self.operate_stack.pop().ok_or_else(||stack_error!())?;
-                    let arg1 = self.operate_stack.pop().ok_or_else(||stack_error!())?;
-                    run_default!({
-                        self.operate_stack.push(LucyValue::Bool(arg1 $op arg2));
-                    }, arg1, arg2, $special_name, $operator)
-                }
-            };
+            ($op: tt, $special_name:expr, $operator:expr) => {{
+                let arg2 = self.operate_stack.pop().ok_or_else(||stack_error!())?;
+                let arg1 = self.operate_stack.pop().ok_or_else(||stack_error!())?;
+                run_default!({
+                    self.operate_stack.push(LucyValue::Bool(arg1 $op arg2));
+                }, arg1, arg2, $special_name, $operator)
+            }};
         }
 
         macro_rules! run_compare {
-            ($op: tt, $special_name:expr, $operator:expr) => {
-                {
-                    let arg2 = self.operate_stack.pop().ok_or_else(||stack_error!())?;
-                    let arg1 = self.operate_stack.pop().ok_or_else(||stack_error!())?;
-                    run_default!({
-                        self.operate_stack.push(LucyValue::Bool(match (arg1, arg2) {
-                            (LucyValue::Int(v1), LucyValue::Int(v2)) => v1 $op v2,
-                            (LucyValue::Float(v1), LucyValue::Float(v2)) => v1 $op v2,
-                            _ => return Err(unsupported_operand_type!($operator, arg1, arg2)),
-                        }));
-                    }, arg1, arg2, $special_name, $operator)
+            ($op: tt, $special_name:expr, $operator:expr) => {{
+                let arg2 = self.operate_stack.pop().ok_or_else(||stack_error!())?;
+                let arg1 = self.operate_stack.pop().ok_or_else(||stack_error!())?;
+                run_default!({
+                    self.operate_stack.push(LucyValue::Bool(match (arg1, arg2) {
+                        (LucyValue::Int(v1), LucyValue::Int(v2)) => v1 $op v2,
+                        (LucyValue::Float(v1), LucyValue::Float(v2)) => v1 $op v2,
+                        _ => return Err(unsupported_operand_type!($operator, arg1, arg2)),
+                    }));
+                }, arg1, arg2, $special_name, $operator)
+            }};
+        }
+
+        macro_rules! get_table {
+            ($special_name:expr) => {{
+                let arg2 = self.operate_stack.pop().ok_or_else(|| stack_error!())?;
+                let arg1 = self.operate_stack.pop().ok_or_else(|| stack_error!())?;
+                let t = <&mut LucyTable>::try_from(arg1)?;
+                match t.get_by_str($special_name) {
+                    Some(v) => {
+                        self.operate_stack.push(v);
+                        self.operate_stack.push(arg1);
+                        self.operate_stack.push(arg2);
+                        self.call(2, true)?;
+                    }
+                    None => self
+                        .operate_stack
+                        .push(t.get(&arg2).unwrap_or(LucyValue::Null)),
                 }
-            };
+            }};
+        }
+
+        macro_rules! set_table {
+            ($special_name:expr) => {{
+                let arg3 = self.operate_stack.pop().ok_or_else(|| stack_error!())?;
+                let arg2 = self.operate_stack.pop().ok_or_else(|| stack_error!())?;
+                let arg1 = self.operate_stack.pop().ok_or_else(|| stack_error!())?;
+                let t = <&mut LucyTable>::try_from(arg1)?;
+                match t.get_by_str($special_name) {
+                    Some(v) => {
+                        self.operate_stack.push(v);
+                        self.operate_stack.push(arg1);
+                        self.operate_stack.push(arg2);
+                        self.operate_stack.push(arg3);
+                        self.call(3, true)?;
+                    }
+                    None => t.set(&arg2, arg3),
+                }
+            }};
         }
 
         let lvm = unsafe { self.lvm.as_mut().expect("unexpect error") };
@@ -365,46 +397,10 @@ impl Frame {
                     self.operate_stack
                         .push(lvm.new_gc_value(GCObjectKind::Table(LucyTable(table))));
                 }
-                OPCode::GetAttr | OPCode::GetItem => {
-                    let arg2 = self.operate_stack.pop().ok_or_else(|| stack_error!())?;
-                    let arg1 = self.operate_stack.pop().ok_or_else(|| stack_error!())?;
-                    let t = <&mut LucyTable>::try_from(arg1)?;
-                    match t.get_by_str(match code {
-                        OPCode::GetAttr => "__getattr__",
-                        OPCode::GetItem => "__getitem__",
-                        _ => panic!("unexpect error"),
-                    }) {
-                        Some(v) => {
-                            self.operate_stack.push(v);
-                            self.operate_stack.push(arg1);
-                            self.operate_stack.push(arg2);
-                            self.call(2, true)?;
-                        }
-                        None => self
-                            .operate_stack
-                            .push(t.get(&arg2).unwrap_or(LucyValue::Null)),
-                    }
-                }
-                OPCode::SetAttr | OPCode::SetItem => {
-                    let arg3 = self.operate_stack.pop().ok_or_else(|| stack_error!())?;
-                    let arg2 = self.operate_stack.pop().ok_or_else(|| stack_error!())?;
-                    let arg1 = self.operate_stack.pop().ok_or_else(|| stack_error!())?;
-                    let t = <&mut LucyTable>::try_from(arg1)?;
-                    match t.get_by_str(match code {
-                        OPCode::SetAttr => "__setattr__",
-                        OPCode::SetItem => "__setitem__",
-                        _ => panic!("unexpect error"),
-                    }) {
-                        Some(v) => {
-                            self.operate_stack.push(v);
-                            self.operate_stack.push(arg1);
-                            self.operate_stack.push(arg2);
-                            self.operate_stack.push(arg3);
-                            self.call(3, true)?;
-                        }
-                        None => t.set(&arg2, arg3),
-                    }
-                }
+                OPCode::GetAttr => get_table!("__getattr__"),
+                OPCode::GetItem => get_table!("__getitem__"),
+                OPCode::SetAttr => set_table!("__setattr__"),
+                OPCode::SetItem => set_table!("__setitem__"),
                 OPCode::Neg => {
                     let arg1 = self.operate_stack.pop().ok_or_else(|| stack_error!())?;
                     match <&LucyTable>::try_from(arg1) {

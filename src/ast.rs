@@ -50,12 +50,12 @@ pub struct Block {
     pub end: Location,
 }
 
-impl Block {
-    pub fn to_stmt(self) -> Stmt {
+impl From<Block> for Stmt {
+    fn from(value: Block) -> Self {
         Stmt {
-            start: self.start,
-            end: self.end,
-            kind: StmtKind::Block(Box::new(self)),
+            start: value.start,
+            end: value.end,
+            kind: StmtKind::Block(Box::new(value)),
         }
     }
 }
