@@ -1,6 +1,6 @@
 use std::convert::TryFrom;
 
-use crate::errors::LucyError;
+use crate::errors::LuciaError;
 use crate::lexer::{LiteralKind, Location};
 
 /// A statement.
@@ -170,7 +170,7 @@ pub enum LitKind {
 }
 
 impl TryFrom<LiteralKind> for LitKind {
-    type Error = LucyError;
+    type Error = LuciaError;
 
     fn try_from(value: LiteralKind) -> Result<Self, Self::Error> {
         Ok(match value {

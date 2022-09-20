@@ -1,4 +1,4 @@
-use lucy_lang::*;
+use lucia_lang::*;
 use std::time::Instant;
 
 #[test]
@@ -24,7 +24,7 @@ fn temp() -> errors::LResult<()> {
     let a = parser::Parser::new(&mut lexer::tokenize(input)).parse()?;
     let b = codegen::gen_code(a)?;
     // println!("{:#?}", b);
-    // println!("{:?}", std::mem::size_of::<errors::LucyError>());
+    // println!("{:?}", std::mem::size_of::<errors::LuciaError>());
     let mut c = lvm::Lvm::new(b);
     println!("{:?}", c.run());
     let duration = start.elapsed();

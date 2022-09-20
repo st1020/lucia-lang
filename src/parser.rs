@@ -1,7 +1,7 @@
 use std::convert::TryFrom;
 
 use crate::ast::*;
-use crate::errors::{ExpectedToken, LResult, LucyError, SyntaxErrorKind};
+use crate::errors::{ExpectedToken, LResult, LuciaError, SyntaxErrorKind};
 use crate::lexer::{Token, TokenKind};
 
 /// The parser. Turns token iter into AST.
@@ -45,9 +45,9 @@ impl<'a> Parser<'a> {
     pub fn expect(&self, t: TokenKind) -> LResult<()> {
         if self.token.kind != t {
             if self.is_eof {
-                Err(LucyError::SyntaxError(SyntaxErrorKind::UnexpectEOF))
+                Err(LuciaError::SyntaxError(SyntaxErrorKind::UnexpectEOF))
             } else {
-                Err(LucyError::SyntaxError(SyntaxErrorKind::UnexpectToken {
+                Err(LuciaError::SyntaxError(SyntaxErrorKind::UnexpectToken {
                     token: Box::new(self.token.clone()),
                     expected: ExpectedToken::TokenKind(Box::new(t)),
                 }))
@@ -218,10 +218,12 @@ impl<'a> Parser<'a> {
                                 ImportKind::Simple(Box::new(
                                     path.last()
                                         .ok_or_else(|| {
-                                            LucyError::SyntaxError(SyntaxErrorKind::UnexpectToken {
-                                                token: Box::new(self.token.clone()),
-                                                expected: ExpectedToken::Ident,
-                                            })
+                                            LuciaError::SyntaxError(
+                                                SyntaxErrorKind::UnexpectToken {
+                                                    token: Box::new(self.token.clone()),
+                                                    expected: ExpectedToken::Ident,
+                                                },
+                                            )
                                         })?
                                         .clone(),
                                 ))
@@ -265,7 +267,7 @@ impl<'a> Parser<'a> {
                             self.expect(TokenKind::Semi)?;
                         }
                         _ => {
-                            return Err(LucyError::SyntaxError(SyntaxErrorKind::UnexpectToken {
+                            return Err(LuciaError::SyntaxError(SyntaxErrorKind::UnexpectToken {
                                 token: Box::new(self.token.clone()),
                                 expected: ExpectedToken::TokenKind(Box::new(TokenKind::Semi)),
                             }));
@@ -295,7 +297,7 @@ impl<'a> Parser<'a> {
                                 kind: _,
                             } => (),
                             _ => {
-                                return Err(LucyError::SyntaxError(
+                                return Err(LuciaError::SyntaxError(
                                     SyntaxErrorKind::ParseAssignStmtError,
                                 ))
                             }
@@ -543,7 +545,7 @@ impl<'a> Parser<'a> {
             TokenKind::Ident(_) => self.parse_expr_ident(),
             TokenKind::OpenBrace => self.parse_expr_table(),
             TokenKind::Func | TokenKind::VBar => self.parse_expr_func(),
-            _ => Err(LucyError::SyntaxError(SyntaxErrorKind::UnexpectToken {
+            _ => Err(LuciaError::SyntaxError(SyntaxErrorKind::UnexpectToken {
                 token: Box::new(self.token.clone()),
                 expected: ExpectedToken::AtomExpr,
             })),
@@ -626,7 +628,7 @@ impl<'a> Parser<'a> {
                             true
                         }
                         _ => {
-                            return Err(LucyError::SyntaxError(SyntaxErrorKind::UnexpectToken {
+                            return Err(LuciaError::SyntaxError(SyntaxErrorKind::UnexpectToken {
                                 token: Box::new(self.token.clone()),
                                 expected: ExpectedToken::FuncExpr,
                             }))
@@ -673,7 +675,7 @@ impl<'a> Parser<'a> {
                 self.bump();
                 Ok(Box::new(temp))
             }
-            _ => Err(LucyError::SyntaxError(SyntaxErrorKind::UnexpectToken {
+            _ => Err(LuciaError::SyntaxError(SyntaxErrorKind::UnexpectToken {
                 token: Box::new(self.token.clone()),
                 expected: ExpectedToken::Ident,
             })),

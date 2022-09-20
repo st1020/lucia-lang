@@ -1,25 +1,25 @@
 use std::collections::HashMap;
 
 use crate::call_arguments_error;
-use crate::object::{GCObjectKind, LucyValue};
+use crate::object::{GCObjectKind, LuciaValue};
 
-pub fn builtin_variables() -> HashMap<String, LucyValue> {
+pub fn builtin_variables() -> HashMap<String, LuciaValue> {
     let mut t = HashMap::new();
     t.insert(
         String::from("id"),
-        LucyValue::ExtFunction(|args, _| {
+        LuciaValue::ExtFunction(|args, _| {
             if args.len() != 1 {
                 return Err(call_arguments_error!(None, 1, args.len()));
             }
             Ok(match args.first().unwrap() {
-                LucyValue::GCObject(v) => LucyValue::Int((*v as usize).try_into().unwrap()),
-                _ => LucyValue::Null,
+                LuciaValue::GCObject(v) => LuciaValue::Int((*v as usize).try_into().unwrap()),
+                _ => LuciaValue::Null,
             })
         }),
     );
     t.insert(
         String::from("type"),
-        LucyValue::ExtFunction(|args, lvm| {
+        LuciaValue::ExtFunction(|args, lvm| {
             if args.len() != 1 {
                 return Err(call_arguments_error!(None, 1, args.len()));
             }

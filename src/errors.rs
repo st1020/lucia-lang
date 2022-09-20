@@ -4,13 +4,13 @@ use thiserror::Error;
 
 use crate::codegen::OPCode;
 use crate::lexer::{Token, TokenKind};
-use crate::object::{Closuer, LucyValueType};
+use crate::object::{Closuer, LuciaValueType};
 
-pub type LResult<T> = Result<T, LucyError>;
+pub type LResult<T> = Result<T, LuciaError>;
 
-/// Enum representing any lucy error.
+/// Enum representing any lucia error.
 #[derive(Error, Debug, Clone, PartialEq)]
-pub enum LucyError {
+pub enum LuciaError {
     #[error("syntax error: {0}")]
     SyntaxError(#[source] SyntaxErrorKind),
     #[error("runtime error: {0}")]
@@ -80,21 +80,21 @@ pub enum RuntimeErrorKind {
 pub enum TypeErrorKind {
     #[error("convert error (from {from:?} to {to:?})")]
     ConvertError {
-        from: LucyValueType,
-        to: LucyValueType,
+        from: LuciaValueType,
+        to: LuciaValueType,
     },
     #[error("operator error (unsupported operand type(s) for {operator:?}: {operand})")]
     UnOperatorError {
         operator: OPCode,
-        operand: LucyValueType,
+        operand: LuciaValueType,
     },
     #[error("operator error (unsupported operand type(s) for {operator:?}: {} and {})", .operand.0, .operand.1)]
     BinOperatorError {
         operator: OPCode,
-        operand: (LucyValueType, LucyValueType),
+        operand: (LuciaValueType, LuciaValueType),
     },
     #[error("not callable error ({0} value is not callable)")]
-    NotCallableError(LucyValueType),
+    NotCallableError(LuciaValueType),
     #[error("call arguments error (required {required} arguments, but {given} was given)")]
     CallArgumentsError {
         value: Option<Box<Closuer>>,
@@ -102,5 +102,5 @@ pub enum TypeErrorKind {
         given: usize,
     },
     #[error("build table error ({0} value can't be table key)")]
-    BuildTableError(LucyValueType),
+    BuildTableError(LuciaValueType),
 }

@@ -1,7 +1,7 @@
 use std::convert::TryFrom;
 
 use crate::ast::*;
-use crate::errors::{LResult, LucyError, SyntaxErrorKind};
+use crate::errors::{LResult, LuciaError, SyntaxErrorKind};
 use crate::lexer::tokenize;
 use crate::parser::Parser;
 
@@ -135,7 +135,7 @@ pub enum OPCode {
 }
 
 impl TryFrom<BinOp> for OPCode {
-    type Error = LucyError;
+    type Error = LuciaError;
 
     fn try_from(value: BinOp) -> Result<Self, Self::Error> {
         Ok(match value {
@@ -151,7 +151,7 @@ impl TryFrom<BinOp> for OPCode {
             BinOp::Ge => OPCode::Ge,
             BinOp::Gt => OPCode::Gt,
             BinOp::Is => OPCode::Is,
-            _ => return Err(LucyError::SyntaxError(SyntaxErrorKind::IllegalAst)),
+            _ => return Err(LuciaError::SyntaxError(SyntaxErrorKind::IllegalAst)),
         })
     }
 }
@@ -308,7 +308,7 @@ impl From<Context> for Program {
 }
 
 impl TryFrom<&str> for Program {
-    type Error = LucyError;
+    type Error = LuciaError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         gen_code(Parser::new(&mut tokenize(value)).parse()?)
@@ -316,7 +316,7 @@ impl TryFrom<&str> for Program {
 }
 
 impl TryFrom<&String> for Program {
-    type Error = LucyError;
+    type Error = LuciaError;
 
     fn try_from(value: &String) -> Result<Self, Self::Error> {
         gen_code(Parser::new(&mut tokenize(value)).parse()?)
@@ -633,7 +633,7 @@ impl FunctionBuilder {
                                     context.add_const(ConstlValue::Str(ident.name)),
                                 ));
                             }
-                            _ => return Err(LucyError::SyntaxError(SyntaxErrorKind::IllegalAst)),
+                            _ => return Err(LuciaError::SyntaxError(SyntaxErrorKind::IllegalAst)),
                         }
                         code_list.push(OPCode::GetAttr);
                     }
@@ -657,7 +657,9 @@ impl FunctionBuilder {
                                     ));
                                 }
                                 _ => {
-                                    return Err(LucyError::SyntaxError(SyntaxErrorKind::IllegalAst))
+                                    return Err(LuciaError::SyntaxError(
+                                        SyntaxErrorKind::IllegalAst,
+                                    ))
                                 }
                             }
                             code_list.push(OPCode::GetAttr);
@@ -770,14 +772,16 @@ impl FunctionBuilder {
             StmtKind::Break => {
                 code_list.push(OPCode::Jump(match self.break_stack.last() {
                     Some(v) => *v,
-                    None => return Err(LucyError::SyntaxError(SyntaxErrorKind::BreakOutsideLoop)),
+                    None => return Err(LuciaError::SyntaxError(SyntaxErrorKind::BreakOutsideLoop)),
                 }));
             }
             StmtKind::Continue => {
                 code_list.push(OPCode::Jump(match self.continue_stack.last() {
                     Some(v) => *v,
                     None => {
-                        return Err(LucyError::SyntaxError(SyntaxErrorKind::ContinueOutsideLoop))
+                        return Err(LuciaError::SyntaxError(
+                            SyntaxErrorKind::ContinueOutsideLoop,
+                        ))
                     }
                 }));
             }
@@ -835,7 +839,7 @@ impl FunctionBuilder {
                         MemberKind::Dot | MemberKind::DoubleColon => OPCode::SetAttr,
                     });
                 }
-                _ => return Err(LucyError::SyntaxError(SyntaxErrorKind::IllegalAst)),
+                _ => return Err(LuciaError::SyntaxError(SyntaxErrorKind::IllegalAst)),
             },
             StmtKind::AssignOp {
                 operator,
@@ -856,7 +860,7 @@ impl FunctionBuilder {
                     code_list.append(&mut self.gen_expr(*left, context)?);
                     let temp = match code_list.pop() {
                         Some(v) => v,
-                        None => return Err(LucyError::SyntaxError(SyntaxErrorKind::IllegalAst)),
+                        None => return Err(LuciaError::SyntaxError(SyntaxErrorKind::IllegalAst)),
                     };
                     code_list.push(OPCode::DupTwo);
                     code_list.push(temp);
@@ -867,7 +871,7 @@ impl FunctionBuilder {
                         MemberKind::Dot | MemberKind::DoubleColon => OPCode::SetAttr,
                     });
                 }
-                _ => return Err(LucyError::SyntaxError(SyntaxErrorKind::IllegalAst)),
+                _ => return Err(LuciaError::SyntaxError(SyntaxErrorKind::IllegalAst)),
             },
             StmtKind::Block(block) => {
                 for stmt in block.body {

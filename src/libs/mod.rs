@@ -6,9 +6,9 @@ pub mod table;
 use std::collections::HashMap;
 
 use crate::lvm::Lvm;
-use crate::object::{GCObjectKind, LucyValue};
+use crate::object::{GCObjectKind, LuciaValue};
 
-pub fn std_libs(lvm: &mut Lvm) -> HashMap<String, LucyValue> {
+pub fn std_libs(lvm: &mut Lvm) -> HashMap<String, LuciaValue> {
     let mut std_libs = HashMap::new();
     macro_rules! add_std_module {
         ($name:expr, $path:path) => {

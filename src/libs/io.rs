@@ -1,34 +1,34 @@
 use std::io;
 
 use crate::lvm::Lvm;
-use crate::object::{GCObjectKind, LucyTable, LucyValue};
+use crate::object::{GCObjectKind, LuciaTable, LuciaValue};
 use crate::{call_arguments_error, str_to_value};
 
-pub fn libs(lvm: &mut Lvm) -> LucyTable {
-    let mut t = LucyTable::new();
+pub fn libs(lvm: &mut Lvm) -> LuciaTable {
+    let mut t = LuciaTable::new();
     t.set(
         &str_to_value!(lvm, "print"),
-        LucyValue::ExtFunction(|args, _| {
+        LuciaValue::ExtFunction(|args, _| {
             if args.len() == 1 {
                 return Err(call_arguments_error!(None, 1, args.len()));
             }
             print!("{}", args.first().unwrap());
-            Ok(LucyValue::Null)
+            Ok(LuciaValue::Null)
         }),
     );
     t.set(
         &str_to_value!(lvm, "println"),
-        LucyValue::ExtFunction(|args, _| {
+        LuciaValue::ExtFunction(|args, _| {
             if args.len() != 1 {
                 return Err(call_arguments_error!(None, 1, args.len()));
             }
             println!("{}", args.first().unwrap());
-            Ok(LucyValue::Null)
+            Ok(LuciaValue::Null)
         }),
     );
     t.set(
         &str_to_value!(lvm, "input"),
-        LucyValue::ExtFunction(|args, lvm| {
+        LuciaValue::ExtFunction(|args, lvm| {
             if args.len() != 0 {
                 return Err(call_arguments_error!(None, 1, args.len()));
             }

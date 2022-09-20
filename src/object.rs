@@ -3,22 +3,22 @@ use std::convert::{TryFrom, TryInto};
 use std::fmt::{Debug, Display};
 
 use crate::codegen::Function;
-use crate::errors::{LResult, LucyError};
+use crate::errors::{LResult, LuciaError};
 use crate::lvm::Lvm;
 use crate::type_convert_error;
 
-/// Enum of all lucy values.
+/// Enum of all lucia values.
 #[derive(Clone, Copy)]
-pub enum LucyValue {
+pub enum LuciaValue {
     Null,
     Bool(bool),
     Int(i64),
     Float(f64),
-    ExtFunction(fn(Vec<LucyValue>, &mut Lvm) -> LResult<LucyValue>),
+    ExtFunction(fn(Vec<LuciaValue>, &mut Lvm) -> LResult<LuciaValue>),
     GCObject(*mut GCObject),
 }
 
-impl Debug for LucyValue {
+impl Debug for LuciaValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Null => write!(f, "Null"),
@@ -33,7 +33,7 @@ impl Debug for LucyValue {
     }
 }
 
-impl PartialEq for LucyValue {
+impl PartialEq for LuciaValue {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Null, Self::Null) => true,
@@ -47,15 +47,15 @@ impl PartialEq for LucyValue {
     }
 }
 
-impl Display for LucyValue {
+impl Display for LuciaValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LucyValue::Null => write!(f, "null"),
-            LucyValue::Bool(v) => write!(f, "{}", if *v { "true" } else { "false" }),
-            LucyValue::Int(v) => write!(f, "{}", v),
-            LucyValue::Float(v) => write!(f, "{}", v),
-            LucyValue::ExtFunction(_) => write!(f, "function: ext_function"),
-            LucyValue::GCObject(v) => unsafe {
+            LuciaValue::Null => write!(f, "null"),
+            LuciaValue::Bool(v) => write!(f, "{}", if *v { "true" } else { "false" }),
+            LuciaValue::Int(v) => write!(f, "{}", v),
+            LuciaValue::Float(v) => write!(f, "{}", v),
+            LuciaValue::ExtFunction(_) => write!(f, "function: ext_function"),
+            LuciaValue::GCObject(v) => unsafe {
                 match &(**v).kind {
                     GCObjectKind::Str(v) => write!(f, "{}", v),
                     GCObjectKind::Table(v) => write!(f, "{}", v),
@@ -69,18 +69,18 @@ impl Display for LucyValue {
 
 macro_rules! impl_from_for_value {
     ($ty:ty, $kind:tt, $type_name:expr) => {
-        impl From<$ty> for LucyValue {
+        impl From<$ty> for LuciaValue {
             fn from(value: $ty) -> Self {
-                LucyValue::$kind(value)
+                LuciaValue::$kind(value)
             }
         }
 
-        impl TryFrom<LucyValue> for $ty {
-            type Error = LucyError;
+        impl TryFrom<LuciaValue> for $ty {
+            type Error = LuciaError;
 
-            fn try_from(value: LucyValue) -> Result<Self, Self::Error> {
+            fn try_from(value: LuciaValue) -> Result<Self, Self::Error> {
                 match value {
-                    LucyValue::$kind(v) => Ok(v),
+                    LuciaValue::$kind(v) => Ok(v),
                     _ => Err(type_convert_error!(value.value_type(), $type_name)),
                 }
             }
@@ -88,34 +88,34 @@ macro_rules! impl_from_for_value {
     };
 }
 
-impl_from_for_value!(bool, Bool, LucyValueType::Bool);
-impl_from_for_value!(i64, Int, LucyValueType::Int);
-impl_from_for_value!(f64, Float, LucyValueType::Float);
+impl_from_for_value!(bool, Bool, LuciaValueType::Bool);
+impl_from_for_value!(i64, Int, LuciaValueType::Int);
+impl_from_for_value!(f64, Float, LuciaValueType::Float);
 
-impl TryFrom<LucyValue> for String {
-    type Error = LucyError;
+impl TryFrom<LuciaValue> for String {
+    type Error = LuciaError;
 
-    fn try_from(value: LucyValue) -> Result<Self, Self::Error> {
+    fn try_from(value: LuciaValue) -> Result<Self, Self::Error> {
         match value {
-            LucyValue::GCObject(v) => unsafe {
+            LuciaValue::GCObject(v) => unsafe {
                 match &(*v).kind {
                     GCObjectKind::Str(v) => Ok(v.clone()),
-                    _ => Err(type_convert_error!(value.value_type(), LucyValueType::Str)),
+                    _ => Err(type_convert_error!(value.value_type(), LuciaValueType::Str)),
                 }
             },
-            _ => Err(type_convert_error!(value.value_type(), LucyValueType::Str)),
+            _ => Err(type_convert_error!(value.value_type(), LuciaValueType::Str)),
         }
     }
 }
 
 macro_rules! impl_try_from_value {
     ($ty:ty, $kind:tt, $type_name:expr) => {
-        impl TryFrom<LucyValue> for $ty {
-            type Error = LucyError;
+        impl TryFrom<LuciaValue> for $ty {
+            type Error = LuciaError;
 
-            fn try_from(value: LucyValue) -> Result<Self, Self::Error> {
+            fn try_from(value: LuciaValue) -> Result<Self, Self::Error> {
                 match value {
-                    LucyValue::GCObject(v) => unsafe {
+                    LuciaValue::GCObject(v) => unsafe {
                         match &mut (*v).kind {
                             GCObjectKind::$kind(v) => Ok(v),
                             _ => Err(type_convert_error!(value.value_type(), $type_name)),
@@ -128,35 +128,35 @@ macro_rules! impl_try_from_value {
     };
 }
 
-impl_try_from_value!(&LucyTable, Table, LucyValueType::Table);
-impl_try_from_value!(&Closuer, Closuer, LucyValueType::Closuer);
-impl_try_from_value!(&mut LucyTable, Table, LucyValueType::Table);
-impl_try_from_value!(&mut Closuer, Closuer, LucyValueType::Closuer);
+impl_try_from_value!(&LuciaTable, Table, LuciaValueType::Table);
+impl_try_from_value!(&Closuer, Closuer, LuciaValueType::Closuer);
+impl_try_from_value!(&mut LuciaTable, Table, LuciaValueType::Table);
+impl_try_from_value!(&mut Closuer, Closuer, LuciaValueType::Closuer);
 
-impl LucyValue {
-    pub fn value_type(&self) -> LucyValueType {
+impl LuciaValue {
+    pub fn value_type(&self) -> LuciaValueType {
         match self {
-            LucyValue::Null => LucyValueType::Null,
-            LucyValue::Bool(_) => LucyValueType::Bool,
-            LucyValue::Int(_) => LucyValueType::Int,
-            LucyValue::Float(_) => LucyValueType::Float,
-            LucyValue::ExtFunction(_) => LucyValueType::ExtFunction,
-            LucyValue::GCObject(v) => match unsafe { v.as_ref() } {
+            LuciaValue::Null => LuciaValueType::Null,
+            LuciaValue::Bool(_) => LuciaValueType::Bool,
+            LuciaValue::Int(_) => LuciaValueType::Int,
+            LuciaValue::Float(_) => LuciaValueType::Float,
+            LuciaValue::ExtFunction(_) => LuciaValueType::ExtFunction,
+            LuciaValue::GCObject(v) => match unsafe { v.as_ref() } {
                 Some(v) => match v.kind {
-                    GCObjectKind::Str(_) => LucyValueType::Str,
-                    GCObjectKind::Table(_) => LucyValueType::Table,
-                    GCObjectKind::Closuer(_) => LucyValueType::Closuer,
-                    GCObjectKind::ExtClosuer(_) => LucyValueType::ExtClosuer,
+                    GCObjectKind::Str(_) => LuciaValueType::Str,
+                    GCObjectKind::Table(_) => LuciaValueType::Table,
+                    GCObjectKind::Closuer(_) => LuciaValueType::Closuer,
+                    GCObjectKind::ExtClosuer(_) => LuciaValueType::ExtClosuer,
                 },
-                None => LucyValueType::UnknownGCObject,
+                None => LuciaValueType::UnknownGCObject,
             },
         }
     }
 }
 
-/// The type of LucyValue.
+/// The type of LuciaValue.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LucyValueType {
+pub enum LuciaValueType {
     Null,
     Bool,
     Int,
@@ -169,22 +169,22 @@ pub enum LucyValueType {
     ExtClosuer,
 }
 
-impl Display for LucyValueType {
+impl Display for LuciaValueType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}",
             match self {
-                LucyValueType::Null => "null",
-                LucyValueType::Bool => "bool",
-                LucyValueType::Int => "int",
-                LucyValueType::Float => "float",
-                LucyValueType::ExtFunction => "function",
-                LucyValueType::UnknownGCObject => "unknown_object",
-                LucyValueType::Str => "str",
-                LucyValueType::Table => "table",
-                LucyValueType::Closuer => "function",
-                LucyValueType::ExtClosuer => "function",
+                LuciaValueType::Null => "null",
+                LuciaValueType::Bool => "bool",
+                LuciaValueType::Int => "int",
+                LuciaValueType::Float => "float",
+                LuciaValueType::ExtFunction => "function",
+                LuciaValueType::UnknownGCObject => "unknown_object",
+                LuciaValueType::Str => "str",
+                LuciaValueType::Table => "table",
+                LuciaValueType::Closuer => "function",
+                LuciaValueType::ExtClosuer => "function",
             }
         )
     }
@@ -215,9 +215,9 @@ impl PartialEq for GCObject {
 /// Enum of all collectable objects.
 pub enum GCObjectKind {
     Str(String),
-    Table(LucyTable),
+    Table(LuciaTable),
     Closuer(Closuer),
-    ExtClosuer(Box<dyn FnMut(Vec<LucyValue>, &mut Lvm) -> LResult<LucyValue>>),
+    ExtClosuer(Box<dyn FnMut(Vec<LuciaValue>, &mut Lvm) -> LResult<LuciaValue>>),
 }
 
 impl Debug for GCObjectKind {
@@ -245,22 +245,22 @@ impl PartialEq for GCObjectKind {
 
 /// The table implement.
 #[derive(Debug, Clone, PartialEq)]
-pub struct LucyTable(pub Vec<(LucyValue, LucyValue)>);
+pub struct LuciaTable(pub Vec<(LuciaValue, LuciaValue)>);
 
-impl LucyTable {
+impl LuciaTable {
     pub fn new() -> Self {
-        LucyTable(Vec::new())
+        LuciaTable(Vec::new())
     }
 
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
-    pub fn get_by_index(&self, index: usize) -> Option<&(LucyValue, LucyValue)> {
+    pub fn get_by_index(&self, index: usize) -> Option<&(LuciaValue, LuciaValue)> {
         self.0.get(index)
     }
 
-    pub fn raw_get(&self, key: &LucyValue) -> Option<LucyValue> {
+    pub fn raw_get(&self, key: &LuciaValue) -> Option<LuciaValue> {
         for (k, v) in &self.0 {
             if k == key {
                 return Some(*v);
@@ -269,7 +269,7 @@ impl LucyTable {
         None
     }
 
-    pub fn raw_get_by_str(&self, key: &str) -> Option<LucyValue> {
+    pub fn raw_get_by_str(&self, key: &str) -> Option<LuciaValue> {
         for (k, v) in &self.0 {
             match String::try_from(*k) {
                 Ok(k) => {
@@ -283,12 +283,12 @@ impl LucyTable {
         None
     }
 
-    pub fn get(&self, key: &LucyValue) -> Option<LucyValue> {
+    pub fn get(&self, key: &LuciaValue) -> Option<LuciaValue> {
         match self.raw_get(key) {
             Some(v) => Some(v),
             None => match self.raw_get_by_str("__base__") {
                 Some(v) => {
-                    let t: &LucyTable = v.try_into().unwrap();
+                    let t: &LuciaTable = v.try_into().unwrap();
                     t.get(key)
                 }
                 None => None,
@@ -296,12 +296,12 @@ impl LucyTable {
         }
     }
 
-    pub fn get_by_str(&self, key: &str) -> Option<LucyValue> {
+    pub fn get_by_str(&self, key: &str) -> Option<LuciaValue> {
         match self.raw_get_by_str(key) {
             Some(v) => Some(v),
             None => match self.raw_get_by_str("__base__") {
                 Some(v) => {
-                    let t: &LucyTable = v.try_into().unwrap();
+                    let t: &LuciaTable = v.try_into().unwrap();
                     t.raw_get_by_str(key)
                 }
                 None => None,
@@ -309,11 +309,11 @@ impl LucyTable {
         }
     }
 
-    pub fn set(&mut self, key: &LucyValue, value: LucyValue) {
+    pub fn set(&mut self, key: &LuciaValue, value: LuciaValue) {
         for i in 0..self.0.len() {
             let (k, _) = &self.0[i];
             if k == key {
-                if value == LucyValue::Null {
+                if value == LuciaValue::Null {
                     self.0.remove(i);
                 } else {
                     self.0[i] = (*key, value);
@@ -321,13 +321,13 @@ impl LucyTable {
                 return;
             }
         }
-        if value != LucyValue::Null {
+        if value != LuciaValue::Null {
             self.0.push((*key, value));
         }
     }
 }
 
-impl Display for LucyTable {
+impl Display for LuciaTable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -341,8 +341,8 @@ impl Display for LucyTable {
     }
 }
 
-impl IntoIterator for LucyTable {
-    type Item = (LucyValue, LucyValue);
+impl IntoIterator for LuciaTable {
+    type Item = (LuciaValue, LuciaValue);
     type IntoIter = std::vec::IntoIter<Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -350,13 +350,13 @@ impl IntoIterator for LucyTable {
     }
 }
 
-impl From<Vec<LucyValue>> for LucyTable {
-    fn from(value: Vec<LucyValue>) -> Self {
-        let mut temp: Vec<(LucyValue, LucyValue)> = Vec::new();
+impl From<Vec<LuciaValue>> for LuciaTable {
+    fn from(value: Vec<LuciaValue>) -> Self {
+        let mut temp: Vec<(LuciaValue, LuciaValue)> = Vec::new();
         for (i, v) in value.iter().enumerate() {
-            temp.push((LucyValue::Int(i.try_into().unwrap()), *v))
+            temp.push((LuciaValue::Int(i.try_into().unwrap()), *v))
         }
-        LucyTable(temp)
+        LuciaTable(temp)
     }
 }
 
@@ -366,7 +366,7 @@ pub struct Closuer {
     pub module_id: usize,
     pub function: Function,
     pub base_closuer: Option<NonNull<GCObject>>,
-    pub variables: Vec<LucyValue>,
+    pub variables: Vec<LuciaValue>,
 }
 
 impl PartialEq for Closuer {
