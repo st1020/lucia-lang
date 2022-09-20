@@ -1,6 +1,5 @@
 use std::io;
 
-use crate::errors::{LucyError, TypeErrorKind};
 use crate::lvm::Lvm;
 use crate::object::{GCObjectKind, LucyTable, LucyValue};
 use crate::{call_arguments_error, str_to_value};

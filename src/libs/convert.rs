@@ -1,6 +1,5 @@
 use std::convert::TryFrom;
 
-use crate::errors::{LucyError, TypeErrorKind};
 use crate::lvm::Lvm;
 use crate::object::{GCObjectKind, LucyTable, LucyValue, LucyValueType};
 use crate::{call_arguments_error, str_to_value, type_convert_error};

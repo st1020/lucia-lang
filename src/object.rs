@@ -3,7 +3,7 @@ use std::convert::{TryFrom, TryInto};
 use std::fmt::{Debug, Display};
 
 use crate::codegen::Function;
-use crate::errors::{LResult, LucyError, TypeErrorKind};
+use crate::errors::{LResult, LucyError};
 use crate::lvm::Lvm;
 use crate::type_convert_error;
 

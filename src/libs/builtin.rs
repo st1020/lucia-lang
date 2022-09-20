@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use crate::call_arguments_error;
-use crate::errors::{LucyError, TypeErrorKind};
 use crate::object::{GCObjectKind, LucyValue};
 
 pub fn builtin_variables() -> HashMap<String, LucyValue> {

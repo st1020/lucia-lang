@@ -13,20 +13,20 @@ use crate::object::*;
 #[macro_export]
 macro_rules! str_to_value {
     ($lvm:expr ,$name:expr) => {
-        $lvm.new_gc_value(GCObjectKind::Str(String::from($name)))
+        $lvm.new_gc_value($crate::object::GCObjectKind::Str(String::from($name)))
     };
 }
 
 #[macro_export]
 macro_rules! unsupported_operand_type {
     ($operator:expr, $arg1:expr) => {
-        LucyError::TypeError(TypeErrorKind::UnOperatorError {
+        $crate::errors::LucyError::TypeError($crate::errors::TypeErrorKind::UnOperatorError {
             operator: $operator,
             operand: $arg1.value_type(),
         })
     };
     ($operator:expr, $arg1:expr, $arg2:expr) => {
-        LucyError::TypeError(TypeErrorKind::BinOperatorError {
+        $crate::errors::LucyError::TypeError($crate::errors::TypeErrorKind::BinOperatorError {
             operator: $operator,
             operand: ($arg1.value_type(), $arg2.value_type()),
         })
@@ -36,7 +36,7 @@ macro_rules! unsupported_operand_type {
 #[macro_export]
 macro_rules! type_convert_error {
     ($from:expr, $to:expr) => {
-        LucyError::TypeError(TypeErrorKind::ConvertError {
+        $crate::errors::LucyError::TypeError($crate::errors::TypeErrorKind::ConvertError {
             from: $from,
             to: $to,
         })
@@ -46,14 +46,16 @@ macro_rules! type_convert_error {
 #[macro_export]
 macro_rules! not_callable_error {
     ($value:expr) => {
-        LucyError::TypeError(TypeErrorKind::NotCallableError($value.value_type()))
+        $crate::errors::LucyError::TypeError($crate::errors::TypeErrorKind::NotCallableError(
+            $value.value_type(),
+        ))
     };
 }
 
 #[macro_export]
 macro_rules! call_arguments_error {
     ($value:expr, $require:expr, $give:expr) => {
-        LucyError::TypeError(TypeErrorKind::CallArgumentsError {
+        $crate::errors::LucyError::TypeError($crate::errors::TypeErrorKind::CallArgumentsError {
             value: $value,
             required: $require,
             given: $give,
