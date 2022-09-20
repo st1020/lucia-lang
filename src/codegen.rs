@@ -5,8 +5,9 @@ use crate::errors::{LResult, LucyError, SyntaxErrorKind};
 use crate::lexer::tokenize;
 use crate::parser::Parser;
 
+/// The const value.
 #[derive(Clone, Debug, PartialEq, PartialOrd)]
-pub enum LucylData {
+pub enum ConstlValue {
     /// "null"
     Null,
     /// "true", "false"
@@ -21,71 +22,115 @@ pub enum LucylData {
     Func(usize),
 }
 
-impl From<LitKind> for LucylData {
+impl From<LitKind> for ConstlValue {
     fn from(value: LitKind) -> Self {
         match value {
-            LitKind::Null => LucylData::Null,
-            LitKind::Bool(v) => LucylData::Bool(v),
-            LitKind::Int(v) => LucylData::Int(v),
-            LitKind::Float(v) => LucylData::Float(v),
-            LitKind::Str(v) => LucylData::Str(v),
+            LitKind::Null => ConstlValue::Null,
+            LitKind::Bool(v) => ConstlValue::Bool(v),
+            LitKind::Int(v) => ConstlValue::Int(v),
+            LitKind::Float(v) => ConstlValue::Float(v),
+            LitKind::Str(v) => ConstlValue::Str(v),
         }
     }
 }
 
+/// The jump target.
+/// Note that this is only used during code generation and will not appear in the `Program`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct JumpTarget(pub usize);
 
+/// The operation code.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum OPCode {
+    /// Removes the top-of-stack (TOS) item.
     Pop,
+    /// Duplicates the reference on top of the stack.
     Dup,
+    /// Duplicates the two references on top of the stack, leaving them in the same order.
     DupTwo,
+    /// Swaps the two top-most stack items.
     Rot,
+    /// Pushes the value associated with `local_names[namei]` onto the stack.
     LoadLocal(usize),
+    /// Pushes the value associated with `global_names[namei]` onto the stack.
     LoadGlobal(usize),
+    /// Pushes the value associated with `upvalue_names[namei]` onto the stack.
     LoadUpvalue(usize),
+    /// Pushes `consts[consti]` onto the stack.
     LoadConst(usize),
+    /// Stores TOS into the `local_names[namei]`.
     StoreLocal(usize),
+    /// Stores TOS into the `global_names[namei]`.
     StoreGlobal(usize),
+    /// Stores TOS into the `upvalue_names[namei]`.
     StoreUpvalue(usize),
 
+    /// Imports the module `consts[consti]` and pushed it onto the stack.
     Import(usize),
+    /// Loads the attribute `consts[consti]` the module found in TOS and pushed it onto the stack.
     ImportFrom(usize),
+    /// LoLoads all symbols from the module TOS to the global namespace.
     ImportGlob,
 
+    /// Pushes a new table onto the stack. Pops `2 * count` items to build table.
     BuildTable(usize),
+    /// Implements `TOS = TOS1::TOS`.
     GetAttr,
+    /// Implements `TOS = TOS1[TOS]`.
     GetItem,
+    /// Implements `TOS1::TOS = TOS2`.
     SetAttr,
+    /// Implements `TOS1[TOS] = TOS2`.
     SetItem,
 
+    /// Implements `TOS = -TOS`.
     Neg,
+    /// Implements `TOS = not TOS`.
     Not,
 
+    /// Implements `TOS = TOS1 + TOS`.
     Add,
+    /// Implements `TOS = TOS1 - TOS`.
     Sub,
+    /// Implements `TOS = TOS1 * TOS`.
     Mul,
+    /// Implements `TOS = TOS1 / TOS`.
     Div,
+    /// Implements `TOS = TOS1 % TOS`.
     Mod,
 
+    /// Implements `TOS = TOS1 == TOS`.
     Eq,
+    /// Implements `TOS = TOS1 != TOS`.
     Ne,
+    /// Implements `TOS = TOS1 > TOS`.
     Gt,
+    /// Implements `TOS = TOS1 >= TOS`.
     Ge,
+    /// Implements `TOS = TOS1 < TOS`.
     Lt,
+    /// Implements `TOS = TOS1 <= TOS`.
     Le,
+    /// Implements `TOS = TOS1 is TOS`.
     Is,
 
+    ///
     For(JumpTarget),
+    /// Sets the bytecode counter to target.
     Jump(JumpTarget),
+    /// If TOS is false, sets the bytecode counter to target. TOS is popped.
     JumpIfFalse(JumpTarget),
+    /// If TOS is true, sets the bytecode counter to target and leaves TOS on the stack. Otherwise, TOS is popped.
     JumpIfTureOrPop(JumpTarget),
+    /// If TOS is false, sets the bytecode counter to target and leaves TOS on the stack. Otherwise, TOS is popped.
     JumpIfFalseOrPop(JumpTarget),
 
+    /// Pops numbers of item for function arguments, then pop an callable value and call it.
     Call(usize),
+    /// Returns with TOS to the caller of the function.
     Return,
 
+    /// A jump target, only used during code generation.
     JumpTarget(JumpTarget),
 }
 
@@ -120,6 +165,7 @@ impl From<UnOp> for OPCode {
     }
 }
 
+/// Generate code from AST.
 pub fn gen_code(ast_root: Box<Block>) -> LResult<Program> {
     let mut context = Context::new();
     let func = FunctionBuilder::new(ast_root, 0, None, Vec::new(), None, false);
@@ -175,6 +221,7 @@ pub fn gen_code(ast_root: Box<Block>) -> LResult<Program> {
     Ok(Program::from(context))
 }
 
+/// Try estimate function stack size.
 fn get_stack_size(code: &Vec<OPCode>, mut offset: usize, init_size: usize) -> usize {
     let mut stack_size = init_size;
     let mut t = init_size;
@@ -235,14 +282,15 @@ fn get_stack_size(code: &Vec<OPCode>, mut offset: usize, init_size: usize) -> us
     stack_size
 }
 
+/// A program.
 #[derive(Debug, Clone)]
 pub struct Program {
     pub func_list: Vec<Function>,
-    pub const_list: Vec<LucylData>,
+    pub const_list: Vec<ConstlValue>,
 }
 
 impl Program {
-    pub fn new(func_list: Vec<Function>, const_list: Vec<LucylData>) -> Self {
+    pub fn new(func_list: Vec<Function>, const_list: Vec<ConstlValue>) -> Self {
         Program {
             func_list,
             const_list,
@@ -278,7 +326,7 @@ impl TryFrom<&String> for Program {
 #[derive(Debug, Clone)]
 struct Context {
     pub func_list: Vec<FunctionBuilder>,
-    pub const_list: Vec<LucylData>,
+    pub const_list: Vec<ConstlValue>,
     jump_target_count: usize,
 }
 
@@ -296,7 +344,7 @@ impl Context {
         JumpTarget(self.jump_target_count - 1)
     }
 
-    fn add_const(&mut self, value: LucylData) -> usize {
+    fn add_const(&mut self, value: ConstlValue) -> usize {
         match self.const_list.iter().position(|x| *x == value) {
             Some(index) => index,
             None => {
@@ -312,6 +360,7 @@ enum LoadStore {
     Store,
 }
 
+/// A function.
 #[derive(Debug, Clone)]
 pub struct Function {
     pub function_id: usize,
@@ -482,7 +531,7 @@ impl FunctionBuilder {
         self.code_list.append(t);
         if *self.code_list.last().unwrap_or(&OPCode::Pop) != OPCode::Return {
             self.code_list
-                .push(OPCode::LoadConst(context.add_const(LucylData::Null)));
+                .push(OPCode::LoadConst(context.add_const(ConstlValue::Null)));
             self.code_list.push(OPCode::Return);
         }
         Ok(())
@@ -492,7 +541,7 @@ impl FunctionBuilder {
         let mut code_list = Vec::new();
         match ast_node.kind {
             ExprKind::Lit(lit) => code_list.push(OPCode::LoadConst(
-                context.add_const(LucylData::from(lit.value)),
+                context.add_const(ConstlValue::from(lit.value)),
             )),
             ExprKind::Ident(ident) => code_list.push(self.get_load(&ident.name, context)),
             ExprKind::Function {
@@ -519,7 +568,7 @@ impl FunctionBuilder {
                     is_closure,
                 );
                 code_list.push(OPCode::LoadConst(
-                    context.add_const(LucylData::Func(func.function_id)),
+                    context.add_const(ConstlValue::Func(func.function_id)),
                 ));
                 context.func_list.push(func);
             }
@@ -573,15 +622,15 @@ impl FunctionBuilder {
             } => {
                 code_list.append(&mut self.gen_expr(*table, context)?);
                 match kind {
-                    MemberExprKind::OpenBracket => {
+                    MemberKind::Bracket => {
                         code_list.append(&mut self.gen_expr(*property, context)?);
                         code_list.push(OPCode::GetItem);
                     }
-                    MemberExprKind::Dot | MemberExprKind::DoubleColon => {
+                    MemberKind::Dot | MemberKind::DoubleColon => {
                         match property.kind {
                             ExprKind::Ident(ident) => {
                                 code_list.push(OPCode::LoadConst(
-                                    context.add_const(LucylData::Str(ident.name)),
+                                    context.add_const(ConstlValue::Str(ident.name)),
                                 ));
                             }
                             _ => return Err(LucyError::SyntaxError(SyntaxErrorKind::IllegalAst)),
@@ -598,13 +647,13 @@ impl FunctionBuilder {
                         property,
                         kind,
                     } => {
-                        if kind == MemberExprKind::Dot {
+                        if kind == MemberKind::Dot {
                             code_list.append(&mut self.gen_expr(*table, context)?);
                             code_list.push(OPCode::Dup);
                             match property.kind {
                                 ExprKind::Ident(ident) => {
                                     code_list.push(OPCode::LoadConst(
-                                        context.add_const(LucylData::Str(ident.name)),
+                                        context.add_const(ConstlValue::Str(ident.name)),
                                     ));
                                 }
                                 _ => {
@@ -747,7 +796,9 @@ impl FunctionBuilder {
                     .map(|x| x.name.clone())
                     .collect::<Vec<String>>()
                     .join("/");
-                code_list.push(OPCode::Import(context.add_const(LucylData::Str(path_str))));
+                code_list.push(OPCode::Import(
+                    context.add_const(ConstlValue::Str(path_str)),
+                ));
                 match kind {
                     ImportKind::Simple(alias) => {
                         code_list.push(OPCode::StoreGlobal(self.add_global_name(&alias.name)));
@@ -755,7 +806,7 @@ impl FunctionBuilder {
                     ImportKind::Nested(items) => {
                         for (name, alias) in items {
                             code_list.push(OPCode::ImportFrom(
-                                context.add_const(LucylData::Str(name.name)),
+                                context.add_const(ConstlValue::Str(name.name)),
                             ));
                             code_list.push(OPCode::StoreGlobal(self.add_global_name(&alias.name)));
                         }
@@ -780,8 +831,8 @@ impl FunctionBuilder {
                     code_list.pop();
                     code_list.append(&mut self.gen_expr(*right, context)?);
                     code_list.push(match kind {
-                        MemberExprKind::OpenBracket => OPCode::SetItem,
-                        MemberExprKind::Dot | MemberExprKind::DoubleColon => OPCode::SetAttr,
+                        MemberKind::Bracket => OPCode::SetItem,
+                        MemberKind::Dot | MemberKind::DoubleColon => OPCode::SetAttr,
                     });
                 }
                 _ => return Err(LucyError::SyntaxError(SyntaxErrorKind::IllegalAst)),
@@ -812,8 +863,8 @@ impl FunctionBuilder {
                     code_list.append(&mut self.gen_expr(*right, context)?);
                     code_list.push(OPCode::try_from(operator)?);
                     code_list.push(match kind {
-                        MemberExprKind::OpenBracket => OPCode::SetItem,
-                        MemberExprKind::Dot | MemberExprKind::DoubleColon => OPCode::SetAttr,
+                        MemberKind::Bracket => OPCode::SetItem,
+                        MemberKind::Dot | MemberKind::DoubleColon => OPCode::SetAttr,
                     });
                 }
                 _ => return Err(LucyError::SyntaxError(SyntaxErrorKind::IllegalAst)),

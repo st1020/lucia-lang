@@ -4,18 +4,20 @@ use crate::ast::*;
 use crate::errors::{ExpectedToken, LResult, LucyError, SyntaxErrorKind};
 use crate::lexer::{Token, TokenKind};
 
+/// The parser. Turns token iter into AST.
 pub struct Parser<'a> {
     /// The current token.
     pub token: Token,
     /// The previous token.
     pub prev_token: Token,
-    /// The token iter
+    /// The token iter.
     pub token_iter: &'a mut dyn Iterator<Item = Token>,
-    /// Is token iter end
+    /// Is token iter end.
     pub is_eof: bool,
 }
 
 impl<'a> Parser<'a> {
+    /// Constructs a new `Paser` with a token iter.
     pub fn new(token_iter: &'a mut dyn Iterator<Item = Token>) -> Self {
         let mut parser = Parser {
             token: Token::dummy(),
@@ -27,6 +29,7 @@ impl<'a> Parser<'a> {
         parser
     }
 
+    /// Moves to the next token.
     pub fn bump(&mut self) {
         self.prev_token = self.token.clone();
         self.token = match self.token_iter.next() {
@@ -38,6 +41,7 @@ impl<'a> Parser<'a> {
         };
     }
 
+    /// Expect the kind of current token is `t`, return `Err()` if not.
     pub fn expect(&self, t: TokenKind) -> LResult<()> {
         if self.token.kind != t {
             if self.is_eof {
@@ -53,6 +57,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parse token iter into AST `Box<Block>`.
     pub fn parse(&mut self) -> LResult<Box<Block>> {
         Ok(Box::new(Block {
             start: self.token.start,
@@ -67,6 +72,7 @@ impl<'a> Parser<'a> {
         }))
     }
 
+    /// Parse statement.
     fn parse_stmt(&mut self) -> LResult<Box<Stmt>> {
         Ok(Box::new(match self.token.kind {
             TokenKind::If => Stmt {
@@ -345,6 +351,7 @@ impl<'a> Parser<'a> {
         }))
     }
 
+    /// Parse block.
     fn parse_block(&mut self) -> LResult<Box<Block>> {
         self.expect(TokenKind::OpenBrace)?;
         Ok(Box::new(Block {
@@ -362,6 +369,7 @@ impl<'a> Parser<'a> {
         }))
     }
 
+    /// Parse expression.
     fn parse_expr(&mut self, min_precedence: u32) -> LResult<Box<Expr>> {
         let start = self.token.start;
         let mut left = self.parse_expr_unary()?;
@@ -401,6 +409,7 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
+    /// Parse unary expression.
     fn parse_expr_unary(&mut self) -> LResult<Box<Expr>> {
         macro_rules! unary_expr {
             ($un_op:expr) => {{
@@ -423,6 +432,7 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parse primary expression.
     fn parse_expr_primary(&mut self) -> LResult<Box<Expr>> {
         macro_rules! member_expr {
             ($ast_node:ident, $start:ident, $member_expr_kind:expr) => {
@@ -471,7 +481,7 @@ impl<'a> Parser<'a> {
                     ast_node = Box::new(Expr {
                         kind: ExprKind::Member {
                             table: ast_node,
-                            kind: MemberExprKind::OpenBracket,
+                            kind: MemberKind::Bracket,
                             property: {
                                 self.bump();
                                 self.parse_expr(1)?
@@ -483,9 +493,9 @@ impl<'a> Parser<'a> {
                     self.expect(TokenKind::CloseBracket)?;
                     self.bump()
                 }
-                TokenKind::Dot => member_expr!(ast_node, start, MemberExprKind::Dot),
+                TokenKind::Dot => member_expr!(ast_node, start, MemberKind::Dot),
                 TokenKind::DoubleColon => {
-                    member_expr!(ast_node, start, MemberExprKind::DoubleColon)
+                    member_expr!(ast_node, start, MemberKind::DoubleColon)
                 }
                 _ => break,
             }
@@ -493,6 +503,7 @@ impl<'a> Parser<'a> {
         Ok(ast_node)
     }
 
+    /// Parse atom expression.
     fn parse_expr_atom(&mut self) -> LResult<Box<Expr>> {
         macro_rules! lit_expr {
             ($lit_kind:expr) => {{
@@ -539,10 +550,12 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parse ident expression.
     fn parse_expr_ident(&mut self) -> LResult<Box<Expr>> {
         Ok(Box::new(Expr::from(*self.parse_ident()?)))
     }
 
+    /// Parse table expression.
     fn parse_expr_table(&mut self) -> LResult<Box<Expr>> {
         Ok(Box::new(Expr {
             start: self.token.start,
@@ -593,6 +606,7 @@ impl<'a> Parser<'a> {
         }))
     }
 
+    /// Parse function expression.
     fn parse_expr_func(&mut self) -> LResult<Box<Expr>> {
         let end_token;
         let mut variadic = None;
@@ -647,6 +661,7 @@ impl<'a> Parser<'a> {
         }))
     }
 
+    /// Parse ident.
     fn parse_ident(&mut self) -> LResult<Box<Ident>> {
         match &self.token.kind {
             TokenKind::Ident(v) => {

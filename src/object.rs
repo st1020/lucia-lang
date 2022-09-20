@@ -7,6 +7,7 @@ use crate::errors::{LResult, LucyError, TypeErrorKind};
 use crate::lvm::Lvm;
 use crate::type_convert_error;
 
+/// Enum of all lucy values.
 #[derive(Clone, Copy)]
 pub enum LucyValue {
     Null,
@@ -153,6 +154,7 @@ impl LucyValue {
     }
 }
 
+/// The type of LucyValue.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LucyValueType {
     Null,
@@ -188,6 +190,29 @@ impl Display for LucyValueType {
     }
 }
 
+/// All collectable objects.
+#[derive(Debug)]
+pub struct GCObject {
+    pub kind: GCObjectKind,
+    pub gc_state: bool,
+}
+
+impl GCObject {
+    pub fn new(kind: GCObjectKind) -> Self {
+        Self {
+            kind,
+            gc_state: false,
+        }
+    }
+}
+
+impl PartialEq for GCObject {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind
+    }
+}
+
+/// Enum of all collectable objects.
 pub enum GCObjectKind {
     Str(String),
     Table(LucyTable),
@@ -218,27 +243,7 @@ impl PartialEq for GCObjectKind {
     }
 }
 
-#[derive(Debug)]
-pub struct GCObject {
-    pub kind: GCObjectKind,
-    pub gc_state: bool,
-}
-
-impl GCObject {
-    pub fn new(kind: GCObjectKind) -> Self {
-        Self {
-            kind,
-            gc_state: false,
-        }
-    }
-}
-
-impl PartialEq for GCObject {
-    fn eq(&self, other: &Self) -> bool {
-        self.kind == other.kind
-    }
-}
-
+/// The table implement.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LucyTable(pub Vec<(LucyValue, LucyValue)>);
 
@@ -355,6 +360,7 @@ impl From<Vec<LucyValue>> for LucyTable {
     }
 }
 
+/// The closuer object. Any function is a closuer.
 #[derive(Debug, Clone)]
 pub struct Closuer {
     pub module_id: usize,

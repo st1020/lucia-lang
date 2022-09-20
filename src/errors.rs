@@ -8,18 +8,7 @@ use crate::object::{Closuer, LucyValueType};
 
 pub type LResult<T> = Result<T, LucyError>;
 
-#[derive(Error, Debug, Clone, PartialEq)]
-pub enum LexerError {
-    #[error("parse int error ({0})")]
-    ParseIntError(#[source] ParseIntError),
-    #[error("parse float error  ({0})")]
-    ParseFloatError(#[source] ParseFloatError),
-    #[error("number format error")]
-    NumberFormatError,
-    #[error("unterminated string error")]
-    UnterminatedStringError,
-}
-
+/// Enum representing any lucy error.
 #[derive(Error, Debug, Clone, PartialEq)]
 pub enum LucyError {
     #[error("syntax error: {0}")]
@@ -32,6 +21,7 @@ pub enum LucyError {
     UserError(String),
 }
 
+/// Kind of SyntaxError.
 #[derive(Error, Debug, Clone, PartialEq)]
 pub enum SyntaxErrorKind {
     /// lexer error
@@ -64,17 +54,6 @@ pub enum SyntaxErrorKind {
     ContinueOutsideLoop,
 }
 
-impl From<LexerError> for SyntaxErrorKind {
-    fn from(value: LexerError) -> Self {
-        match value {
-            LexerError::ParseIntError(v) => SyntaxErrorKind::ParseIntError(v),
-            LexerError::ParseFloatError(v) => SyntaxErrorKind::ParseFloatError(v),
-            LexerError::NumberFormatError => SyntaxErrorKind::NumberFormatError,
-            LexerError::UnterminatedStringError => SyntaxErrorKind::UnterminatedStringError,
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExpectedToken {
     TokenKind(Box<TokenKind>),
@@ -83,6 +62,7 @@ pub enum ExpectedToken {
     Ident,
 }
 
+/// Kind of RuntimeError.
 #[derive(Error, Debug, Clone, PartialEq)]
 pub enum RuntimeErrorKind {
     #[error("stack error")]
@@ -95,6 +75,7 @@ pub enum RuntimeErrorKind {
     ImportError,
 }
 
+/// Kind of TypeError.
 #[derive(Error, Debug, Clone, PartialEq)]
 pub enum TypeErrorKind {
     #[error("convert error (from {from:?} to {to:?})")]

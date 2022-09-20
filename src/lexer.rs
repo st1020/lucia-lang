@@ -2,7 +2,7 @@ use std::str::Chars;
 
 use unicode_xid;
 
-use crate::errors::{LucyError, SyntaxErrorKind};
+use crate::errors::{LResult, LucyError, SyntaxErrorKind};
 
 use self::LiteralKind::*;
 use self::TokenKind::*;
@@ -98,6 +98,7 @@ impl<'a> Cursor<'a> {
     }
 }
 
+/// Location of token in the code.
 #[derive(Clone, Debug, Copy, PartialEq)]
 pub struct Location {
     pub lineno: u32,
@@ -106,8 +107,6 @@ pub struct Location {
 }
 
 /// Parsed token.
-/// It doesn't contain information about data that has been parsed,
-/// only the type of the token and its size.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Token {
     pub kind: TokenKind,
@@ -278,14 +277,15 @@ pub enum TokenKind {
     Unknown,
 }
 
+/// Enum representing literal types, included wrong literal like unterminated string.
 #[derive(Clone, Debug, PartialEq)]
 pub enum LiteralKind {
     /// "12", "0o100", "0b110"
-    Int(Result<i64, LucyError>),
+    Int(LResult<i64>),
     /// "12.34", "0b100.100"
-    Float(Result<f64, LucyError>),
+    Float(LResult<f64>),
     /// ""abc"", ""abc"
-    Str(Result<String, LucyError>),
+    Str(LResult<String>),
 }
 
 /// Base of numeric literal encoding according to its prefix.
@@ -318,8 +318,6 @@ pub fn tokenize(input: &str) -> impl Iterator<Item = Token> + '_ {
 }
 
 /// True if `c` is considered a whitespace according to Rust language definition.
-/// See [Rust language reference](https://doc.rust-lang.org/reference/whitespace.html)
-/// for definitions of these classes.
 pub fn is_whitespace(c: char) -> bool {
     // This is Pattern_White_Space.
     //
@@ -350,16 +348,12 @@ pub fn is_whitespace(c: char) -> bool {
 }
 
 /// True if `c` is valid as a first character of an identifier.
-/// See [Rust language reference](https://doc.rust-lang.org/reference/identifiers.html) for
-/// a formal definition of valid identifier name.
 pub fn is_id_start(c: char) -> bool {
     // This is XID_Start OR '_' (which formally is not a XID_Start).
     c == '_' || unicode_xid::UnicodeXID::is_xid_start(c)
 }
 
 /// True if `c` is valid as a non-first character of an identifier.
-/// See [Rust language reference](https://doc.rust-lang.org/reference/identifiers.html) for
-/// a formal definition of valid identifier name.
 pub fn is_id_continue(c: char) -> bool {
     unicode_xid::UnicodeXID::is_xid_continue(c)
 }

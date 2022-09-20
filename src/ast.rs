@@ -3,53 +3,7 @@ use std::convert::TryFrom;
 use crate::errors::LucyError;
 use crate::lexer::{LiteralKind, Location};
 
-#[derive(Debug, Clone)]
-pub struct Lit {
-    pub value: LitKind,
-    pub start: Location,
-    pub end: Location,
-}
-
-#[derive(Clone, Debug, PartialEq, PartialOrd)]
-pub enum LitKind {
-    /// "null"
-    Null,
-    /// "true", "false"
-    Bool(bool),
-    /// "12", "0o100", "0b110"
-    Int(i64),
-    /// "12.34", "0b100.100"
-    Float(f64),
-    /// ""abc"", ""abc"
-    Str(String),
-}
-
-impl TryFrom<LiteralKind> for LitKind {
-    type Error = LucyError;
-
-    fn try_from(value: LiteralKind) -> Result<Self, Self::Error> {
-        Ok(match value {
-            LiteralKind::Int(v) => LitKind::Int(v?),
-            LiteralKind::Float(v) => LitKind::Float(v?),
-            LiteralKind::Str(v) => LitKind::Str(v?),
-        })
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Ident {
-    pub name: String,
-    pub start: Location,
-    pub end: Location,
-}
-
-#[derive(Debug, Clone)]
-pub struct Block {
-    pub body: Vec<Stmt>,
-    pub start: Location,
-    pub end: Location,
-}
-
+/// A statement.
 #[derive(Debug, Clone)]
 pub struct Stmt {
     pub kind: StmtKind,
@@ -77,13 +31,7 @@ impl From<Expr> for Stmt {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Expr {
-    pub kind: ExprKind,
-    pub start: Location,
-    pub end: Location,
-}
-
+/// Kind of statement.
 #[derive(Debug, Clone)]
 pub enum StmtKind {
     If {
@@ -128,6 +76,23 @@ pub enum StmtKind {
     Expr(Box<Expr>),
 }
 
+/// A block.
+#[derive(Debug, Clone)]
+pub struct Block {
+    pub body: Vec<Stmt>,
+    pub start: Location,
+    pub end: Location,
+}
+
+/// An expression.
+#[derive(Debug, Clone)]
+pub struct Expr {
+    pub kind: ExprKind,
+    pub start: Location,
+    pub end: Location,
+}
+
+/// Kind of expression.
 #[derive(Debug, Clone)]
 pub enum ExprKind {
     Lit(Box<Lit>),
@@ -153,7 +118,7 @@ pub enum ExprKind {
     Member {
         table: Box<Expr>,
         property: Box<Expr>,
-        kind: MemberExprKind,
+        kind: MemberKind,
     },
     Call {
         callee: Box<Expr>,
@@ -181,14 +146,59 @@ impl From<Ident> for Expr {
     }
 }
 
+/// A literal.
+#[derive(Debug, Clone)]
+pub struct Lit {
+    pub value: LitKind,
+    pub start: Location,
+    pub end: Location,
+}
+
+/// Kind of literal.
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
+pub enum LitKind {
+    /// "null"
+    Null,
+    /// "true", "false"
+    Bool(bool),
+    /// "12", "0o100", "0b110"
+    Int(i64),
+    /// "12.34", "0b100.100"
+    Float(f64),
+    /// ""abc"", ""abc"
+    Str(String),
+}
+
+impl TryFrom<LiteralKind> for LitKind {
+    type Error = LucyError;
+
+    fn try_from(value: LiteralKind) -> Result<Self, Self::Error> {
+        Ok(match value {
+            LiteralKind::Int(v) => LitKind::Int(v?),
+            LiteralKind::Float(v) => LitKind::Float(v?),
+            LiteralKind::Str(v) => LitKind::Str(v?),
+        })
+    }
+}
+
+/// An ident.
+#[derive(Debug, Clone)]
+pub struct Ident {
+    pub name: String,
+    pub start: Location,
+    pub end: Location,
+}
+
+/// Unary operator.
 #[derive(Clone, PartialEq, Eq, Debug, Copy)]
 pub enum UnOp {
-    /// The `!` operator for logical inversion
+    /// The `not` operator for logical inversion
     Not,
     /// The `-` operator for negation
     Neg,
 }
 
+/// Binary operator.
 #[derive(Clone, PartialEq, Eq, Debug, Copy)]
 pub enum BinOp {
     /// The `+` operator (addition)
@@ -201,9 +211,9 @@ pub enum BinOp {
     Div,
     /// The `%` operator (modulus)
     Mod,
-    /// The `&&` operator (logical and)
+    /// The `and` operator (logical and)
     And,
-    /// The `||` operator (logical or)
+    /// The `or` operator (logical or)
     Or,
     /// The `==` operator (equality)
     Eq,
@@ -246,16 +256,21 @@ impl BinOp {
     }
 }
 
+/// Kind of member expression.
 #[derive(Clone, PartialEq, Eq, Debug, Copy)]
-pub enum MemberExprKind {
-    OpenBracket,
+pub enum MemberKind {
+    /// `[]`
+    Bracket,
+    /// `.`
     Dot,
+    /// `::`
     DoubleColon,
 }
 
+/// Kind of import statement.
 #[derive(Debug, Clone)]
 pub enum ImportKind {
-    /// `import path::xxx`
+    /// `import path::xxx as xxx`
     Simple(Box<Ident>),
     /// `import path::{...}`
     Nested(Vec<(Ident, Ident)>),

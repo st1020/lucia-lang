@@ -5,7 +5,7 @@ use std::convert::TryFrom;
 use std::fs;
 use std::path::PathBuf;
 
-use crate::codegen::{JumpTarget, LucylData, OPCode, Program};
+use crate::codegen::{ConstlValue, JumpTarget, OPCode, Program};
 use crate::errors::{LResult, LucyError, RuntimeErrorKind, TypeErrorKind};
 use crate::libs;
 use crate::object::*;
@@ -253,12 +253,12 @@ impl Frame {
                 OPCode::LoadConst(i) => {
                     let t = lvm.module_list[closuer.module_id].const_list[*i].clone();
                     let v = match t {
-                        LucylData::Null => LucyValue::Null,
-                        LucylData::Bool(v) => LucyValue::Bool(v),
-                        LucylData::Int(v) => LucyValue::Int(v),
-                        LucylData::Float(v) => LucyValue::Float(v),
-                        LucylData::Str(v) => lvm.new_gc_value(GCObjectKind::Str(v)),
-                        LucylData::Func(func_id) => {
+                        ConstlValue::Null => LucyValue::Null,
+                        ConstlValue::Bool(v) => LucyValue::Bool(v),
+                        ConstlValue::Int(v) => LucyValue::Int(v),
+                        ConstlValue::Float(v) => LucyValue::Float(v),
+                        ConstlValue::Str(v) => lvm.new_gc_value(GCObjectKind::Str(v)),
+                        ConstlValue::Func(func_id) => {
                             let f = lvm.module_list[closuer.module_id].func_list[func_id].clone();
                             lvm.new_gc_value(GCObjectKind::Closuer(Closuer {
                                 module_id: closuer.module_id,
@@ -310,7 +310,7 @@ impl Frame {
                     };
                 }
                 OPCode::Import(i) => {
-                    if let LucylData::Str(v) =
+                    if let ConstlValue::Str(v) =
                         lvm.module_list[closuer.module_id].const_list[*i].clone()
                     {
                         if let Some(v) = v.strip_prefix("std/") {
@@ -344,7 +344,8 @@ impl Frame {
                     let module = <&LucyTable>::try_from(
                         *self.operate_stack.last().ok_or_else(|| STACK_ERROR)?,
                     )?;
-                    if let LucylData::Str(t) = &lvm.module_list[closuer.module_id].const_list[*i] {
+                    if let ConstlValue::Str(t) = &lvm.module_list[closuer.module_id].const_list[*i]
+                    {
                         self.operate_stack
                             .push(module.raw_get_by_str(t).ok_or_else(|| IMPORT_ERROR)?);
                     } else {
