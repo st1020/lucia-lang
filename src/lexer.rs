@@ -204,8 +204,6 @@ pub enum TokenKind {
     ModAssign,
 
     // One-char tokens:
-    /// ";"
-    Semi,
     /// ","
     Comma,
     /// "."
@@ -260,6 +258,8 @@ pub enum TokenKind {
     Caret,
 
     // other
+    /// End of line (`\n`)
+    EOL,
     /// "// comment"
     LineComment,
     /// `/* block comment */`
@@ -328,7 +328,6 @@ pub fn is_whitespace(c: char) -> bool {
         c,
         // Usual ASCII suspects
         '\u{0009}'   // \t
-        | '\u{000A}' // \n
         | '\u{000B}' // vertical tab
         | '\u{000C}' // form feed
         | '\u{000D}' // \r
@@ -433,7 +432,11 @@ impl Cursor<'_> {
             }
 
             // One-symbol tokens.
-            ';' => Semi,
+            '\n' => self.eol(),
+            '\\' if self.first() == '\n' => {
+                self.bump();
+                Whitespace
+            }
             ',' => Comma,
             '.' => Dot,
             '(' => OpenParen,
@@ -462,6 +465,13 @@ impl Cursor<'_> {
             _ => Unknown,
         };
         Token::new(token_kind, start, self.location())
+    }
+
+    fn eol(&mut self) -> TokenKind {
+        debug_assert!(self.prev() == '\n');
+        self.bump();
+        self.eat_while(|c| c == '\n');
+        EOL
     }
 
     fn line_comment(&mut self) -> TokenKind {

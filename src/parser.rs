@@ -41,6 +41,13 @@ impl<'a> Parser<'a> {
         };
     }
 
+    /// Eats EOL.
+    pub fn eat_eol(&mut self) {
+        while self.token.kind == TokenKind::EOL {
+            self.bump()
+        }
+    }
+
     /// Expect the kind of current token is `t`, return `Err()` if not.
     pub fn expect(&self, t: TokenKind) -> LResult<()> {
         if self.token.kind != t {
@@ -59,6 +66,7 @@ impl<'a> Parser<'a> {
 
     /// Parse token iter into AST `Box<Block>`.
     pub fn parse(&mut self) -> LResult<Box<Block>> {
+        self.eat_eol();
         Ok(Box::new(Block {
             start: self.token.start,
             body: {
@@ -74,7 +82,7 @@ impl<'a> Parser<'a> {
 
     /// Parse statement.
     fn parse_stmt(&mut self) -> LResult<Box<Stmt>> {
-        Ok(Box::new(match self.token.kind {
+        let ast_node = Box::new(match self.token.kind {
             TokenKind::If => Stmt {
                 start: self.token.start,
                 kind: StmtKind::If {
@@ -134,7 +142,7 @@ impl<'a> Parser<'a> {
                 start: self.token.start,
                 kind: {
                     self.bump();
-                    self.expect(TokenKind::Semi)?;
+                    self.expect(TokenKind::EOL)?;
                     self.bump();
                     StmtKind::Break
                 },
@@ -144,7 +152,7 @@ impl<'a> Parser<'a> {
                 start: self.token.start,
                 kind: {
                     self.bump();
-                    self.expect(TokenKind::Semi)?;
+                    self.expect(TokenKind::EOL)?;
                     self.bump();
                     StmtKind::Continue
                 },
@@ -156,7 +164,7 @@ impl<'a> Parser<'a> {
                     argument: {
                         self.bump();
                         let temp = self.parse_expr(1)?;
-                        self.expect(TokenKind::Semi)?;
+                        self.expect(TokenKind::EOL)?;
                         self.bump();
                         temp
                     },
@@ -168,11 +176,11 @@ impl<'a> Parser<'a> {
                 kind: StmtKind::Global {
                     arguments: {
                         let mut temp = Vec::new();
-                        while self.token.kind != TokenKind::Semi {
+                        while self.token.kind != TokenKind::EOL {
                             self.bump();
                             temp.push(*self.parse_ident()?);
                             match self.token.kind {
-                                TokenKind::Semi => break,
+                                TokenKind::EOL => break,
                                 _ => self.expect(TokenKind::Comma)?,
                             }
                         }
@@ -191,17 +199,17 @@ impl<'a> Parser<'a> {
                     self.bump();
                     loop {
                         match self.token.kind {
-                            TokenKind::Semi | TokenKind::As | TokenKind::OpenBrace => break,
+                            TokenKind::EOL | TokenKind::As | TokenKind::OpenBrace => break,
                             TokenKind::Mul => {
                                 glob = true;
                                 self.bump();
-                                self.expect(TokenKind::Semi)?;
+                                self.expect(TokenKind::EOL)?;
                                 break;
                             }
                             _ => {
                                 path.push(*self.parse_ident()?);
                                 match self.token.kind {
-                                    TokenKind::Semi | TokenKind::As | TokenKind::OpenBrace => break,
+                                    TokenKind::EOL | TokenKind::As | TokenKind::OpenBrace => break,
                                     _ => {
                                         self.expect(TokenKind::DoubleColon)?;
                                         self.bump();
@@ -211,7 +219,7 @@ impl<'a> Parser<'a> {
                         }
                     }
                     match self.token.kind {
-                        TokenKind::Semi => {
+                        TokenKind::EOL => {
                             kind = if glob {
                                 ImportKind::Glob
                             } else {
@@ -232,7 +240,7 @@ impl<'a> Parser<'a> {
                         TokenKind::As => {
                             self.bump();
                             kind = ImportKind::Simple(Box::new(*self.parse_ident()?));
-                            self.expect(TokenKind::Semi)?;
+                            self.expect(TokenKind::EOL)?;
                         }
                         TokenKind::OpenBrace => {
                             self.bump();
@@ -257,19 +265,20 @@ impl<'a> Parser<'a> {
                                             break;
                                         }
                                         self.expect(TokenKind::Comma)?;
-                                        self.bump()
+                                        self.bump();
+                                        self.eat_eol();
                                     }
                                     _ => self.expect(TokenKind::CloseBrace)?,
                                 }
                             }
                             kind = ImportKind::Nested(temp);
                             self.bump();
-                            self.expect(TokenKind::Semi)?;
+                            self.expect(TokenKind::EOL)?;
                         }
                         _ => {
                             return Err(LuciaError::SyntaxError(SyntaxErrorKind::UnexpectToken {
                                 token: Box::new(self.token.clone()),
-                                expected: ExpectedToken::TokenKind(Box::new(TokenKind::Semi)),
+                                expected: ExpectedToken::TokenKind(Box::new(TokenKind::EOL)),
                             }));
                         }
                     }
@@ -346,11 +355,13 @@ impl<'a> Parser<'a> {
                         kind: StmtKind::Expr(ast_node),
                     },
                 };
-                self.expect(TokenKind::Semi)?;
+                self.expect(TokenKind::EOL)?;
                 self.bump();
                 temp
             }
-        }))
+        });
+        self.eat_eol();
+        Ok(ast_node)
     }
 
     /// Parse block.
@@ -361,6 +372,7 @@ impl<'a> Parser<'a> {
             body: {
                 let mut temp = Vec::new();
                 self.bump();
+                self.eat_eol();
                 while self.token.kind != TokenKind::CloseBrace {
                     temp.push(*self.parse_stmt()?);
                 }
@@ -469,7 +481,8 @@ impl<'a> Parser<'a> {
                                         break;
                                     }
                                     self.expect(TokenKind::Comma)?;
-                                    self.bump()
+                                    self.bump();
+                                    self.eat_eol();
                                 }
                                 temp
                             },
@@ -566,6 +579,7 @@ impl<'a> Parser<'a> {
                     let mut temp = Vec::new();
                     let mut c = 0;
                     self.bump();
+                    self.eat_eol();
                     while self.token.kind != TokenKind::CloseBrace {
                         let start = self.token.start;
                         let temp_expr = self.parse_expr(1)?;
@@ -599,6 +613,7 @@ impl<'a> Parser<'a> {
                         }
                         self.expect(TokenKind::Comma)?;
                         self.bump();
+                        self.eat_eol();
                     }
                     self.bump();
                     temp
@@ -651,6 +666,7 @@ impl<'a> Parser<'a> {
                             }
                             self.expect(TokenKind::Comma)?;
                             self.bump();
+                            self.eat_eol();
                         }
                     }
                     self.bump();
