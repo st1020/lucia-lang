@@ -71,7 +71,7 @@ const PROGRAM_ERROR: LuciaError = LuciaError::RuntimeError(RuntimeErrorKind::Pro
 #[derive(Debug, Clone)]
 pub struct Frame {
     pc: usize,
-    closuer: *mut GCObject,
+    closure: *mut GCObject,
     operate_stack: Vec<LuciaValue>,
     prev_frame: Option<NonNull<Frame>>,
     lvm: *mut Lvm,
@@ -79,14 +79,14 @@ pub struct Frame {
 
 impl Frame {
     pub fn new(
-        closuer: *mut GCObject,
+        closure: *mut GCObject,
         lvm: *mut Lvm,
         prev_frame: Option<NonNull<Frame>>,
         stack_size: usize,
     ) -> Self {
         Frame {
             pc: 0,
-            closuer,
+            closure,
             operate_stack: Vec::with_capacity(stack_size),
             prev_frame,
             lvm,
@@ -192,14 +192,14 @@ impl Frame {
         }
 
         let lvm = unsafe { self.lvm.as_mut().expect("unexpect error") };
-        let closuer = unsafe {
-            match &mut self.closuer.as_mut().unwrap().kind {
-                GCObjectKind::Closuer(v) => v,
+        let closure = unsafe {
+            match &mut self.closure.as_mut().unwrap().kind {
+                GCObjectKind::Closure(v) => v,
                 _ => panic!("unexpect error"),
             }
         };
         loop {
-            let code = closuer
+            let code = closure
                 .function
                 .code_list
                 .get(self.pc)
@@ -225,35 +225,35 @@ impl Frame {
                     self.operate_stack.push(b);
                 }
                 OPCode::LoadLocal(i) => {
-                    self.operate_stack.push(closuer.variables[*i]);
+                    self.operate_stack.push(closure.variables[*i]);
                 }
                 OPCode::LoadGlobal(i) => {
-                    let t = &closuer.function.global_names[*i];
+                    let t = &closure.function.global_names[*i];
                     self.operate_stack.push(
                         lvm.get_global_variable(t)
                             .unwrap_or(lvm.get_builtin_variable(t).unwrap_or(LuciaValue::Null)),
                     );
                 }
                 OPCode::LoadUpvalue(i) => {
-                    let (_, func_count, upvalue_id) = closuer.function.upvalue_names[*i];
-                    let mut base_closuer = closuer.base_closuer;
+                    let (_, func_count, upvalue_id) = closure.function.upvalue_names[*i];
+                    let mut base_closure = closure.base_closure;
                     for _ in 0..func_count {
-                        base_closuer = match unsafe {
-                            &base_closuer.ok_or_else(|| UPVALUE_ERROR)?.as_ref().kind
+                        base_closure = match unsafe {
+                            &base_closure.ok_or_else(|| UPVALUE_ERROR)?.as_ref().kind
                         } {
-                            GCObjectKind::Closuer(v) => v.base_closuer,
+                            GCObjectKind::Closure(v) => v.base_closure,
                             _ => return Err(UPVALUE_ERROR),
                         };
                     }
-                    match unsafe { &base_closuer.ok_or_else(|| UPVALUE_ERROR)?.as_ref().kind } {
-                        GCObjectKind::Closuer(v) => {
+                    match unsafe { &base_closure.ok_or_else(|| UPVALUE_ERROR)?.as_ref().kind } {
+                        GCObjectKind::Closure(v) => {
                             self.operate_stack.push(v.variables[upvalue_id])
                         }
                         _ => return Err(UPVALUE_ERROR),
                     };
                 }
                 OPCode::LoadConst(i) => {
-                    let t = lvm.module_list[closuer.module_id].const_list[*i].clone();
+                    let t = lvm.module_list[closure.module_id].const_list[*i].clone();
                     let v = match t {
                         ConstlValue::Null => LuciaValue::Null,
                         ConstlValue::Bool(v) => LuciaValue::Bool(v),
@@ -261,11 +261,11 @@ impl Frame {
                         ConstlValue::Float(v) => LuciaValue::Float(v),
                         ConstlValue::Str(v) => lvm.new_gc_value(GCObjectKind::Str(v)),
                         ConstlValue::Func(func_id) => {
-                            let f = lvm.module_list[closuer.module_id].func_list[func_id].clone();
-                            lvm.new_gc_value(GCObjectKind::Closuer(Closuer {
-                                module_id: closuer.module_id,
-                                base_closuer: if f.kind == FunctionKind::Closure {
-                                    NonNull::new(self.closuer)
+                            let f = lvm.module_list[closure.module_id].func_list[func_id].clone();
+                            lvm.new_gc_value(GCObjectKind::Closure(Closure {
+                                module_id: closure.module_id,
+                                base_closure: if f.kind == FunctionKind::Closure {
+                                    NonNull::new(self.closure)
                                 } else {
                                     None
                                 },
@@ -284,27 +284,27 @@ impl Frame {
                     self.operate_stack.push(v);
                 }
                 OPCode::StoreLocal(i) => {
-                    closuer.variables[*i] = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
+                    closure.variables[*i] = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                 }
                 OPCode::StoreGlobal(i) => {
                     lvm.set_global_variable(
-                        closuer.function.global_names[*i].clone(),
+                        closure.function.global_names[*i].clone(),
                         self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?,
                     );
                 }
                 OPCode::StoreUpvalue(i) => {
-                    let (_, func_count, upvalue_id) = closuer.function.upvalue_names[*i];
-                    let mut base_closuer = closuer.base_closuer;
+                    let (_, func_count, upvalue_id) = closure.function.upvalue_names[*i];
+                    let mut base_closure = closure.base_closure;
                     for _ in 0..func_count {
-                        base_closuer = match unsafe {
-                            &base_closuer.ok_or_else(|| UPVALUE_ERROR)?.as_ref().kind
+                        base_closure = match unsafe {
+                            &base_closure.ok_or_else(|| UPVALUE_ERROR)?.as_ref().kind
                         } {
-                            GCObjectKind::Closuer(v) => v.base_closuer,
+                            GCObjectKind::Closure(v) => v.base_closure,
                             _ => return Err(UPVALUE_ERROR),
                         };
                     }
-                    match unsafe { &mut base_closuer.ok_or_else(|| UPVALUE_ERROR)?.as_mut().kind } {
-                        GCObjectKind::Closuer(v) => {
+                    match unsafe { &mut base_closure.ok_or_else(|| UPVALUE_ERROR)?.as_mut().kind } {
+                        GCObjectKind::Closure(v) => {
                             v.variables[upvalue_id] =
                                 self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?
                         }
@@ -313,7 +313,7 @@ impl Frame {
                 }
                 OPCode::Import(i) => {
                     if let ConstlValue::Str(v) =
-                        lvm.module_list[closuer.module_id].const_list[*i].clone()
+                        lvm.module_list[closure.module_id].const_list[*i].clone()
                     {
                         if let Some(v) = v.strip_prefix("std/") {
                             match lvm.std_libs.get(&String::from(v)) {
@@ -346,7 +346,7 @@ impl Frame {
                     let module = <&LuciaTable>::try_from(
                         *self.operate_stack.last().ok_or_else(|| STACK_ERROR)?,
                     )?;
-                    if let ConstlValue::Str(t) = &lvm.module_list[closuer.module_id].const_list[*i]
+                    if let ConstlValue::Str(t) = &lvm.module_list[closure.module_id].const_list[*i]
                     {
                         self.operate_stack
                             .push(module.raw_get_by_str(t).ok_or_else(|| IMPORT_ERROR)?);
@@ -525,12 +525,12 @@ impl Frame {
                     self.call(*i, true)?;
                 }
                 OPCode::Return => {
-                    if closuer.function.kind == FunctionKind::Do {
+                    if closure.function.kind == FunctionKind::Do {
                         let mut temp = LuciaTable::new();
-                        for i in 0..closuer.function.local_names.len() {
+                        for i in 0..closure.function.local_names.len() {
                             temp.set(
-                                &str_to_value!(lvm, closuer.function.local_names[i].clone()),
-                                closuer.variables[i],
+                                &str_to_value!(lvm, closure.function.local_names[i].clone()),
+                                closure.variables[i],
                             )
                         }
                         return Ok(lvm.new_gc_value(GCObjectKind::Table(temp)));
@@ -559,13 +559,13 @@ impl Frame {
         };
         if let LuciaValue::GCObject(gc_obj) = callee {
             let v = match unsafe { &mut gc_obj.as_mut().expect("unexpect error").kind } {
-                GCObjectKind::Closuer(v) => v,
-                GCObjectKind::Table(v) => <&mut Closuer>::try_from(
+                GCObjectKind::Closure(v) => v,
+                GCObjectKind::Table(v) => <&mut Closure>::try_from(
                     v.get_by_str("__call__")
                         .ok_or_else(|| not_callable_error!(callee))?,
                 )
                 .or_else(|_| Err(not_callable_error!(callee)))?,
-                GCObjectKind::ExtClosuer(v) => {
+                GCObjectKind::ExtClosure(v) => {
                     arguments.reverse();
                     self.operate_stack.push(v(arguments, lvm)?);
                     return Ok(());
@@ -639,9 +639,9 @@ impl Lvm {
             .clone();
         let stack_size = func.stack_size;
         let mut frame = Frame::new(
-            self.new_gc_object(GCObjectKind::Closuer(Closuer {
+            self.new_gc_object(GCObjectKind::Closure(Closure {
                 module_id,
-                base_closuer: None,
+                base_closure: None,
                 variables: {
                     let mut temp: Vec<LuciaValue> = Vec::with_capacity(func.local_names.len());
                     for _ in 0..func.local_names.len() {
@@ -706,18 +706,18 @@ impl Lvm {
                         }
                     }
                 }
-                GCObjectKind::Closuer(closuer) => {
-                    if let Some(ptr) = closuer.base_closuer {
+                GCObjectKind::Closure(closure) => {
+                    if let Some(ptr) = closure.base_closure {
                         self.gc_mark_object(ptr.as_ptr());
                     }
-                    for v in &closuer.variables {
+                    for v in &closure.variables {
                         if let LuciaValue::GCObject(ptr) = v {
                             self.gc_mark_object(*ptr);
                         }
                     }
                 }
                 GCObjectKind::Str(_) => (),
-                GCObjectKind::ExtClosuer(_) => (),
+                GCObjectKind::ExtClosure(_) => (),
             }
         }
     }
@@ -730,7 +730,7 @@ impl Lvm {
             }
             let mut frame = self.current_frame.as_ref();
             loop {
-                self.gc_mark_object(frame.closuer);
+                self.gc_mark_object(frame.closure);
                 for value in &frame.operate_stack {
                     if let LuciaValue::GCObject(ptr) = value {
                         self.gc_mark_object(*ptr);

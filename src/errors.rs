@@ -4,7 +4,7 @@ use thiserror::Error;
 
 use crate::codegen::OPCode;
 use crate::lexer::{Token, TokenKind};
-use crate::object::{Closuer, LuciaValueType};
+use crate::object::{Closure, LuciaValueType};
 
 pub type LResult<T> = Result<T, LuciaError>;
 
@@ -101,7 +101,7 @@ pub enum TypeErrorKind {
     NotCallableError(LuciaValueType),
     #[error("call arguments error (required {required} arguments, but {given} was given)")]
     CallArgumentsError {
-        value: Option<Box<Closuer>>,
+        value: Option<Box<Closure>>,
         required: usize,
         given: usize,
     },

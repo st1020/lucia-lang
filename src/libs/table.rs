@@ -13,7 +13,7 @@ pub fn libs(lvm: &mut Lvm) -> LuciaTable {
             let table: &mut LuciaTable = (*args.first().unwrap()).try_into().unwrap();
             let mut i = 0;
             Ok(
-                lvm.new_gc_value(GCObjectKind::ExtClosuer(Box::new(move |_, _| {
+                lvm.new_gc_value(GCObjectKind::ExtClosure(Box::new(move |_, _| {
                     Ok(if i >= table.len().try_into().unwrap() {
                         LuciaValue::Null
                     } else {
@@ -34,7 +34,7 @@ pub fn libs(lvm: &mut Lvm) -> LuciaTable {
             let table: &mut LuciaTable = (*args.first().unwrap()).try_into().unwrap();
             let mut i = 0;
             Ok(
-                lvm.new_gc_value(GCObjectKind::ExtClosuer(Box::new(move |_, _| {
+                lvm.new_gc_value(GCObjectKind::ExtClosure(Box::new(move |_, _| {
                     Ok(if i >= table.len().try_into().unwrap() {
                         LuciaValue::Null
                     } else {

@@ -59,8 +59,8 @@ impl Display for LuciaValue {
                 match &(**v).kind {
                     GCObjectKind::Str(v) => write!(f, "{}", v),
                     GCObjectKind::Table(v) => write!(f, "{}", v),
-                    GCObjectKind::Closuer(v) => write!(f, "{}", v),
-                    GCObjectKind::ExtClosuer(_) => write!(f, "function: ext_closuer"),
+                    GCObjectKind::Closure(v) => write!(f, "{}", v),
+                    GCObjectKind::ExtClosure(_) => write!(f, "function: ext_closure"),
                 }
             },
         }
@@ -129,9 +129,9 @@ macro_rules! impl_try_from_value {
 }
 
 impl_try_from_value!(&LuciaTable, Table, LuciaValueType::Table);
-impl_try_from_value!(&Closuer, Closuer, LuciaValueType::Closuer);
+impl_try_from_value!(&Closure, Closure, LuciaValueType::Closure);
 impl_try_from_value!(&mut LuciaTable, Table, LuciaValueType::Table);
-impl_try_from_value!(&mut Closuer, Closuer, LuciaValueType::Closuer);
+impl_try_from_value!(&mut Closure, Closure, LuciaValueType::Closure);
 
 impl LuciaValue {
     pub fn value_type(&self) -> LuciaValueType {
@@ -145,8 +145,8 @@ impl LuciaValue {
                 Some(v) => match v.kind {
                     GCObjectKind::Str(_) => LuciaValueType::Str,
                     GCObjectKind::Table(_) => LuciaValueType::Table,
-                    GCObjectKind::Closuer(_) => LuciaValueType::Closuer,
-                    GCObjectKind::ExtClosuer(_) => LuciaValueType::ExtClosuer,
+                    GCObjectKind::Closure(_) => LuciaValueType::Closure,
+                    GCObjectKind::ExtClosure(_) => LuciaValueType::ExtClosure,
                 },
                 None => LuciaValueType::UnknownGCObject,
             },
@@ -165,8 +165,8 @@ pub enum LuciaValueType {
     UnknownGCObject,
     Str,
     Table,
-    Closuer,
-    ExtClosuer,
+    Closure,
+    ExtClosure,
 }
 
 impl Display for LuciaValueType {
@@ -183,8 +183,8 @@ impl Display for LuciaValueType {
                 LuciaValueType::UnknownGCObject => "unknown_object",
                 LuciaValueType::Str => "str",
                 LuciaValueType::Table => "table",
-                LuciaValueType::Closuer => "function",
-                LuciaValueType::ExtClosuer => "function",
+                LuciaValueType::Closure => "function",
+                LuciaValueType::ExtClosure => "function",
             }
         )
     }
@@ -216,8 +216,8 @@ impl PartialEq for GCObject {
 pub enum GCObjectKind {
     Str(String),
     Table(LuciaTable),
-    Closuer(Closuer),
-    ExtClosuer(Box<dyn FnMut(Vec<LuciaValue>, &mut Lvm) -> LResult<LuciaValue>>),
+    Closure(Closure),
+    ExtClosure(Box<dyn FnMut(Vec<LuciaValue>, &mut Lvm) -> LResult<LuciaValue>>),
 }
 
 impl Debug for GCObjectKind {
@@ -225,8 +225,8 @@ impl Debug for GCObjectKind {
         match self {
             Self::Str(arg0) => f.debug_tuple("Str").field(arg0).finish(),
             Self::Table(arg0) => f.debug_tuple("Table").field(arg0).finish(),
-            Self::Closuer(arg0) => f.debug_tuple("Closuer").field(arg0).finish(),
-            Self::ExtClosuer(_) => f.debug_tuple("ExtClosuer").finish(),
+            Self::Closure(arg0) => f.debug_tuple("Closure").field(arg0).finish(),
+            Self::ExtClosure(_) => f.debug_tuple("ExtClosure").finish(),
         }
     }
 }
@@ -236,8 +236,8 @@ impl PartialEq for GCObjectKind {
         match (self, other) {
             (Self::Str(l0), Self::Str(r0)) => l0 == r0,
             (Self::Table(l0), Self::Table(r0)) => l0 == r0,
-            (Self::Closuer(l0), Self::Closuer(r0)) => l0 == r0,
-            (Self::ExtClosuer(_), Self::ExtClosuer(_)) => false,
+            (Self::Closure(l0), Self::Closure(r0)) => l0 == r0,
+            (Self::ExtClosure(_), Self::ExtClosure(_)) => false,
             _ => false,
         }
     }
@@ -360,22 +360,22 @@ impl From<Vec<LuciaValue>> for LuciaTable {
     }
 }
 
-/// The closuer object. Any function is a closuer.
+/// The closure object. Any function is a closure.
 #[derive(Debug, Clone)]
-pub struct Closuer {
+pub struct Closure {
     pub module_id: usize,
     pub function: Function,
-    pub base_closuer: Option<NonNull<GCObject>>,
+    pub base_closure: Option<NonNull<GCObject>>,
     pub variables: Vec<LuciaValue>,
 }
 
-impl PartialEq for Closuer {
+impl PartialEq for Closure {
     fn eq(&self, _: &Self) -> bool {
         false
     }
 }
 
-impl Display for Closuer {
+impl Display for Closure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "function")
     }
