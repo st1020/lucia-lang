@@ -155,8 +155,11 @@ fn for_test() -> errors::LResult<()> {
 fn do_test() -> errors::LResult<()> {
     let input = "
     import std::io::{println}
+    global t
+    t = 1
     l = do {
         __base__ = do {
+            t = t
             lll = 1
             __setitem__ = func (self, key, value) {
                 self.a = key

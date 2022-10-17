@@ -395,7 +395,7 @@ impl From<FunctionBuilder> for Function {
             kind: value.kind,
             base_function: value.base_function,
             local_names: value.local_names,
-            global_names: value.global_names,
+            global_names: Vec::from_iter(value.global_names.iter().map(|(x, _)| x.clone())),
             upvalue_names: value.upvalue_names,
             stack_size: value.stack_size,
         }
@@ -414,7 +414,7 @@ pub struct FunctionBuilder {
     pub base_function: Option<usize>,
 
     pub local_names: Vec<String>,
-    pub global_names: Vec<String>,
+    pub global_names: Vec<(String, bool)>,
     pub upvalue_names: Vec<(String, usize, usize)>,
 
     pub stack_size: usize,
@@ -459,10 +459,10 @@ impl FunctionBuilder {
     }
 
     fn add_global_name(&mut self, name: &String) -> usize {
-        if let Some(index) = self.global_names.iter().position(|x| x == name) {
+        if let Some(index) = self.global_names.iter().position(|(x, _)| x == name) {
             index
         } else {
-            self.global_names.push(name.clone());
+            self.global_names.push((name.clone(), false));
             self.global_names.len() - 1
         }
     }
@@ -481,10 +481,16 @@ impl FunctionBuilder {
                 LoadStore::Load => OPCode::LoadLocal(index),
                 LoadStore::Store => OPCode::StoreLocal(index),
             }
-        } else if let Some(index) = self.global_names.iter().position(|x| x == name) {
+        } else if let Some(index) = self.global_names.iter().position(|(x, _)| x == name) {
             match kind {
                 LoadStore::Load => OPCode::LoadGlobal(index),
-                LoadStore::Store => OPCode::StoreGlobal(index),
+                LoadStore::Store => {
+                    if self.global_names[index].1 {
+                        OPCode::StoreGlobal(index)
+                    } else {
+                        OPCode::StoreLocal(self.add_local_name(name))
+                    }
+                }
             }
         } else {
             if !(self.kind == FunctionKind::Closure) {
@@ -832,7 +838,7 @@ impl FunctionBuilder {
                     ));
                 }
                 for arg in arguments {
-                    self.global_names.push(arg.name);
+                    self.global_names.push((arg.name, true));
                 }
             }
             StmtKind::Import { path, kind } => {
