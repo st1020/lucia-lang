@@ -37,7 +37,7 @@ pub enum StmtKind {
     If {
         test: Box<Expr>,
         consequent: Box<Block>,
-        alternate: Option<Box<Block>>,
+        alternate: Option<Box<Stmt>>,
     },
     Loop {
         body: Box<Block>,

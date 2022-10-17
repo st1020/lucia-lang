@@ -83,24 +83,7 @@ impl<'a> Parser<'a> {
     /// Parse statement.
     fn parse_stmt(&mut self) -> LResult<Box<Stmt>> {
         let ast_node = Box::new(match self.token.kind {
-            TokenKind::If => Stmt {
-                start: self.token.start,
-                kind: StmtKind::If {
-                    test: {
-                        self.bump();
-                        self.parse_expr(1)?
-                    },
-                    consequent: self.parse_block()?,
-                    alternate: match self.token.kind {
-                        TokenKind::Else => {
-                            self.bump();
-                            Some(self.parse_block()?)
-                        }
-                        _ => None,
-                    },
-                },
-                end: self.prev_token.end,
-            },
+            TokenKind::If => *self.parse_stmt_if()?,
             TokenKind::Loop => Stmt {
                 start: self.token.start,
                 kind: StmtKind::Loop {
@@ -287,14 +270,7 @@ impl<'a> Parser<'a> {
                 },
                 end: self.prev_token.end,
             },
-            TokenKind::OpenBrace => {
-                let temp = self.parse_block()?;
-                Stmt {
-                    start: temp.start,
-                    end: temp.end,
-                    kind: StmtKind::Block(temp),
-                }
-            }
+            TokenKind::OpenBrace => *self.parse_stmt_block()?,
             _ => {
                 macro_rules! assign_error {
                     ($ast_node:ident) => {
@@ -378,6 +354,42 @@ impl<'a> Parser<'a> {
                 }
                 self.bump();
                 temp
+            },
+            end: self.prev_token.end,
+        }))
+    }
+
+    /// Parse block statement.
+    fn parse_stmt_block(&mut self) -> LResult<Box<Stmt>> {
+        let temp = self.parse_block()?;
+        Ok(Box::new(Stmt {
+            start: temp.start,
+            end: temp.end,
+            kind: StmtKind::Block(temp),
+        }))
+    }
+
+    /// Parse if statement.
+    fn parse_stmt_if(&mut self) -> LResult<Box<Stmt>> {
+        Ok(Box::new(Stmt {
+            start: self.token.start,
+            kind: StmtKind::If {
+                test: {
+                    self.bump();
+                    self.parse_expr(1)?
+                },
+                consequent: self.parse_block()?,
+                alternate: match self.token.kind {
+                    TokenKind::Else => Some({
+                        self.bump();
+                        if self.token.kind == TokenKind::If {
+                            self.parse_stmt_if()?
+                        } else {
+                            self.parse_stmt_block()?
+                        }
+                    }),
+                    _ => None,
+                },
             },
             end: self.prev_token.end,
         }))
