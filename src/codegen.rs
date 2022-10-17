@@ -168,7 +168,7 @@ impl From<UnOp> for OPCode {
 /// Generate code from AST.
 pub fn gen_code(ast_root: Box<Block>) -> LResult<Program> {
     let mut context = Context::new();
-    let func = FunctionBuilder::new(ast_root, 0, None, Vec::new(), None, false);
+    let func = FunctionBuilder::new(ast_root, 0, None, Vec::new(), None, FunctionKind::Funciton);
     context.func_list.push(func);
 
     let mut func_count = 0;
@@ -360,6 +360,14 @@ enum LoadStore {
     Store,
 }
 
+/// Kind of function.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FunctionKind {
+    Funciton,
+    Closure,
+    Do,
+}
+
 /// A function.
 #[derive(Debug, Clone)]
 pub struct Function {
@@ -367,7 +375,7 @@ pub struct Function {
     pub params: Vec<String>,
     pub variadic: Option<Box<String>>,
     pub code_list: Vec<OPCode>,
-    pub is_closure: bool,
+    pub kind: FunctionKind,
     pub base_function: Option<usize>,
 
     pub local_names: Vec<String>,
@@ -384,7 +392,7 @@ impl From<FunctionBuilder> for Function {
             params: value.params,
             variadic: value.variadic,
             code_list: value.code_list,
-            is_closure: value.is_closure,
+            kind: value.kind,
             base_function: value.base_function,
             local_names: value.local_names,
             global_names: value.global_names,
@@ -402,7 +410,7 @@ pub struct FunctionBuilder {
     pub params: Vec<String>,
     pub variadic: Option<Box<String>>,
     pub code_list: Vec<OPCode>,
-    pub is_closure: bool,
+    pub kind: FunctionKind,
     pub base_function: Option<usize>,
 
     pub local_names: Vec<String>,
@@ -422,7 +430,7 @@ impl FunctionBuilder {
         base_function: Option<usize>,
         params: Vec<String>,
         variadic: Option<Box<String>>,
-        is_closure: bool,
+        kind: FunctionKind,
     ) -> Self {
         FunctionBuilder {
             code,
@@ -430,7 +438,7 @@ impl FunctionBuilder {
             params,
             variadic,
             code_list: Vec::new(),
-            is_closure,
+            kind,
             base_function,
             local_names: Vec::new(),
             global_names: Vec::new(),
@@ -479,7 +487,7 @@ impl FunctionBuilder {
                 LoadStore::Store => OPCode::StoreGlobal(index),
             }
         } else {
-            if !self.is_closure {
+            if !(self.kind == FunctionKind::Closure) {
                 match kind {
                     LoadStore::Load => OPCode::LoadGlobal(self.add_global_name(name)),
                     LoadStore::Store => OPCode::StoreLocal(self.add_local_name(name)),
@@ -503,7 +511,7 @@ impl FunctionBuilder {
                         }
                         None => (),
                     }
-                    if !base_func.is_closure {
+                    if !(self.kind == FunctionKind::Closure) {
                         break match kind {
                             LoadStore::Load => OPCode::LoadGlobal(self.add_global_name(name)),
                             LoadStore::Store => OPCode::StoreLocal(self.add_local_name(name)),
@@ -529,10 +537,14 @@ impl FunctionBuilder {
 
         let t = &mut self.gen_stmt(Stmt::from(*self.code.clone()), context)?;
         self.code_list.append(t);
-        if *self.code_list.last().unwrap_or(&OPCode::Pop) != OPCode::Return {
-            self.code_list
-                .push(OPCode::LoadConst(context.add_const(ConstlValue::Null)));
+        if self.kind == FunctionKind::Do {
             self.code_list.push(OPCode::Return);
+        } else {
+            if *self.code_list.last().unwrap_or(&OPCode::Pop) != OPCode::Return {
+                self.code_list
+                    .push(OPCode::LoadConst(context.add_const(ConstlValue::Null)));
+                self.code_list.push(OPCode::Return);
+            }
         }
         Ok(())
     }
@@ -544,6 +556,21 @@ impl FunctionBuilder {
                 context.add_const(ConstlValue::from(lit.value)),
             )),
             ExprKind::Ident(ident) => code_list.push(self.get_load(&ident.name, context)),
+            ExprKind::Do(body) => {
+                let func = FunctionBuilder::new(
+                    body,
+                    context.func_list.len(),
+                    Some(self.function_id),
+                    Vec::new(),
+                    None,
+                    FunctionKind::Do,
+                );
+                code_list.push(OPCode::LoadConst(
+                    context.add_const(ConstlValue::Func(func.function_id)),
+                ));
+                code_list.push(OPCode::Call(0));
+                context.func_list.push(func);
+            }
             ExprKind::Function {
                 params,
                 variadic,
@@ -565,7 +592,11 @@ impl FunctionBuilder {
                         Some(v) => Some(Box::new(v.name)),
                         None => None,
                     },
-                    is_closure,
+                    if is_closure {
+                        FunctionKind::Closure
+                    } else {
+                        FunctionKind::Funciton
+                    },
                 );
                 code_list.push(OPCode::LoadConst(
                     context.add_const(ConstlValue::Func(func.function_id)),
@@ -786,10 +817,20 @@ impl FunctionBuilder {
                 }));
             }
             StmtKind::Return { argument } => {
+                if self.kind == FunctionKind::Do {
+                    return Err(LuciaError::SyntaxError(
+                        SyntaxErrorKind::ReturnOutsideFunction,
+                    ));
+                }
                 code_list.append(&mut self.gen_expr(*argument, context)?);
                 code_list.push(OPCode::Return);
             }
             StmtKind::Global { arguments } => {
+                if self.kind == FunctionKind::Do {
+                    return Err(LuciaError::SyntaxError(
+                        SyntaxErrorKind::GlobalOutsideFunction,
+                    ));
+                }
                 for arg in arguments {
                     self.global_names.push(arg.name);
                 }

@@ -5,7 +5,7 @@ use std::convert::TryFrom;
 use std::fs;
 use std::path::PathBuf;
 
-use crate::codegen::{ConstlValue, JumpTarget, OPCode, Program};
+use crate::codegen::{ConstlValue, FunctionKind, JumpTarget, OPCode, Program};
 use crate::errors::{LResult, LuciaError, RuntimeErrorKind, TypeErrorKind};
 use crate::libs;
 use crate::object::*;
@@ -264,7 +264,7 @@ impl Frame {
                             let f = lvm.module_list[closuer.module_id].func_list[func_id].clone();
                             lvm.new_gc_value(GCObjectKind::Closuer(Closuer {
                                 module_id: closuer.module_id,
-                                base_closuer: if f.is_closure {
+                                base_closuer: if f.kind == FunctionKind::Closure {
                                     NonNull::new(self.closuer)
                                 } else {
                                     None
@@ -525,7 +525,18 @@ impl Frame {
                     self.call(*i, true)?;
                 }
                 OPCode::Return => {
-                    return Ok(self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?);
+                    if closuer.function.kind == FunctionKind::Do {
+                        let mut temp = LuciaTable::new();
+                        for i in 0..closuer.function.local_names.len() {
+                            temp.set(
+                                &str_to_value!(lvm, closuer.function.local_names[i].clone()),
+                                closuer.variables[i],
+                            )
+                        }
+                        return Ok(lvm.new_gc_value(GCObjectKind::Table(temp)));
+                    } else {
+                        return Ok(self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?);
+                    }
                 }
                 OPCode::JumpTarget(_) => return Err(PROGRAM_ERROR),
             }

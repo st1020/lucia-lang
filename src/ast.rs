@@ -97,6 +97,7 @@ pub struct Expr {
 pub enum ExprKind {
     Lit(Box<Lit>),
     Ident(Box<Ident>),
+    Do(Box<Block>),
     Function {
         params: Vec<Ident>,
         variadic: Option<Box<Ident>>,

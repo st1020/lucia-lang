@@ -150,3 +150,29 @@ fn for_test() -> errors::LResult<()> {
     println!("Time: {:?}", duration);
     Ok(())
 }
+
+#[test]
+fn do_test() -> errors::LResult<()> {
+    let input = "
+    import std::io::{println}
+    l = do {
+        __base__ = do {
+            lll = 1
+            __setitem__ = func (self, key, value) {
+                self.a = key
+            }
+            __getitem__ = func (self, key) {
+                return 0
+            }
+        }
+    }
+    println(l)
+    l[1] = 2
+    return l['a']
+    ";
+    let start = Instant::now();
+    lvm::Lvm::new(codegen::Program::try_from(input)?).run()?;
+    let duration = start.elapsed();
+    println!("Time: {:?}", duration);
+    Ok(())
+}

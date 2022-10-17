@@ -558,6 +558,14 @@ impl<'a> Parser<'a> {
             TokenKind::Ident(_) => self.parse_expr_ident(),
             TokenKind::OpenBrace => self.parse_expr_table(),
             TokenKind::Func | TokenKind::VBar => self.parse_expr_func(),
+            TokenKind::Do => Ok(Box::new(Expr {
+                start: self.token.start,
+                kind: ExprKind::Do({
+                    self.bump();
+                    self.parse_block()?
+                }),
+                end: self.prev_token.end,
+            })),
             _ => Err(LuciaError::SyntaxError(SyntaxErrorKind::UnexpectToken {
                 token: Box::new(self.token.clone()),
                 expected: ExpectedToken::AtomExpr,

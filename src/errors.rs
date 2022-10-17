@@ -48,10 +48,14 @@ pub enum SyntaxErrorKind {
     /// codegen error
     #[error("illegal ast")]
     IllegalAst,
-    #[error("break out of loop")]
+    #[error("break outside loop")]
     BreakOutsideLoop,
-    #[error("continue out of loop")]
+    #[error("continue outside loop")]
     ContinueOutsideLoop,
+    #[error("global outside function")]
+    GlobalOutsideFunction,
+    #[error("return outside function")]
+    ReturnOutsideFunction,
 }
 
 #[derive(Debug, Clone, PartialEq)]
