@@ -4,7 +4,7 @@ use thiserror::Error;
 
 use crate::codegen::OPCode;
 use crate::lexer::{Token, TokenKind};
-use crate::object::{Closure, LuciaValueType};
+use crate::objects::{Closure, LuciaValueType};
 
 pub type LResult<T> = Result<T, LuciaError>;
 

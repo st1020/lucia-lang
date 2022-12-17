@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::call_arguments_error;
-use crate::object::{GCObjectKind, LuciaValue};
+use crate::objects::{GCObjectKind, LuciaValue};
 
 pub fn builtin_variables() -> HashMap<String, LuciaValue> {
     let mut t = HashMap::new();

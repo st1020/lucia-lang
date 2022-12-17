@@ -6,7 +6,7 @@ pub mod table;
 use std::collections::HashMap;
 
 use crate::lvm::Lvm;
-use crate::object::{GCObjectKind, LuciaValue};
+use crate::objects::{GCObjectKind, LuciaValue};
 
 pub fn std_libs(lvm: &mut Lvm) -> HashMap<String, LuciaValue> {
     let mut std_libs = HashMap::new();

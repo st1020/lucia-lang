@@ -1,7 +1,7 @@
 use std::io;
 
 use crate::lvm::Lvm;
-use crate::object::{GCObjectKind, LuciaTable, LuciaValue};
+use crate::objects::{GCObjectKind, LuciaTable, LuciaValue};
 use crate::{call_arguments_error, str_to_value};
 
 pub fn libs(lvm: &mut Lvm) -> LuciaTable {

@@ -1,5 +1,5 @@
 use crate::lvm::Lvm;
-use crate::object::{GCObjectKind, LuciaTable, LuciaValue};
+use crate::objects::{GCObjectKind, LuciaTable, LuciaValue};
 use crate::{call_arguments_error, str_to_value};
 
 pub fn libs(lvm: &mut Lvm) -> LuciaTable {
@@ -11,15 +11,13 @@ pub fn libs(lvm: &mut Lvm) -> LuciaTable {
                 return Err(call_arguments_error!(None, 1, args.len()));
             }
             let table: &mut LuciaTable = (*args.first().unwrap()).try_into().unwrap();
-            let mut i = 0;
+            let mut keys = table.keys();
             Ok(
                 lvm.new_gc_value(GCObjectKind::ExtClosure(Box::new(move |_, _| {
-                    Ok(if i >= table.len().try_into().unwrap() {
-                        LuciaValue::Null
+                    Ok(if let Some(v) = keys.next() {
+                        *v
                     } else {
-                        let (k, _) = table.get_by_index(i.try_into().unwrap()).unwrap();
-                        i += 1;
-                        *k
+                        LuciaValue::Null
                     })
                 }))),
             )
@@ -32,15 +30,13 @@ pub fn libs(lvm: &mut Lvm) -> LuciaTable {
                 return Err(call_arguments_error!(None, 1, args.len()));
             }
             let table: &mut LuciaTable = (*args.first().unwrap()).try_into().unwrap();
-            let mut i = 0;
+            let mut values = table.values();
             Ok(
                 lvm.new_gc_value(GCObjectKind::ExtClosure(Box::new(move |_, _| {
-                    Ok(if i >= table.len().try_into().unwrap() {
-                        LuciaValue::Null
-                    } else {
-                        let (_, v) = table.get_by_index(i.try_into().unwrap()).unwrap();
-                        i += 1;
+                    Ok(if let Some(v) = values.next() {
                         *v
+                    } else {
+                        LuciaValue::Null
                     })
                 }))),
             )

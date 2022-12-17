@@ -1,7 +1,7 @@
 use std::convert::TryFrom;
 
 use crate::lvm::Lvm;
-use crate::object::{GCObjectKind, LuciaTable, LuciaValue, LuciaValueType};
+use crate::objects::{GCObjectKind, LuciaTable, LuciaValue, LuciaValueType};
 use crate::{call_arguments_error, str_to_value, type_convert_error};
 
 pub fn libs(lvm: &mut Lvm) -> LuciaTable {

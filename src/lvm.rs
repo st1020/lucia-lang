@@ -8,12 +8,12 @@ use std::path::PathBuf;
 use crate::codegen::{ConstlValue, FunctionKind, JumpTarget, OPCode, Program};
 use crate::errors::{LResult, LuciaError, RuntimeErrorKind, TypeErrorKind};
 use crate::libs;
-use crate::object::*;
+use crate::objects::*;
 
 #[macro_export]
 macro_rules! str_to_value {
     ($lvm:expr ,$name:expr) => {
-        $lvm.new_gc_value($crate::object::GCObjectKind::Str(String::from($name)))
+        $lvm.new_gc_value($crate::objects::GCObjectKind::Str(String::from($name)))
     };
 }
 
@@ -95,11 +95,11 @@ impl Frame {
 
     pub fn run(&mut self) -> LResult<LuciaValue> {
         macro_rules! run_default {
-            ($block:expr, $arg1:ident, $arg2:ident, $special_name:expr, $operator:expr) => {
+            ($lvm:expr, $block:expr, $arg1:ident, $arg2:ident, $special_name:expr, $operator:expr) => {
                 if $arg1.value_type() == LuciaValueType::Table {
                     match <&LuciaTable>::try_from($arg1)
                         .expect("unexpect error")
-                        .get_by_str($special_name)
+                        .get(&$lvm.get_builtin_str($special_name))
                     {
                         Some(v) => {
                             self.operate_stack.push(v);
@@ -116,10 +116,10 @@ impl Frame {
         }
 
         macro_rules! run_bin_op {
-            ($op: tt, $special_name:expr, $operator:expr) => {{
+            ($lvm:expr, $op: tt, $special_name:expr, $operator:expr) => {{
                 let arg2 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                 let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
-                run_default!({
+                run_default!($lvm, {
                     self.operate_stack.push(match (arg1, arg2) {
                         (LuciaValue::Int(v1), LuciaValue::Int(v2)) => LuciaValue::Int(v1 $op v2),
                         (LuciaValue::Float(v1), LuciaValue::Float(v2)) => LuciaValue::Float(v1 $op v2),
@@ -130,20 +130,20 @@ impl Frame {
         }
 
         macro_rules! run_eq_ne {
-            ($op: tt, $special_name:expr, $operator:expr) => {{
+            ($lvm:expr, $op: tt, $special_name:expr, $operator:expr) => {{
                 let arg2 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                 let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
-                run_default!({
+                run_default!($lvm, {
                     self.operate_stack.push(LuciaValue::Bool(arg1 $op arg2));
                 }, arg1, arg2, $special_name, $operator)
             }};
         }
 
         macro_rules! run_compare {
-            ($op: tt, $special_name:expr, $operator:expr) => {{
+            ($lvm:expr, $op: tt, $special_name:expr, $operator:expr) => {{
                 let arg2 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                 let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
-                run_default!({
+                run_default!($lvm, {
                     self.operate_stack.push(LuciaValue::Bool(match (arg1, arg2) {
                         (LuciaValue::Int(v1), LuciaValue::Int(v2)) => v1 $op v2,
                         (LuciaValue::Float(v1), LuciaValue::Float(v2)) => v1 $op v2,
@@ -154,11 +154,11 @@ impl Frame {
         }
 
         macro_rules! get_table {
-            ($special_name:expr) => {{
+            ($lvm:expr, $special_name:expr) => {{
                 let arg2 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                 let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                 let t = <&mut LuciaTable>::try_from(arg1)?;
-                match t.get_by_str($special_name) {
+                match t.get(&$lvm.get_builtin_str($special_name)) {
                     Some(v) => {
                         self.operate_stack.push(v);
                         self.operate_stack.push(arg1);
@@ -173,12 +173,12 @@ impl Frame {
         }
 
         macro_rules! set_table {
-            ($special_name:expr) => {{
+            ($lvm:expr, $special_name:expr) => {{
                 let arg3 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                 let arg2 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                 let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                 let t = <&mut LuciaTable>::try_from(arg1)?;
-                match t.get_by_str($special_name) {
+                match t.get(&$lvm.get_builtin_str($special_name)) {
                     Some(v) => {
                         self.operate_stack.push(v);
                         self.operate_stack.push(arg1);
@@ -346,10 +346,14 @@ impl Frame {
                     let module = <&LuciaTable>::try_from(
                         *self.operate_stack.last().ok_or_else(|| STACK_ERROR)?,
                     )?;
-                    if let ConstlValue::Str(t) = &lvm.module_list[closure.module_id].const_list[*i]
+                    if let ConstlValue::Str(t) =
+                        &lvm.module_list[closure.module_id].const_list[*i].clone()
                     {
-                        self.operate_stack
-                            .push(module.raw_get_by_str(t).ok_or_else(|| IMPORT_ERROR)?);
+                        self.operate_stack.push(
+                            module
+                                .raw_get(&lvm.get_builtin_str(t))
+                                .ok_or_else(|| IMPORT_ERROR)?,
+                        );
                     } else {
                         return Err(IMPORT_ERROR);
                     }
@@ -367,7 +371,8 @@ impl Frame {
                     for _ in 0..(*i * 2) {
                         temp.push(self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?);
                     }
-                    let mut table: Vec<(LuciaValue, LuciaValue)> = Vec::new();
+                    let mut table: LuciaTable = LuciaTable::new();
+                    // let mut table: Vec<(LuciaValue, LuciaValue)> = Vec::new();
                     for _ in 0..*i {
                         let arg1 = temp.pop().expect("unexpect error");
                         let arg2 = temp.pop().expect("unexpect error");
@@ -378,19 +383,20 @@ impl Frame {
                                 )));
                             }
                         }
-                        table.push((arg1, arg2));
+                        table.set(&arg1, arg2);
+                        // table.push((arg1, arg2));
                     }
                     self.operate_stack
-                        .push(lvm.new_gc_value(GCObjectKind::Table(LuciaTable(table))));
+                        .push(lvm.new_gc_value(GCObjectKind::Table(table)));
                 }
-                OPCode::GetAttr => get_table!("__getattr__"),
-                OPCode::GetItem => get_table!("__getitem__"),
-                OPCode::SetAttr => set_table!("__setattr__"),
-                OPCode::SetItem => set_table!("__setitem__"),
+                OPCode::GetAttr => get_table!(lvm, "__getattr__"),
+                OPCode::GetItem => get_table!(lvm, "__getitem__"),
+                OPCode::SetAttr => set_table!(lvm, "__setattr__"),
+                OPCode::SetItem => set_table!(lvm, "__setitem__"),
                 OPCode::Neg => {
                     let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                     match <&LuciaTable>::try_from(arg1) {
-                        Ok(v) => match v.get_by_str("__neg__") {
+                        Ok(v) => match v.get(&lvm.get_builtin_str("__neg__")) {
                             Some(v) => {
                                 self.operate_stack.push(v);
                                 self.operate_stack.push(arg1);
@@ -427,7 +433,7 @@ impl Frame {
                         LuciaValueType::Table => {
                             match <&LuciaTable>::try_from(arg1)
                                 .expect("unexpect error")
-                                .get_by_str("__add__")
+                                .get(&lvm.get_builtin_str("__add__"))
                             {
                                 Some(v) => {
                                     self.operate_stack.push(v);
@@ -455,16 +461,16 @@ impl Frame {
                         }
                     }
                 }
-                OPCode::Sub => run_bin_op!(-, "__sub__", code.clone()),
-                OPCode::Mul => run_bin_op!(*, "__mul__", code.clone()),
-                OPCode::Div => run_bin_op!(/, "__div__", code.clone()),
-                OPCode::Mod => run_bin_op!(%, "__mod__", code.clone()),
-                OPCode::Eq => run_eq_ne!(==, "__eq__", code.clone()),
-                OPCode::Ne => run_eq_ne!(!=, "__ne__", code.clone()),
-                OPCode::Gt => run_compare!(>, "__gt__", code.clone()),
-                OPCode::Ge => run_compare!(>=, "__ge__", code.clone()),
-                OPCode::Lt => run_compare!(<, "__lt__", code.clone()),
-                OPCode::Le => run_compare!(<=, "__le__", code.clone()),
+                OPCode::Sub => run_bin_op!(lvm,-, "__sub__", code.clone()),
+                OPCode::Mul => run_bin_op!(lvm,*, "__mul__", code.clone()),
+                OPCode::Div => run_bin_op!(lvm,/, "__div__", code.clone()),
+                OPCode::Mod => run_bin_op!(lvm,%, "__mod__", code.clone()),
+                OPCode::Eq => run_eq_ne!(lvm,==, "__eq__", code.clone()),
+                OPCode::Ne => run_eq_ne!(lvm,!=, "__ne__", code.clone()),
+                OPCode::Gt => run_compare!(lvm,>, "__gt__", code.clone()),
+                OPCode::Ge => run_compare!(lvm,>=, "__ge__", code.clone()),
+                OPCode::Lt => run_compare!(lvm,<, "__lt__", code.clone()),
+                OPCode::Le => run_compare!(lvm,<=, "__le__", code.clone()),
                 OPCode::Is => {
                     let arg2 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                     let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
@@ -561,7 +567,7 @@ impl Frame {
             let v = match unsafe { &mut gc_obj.as_mut().expect("unexpect error").kind } {
                 GCObjectKind::Closure(v) => v,
                 GCObjectKind::Table(v) => <&mut Closure>::try_from(
-                    v.get_by_str("__call__")
+                    v.get(&lvm.get_builtin_str("__call__"))
                         .ok_or_else(|| not_callable_error!(callee))?,
                 )
                 .or_else(|_| Err(not_callable_error!(callee)))?,
@@ -609,6 +615,7 @@ pub struct Lvm {
     mem_layout: Layout,
     heap: Vec<*mut GCObject>,
     last_heap_len: usize,
+    builtin_str_value: HashMap<String, *mut GCObject>,
 }
 
 impl Lvm {
@@ -622,6 +629,7 @@ impl Lvm {
             mem_layout: Layout::new::<GCObject>(),
             heap: Vec::with_capacity(0),
             last_heap_len: 64,
+            builtin_str_value: HashMap::new(),
         };
         t.std_libs = libs::std_libs(&mut t);
         t
@@ -675,6 +683,17 @@ impl Lvm {
             Some(v) => Some(*v),
             None => None,
         }
+    }
+
+    pub fn get_builtin_str(&mut self, key: &str) -> LuciaValue {
+        LuciaValue::GCObject(match self.builtin_str_value.get(key) {
+            Some(v) => *v,
+            None => {
+                let t = self.new_gc_object(GCObjectKind::Str(key.to_string()));
+                self.builtin_str_value.insert(key.to_string(), t);
+                t
+            }
+        })
     }
 
     pub fn new_gc_value(&mut self, value: GCObjectKind) -> LuciaValue {
@@ -740,6 +759,9 @@ impl Lvm {
                     Some(t) => frame = t.as_ref(),
                     None => break,
                 }
+            }
+            for v in self.builtin_str_value.values() {
+                self.gc_mark_object(*v);
             }
             // sweep
             let mut t = Vec::new();

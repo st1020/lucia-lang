@@ -1,11 +1,21 @@
+pub mod table;
+
 use core::ptr::NonNull;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 use std::fmt::{Debug, Display};
+use std::hash::Hash;
+use std::mem;
 
 use crate::codegen::Function;
 use crate::errors::{LResult, LuciaError};
 use crate::lvm::Lvm;
 use crate::type_convert_error;
+
+pub use self::table::LuciaTable;
+
+// canonical raw float bit
+const CANONICAL_NAN_BITS: u64 = 0x7ff8000000000000u64;
+const CANONICAL_ZERO_BITS: u64 = 0x0u64;
 
 /// Enum of all lucia values.
 #[derive(Clone, Copy)]
@@ -39,11 +49,48 @@ impl PartialEq for LuciaValue {
             (Self::Null, Self::Null) => true,
             (Self::Bool(l0), Self::Bool(r0)) => l0 == r0,
             (Self::Int(l0), Self::Int(r0)) => l0 == r0,
-            (Self::Float(l0), Self::Float(r0)) => l0 == r0,
+            (Self::Float(l0), Self::Float(r0)) => {
+                if l0.is_nan() {
+                    r0.is_nan()
+                } else {
+                    l0 == r0
+                }
+            }
             (Self::ExtFunction(_), Self::ExtFunction(_)) => false,
             (Self::GCObject(l0), Self::GCObject(r0)) => unsafe { **l0 == **r0 },
             _ => false,
         }
+    }
+}
+
+impl Eq for LuciaValue {}
+
+impl Hash for LuciaValue {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            LuciaValue::Null => 0.hash(state),
+            LuciaValue::Bool(v) => v.hash(state),
+            LuciaValue::Int(v) => v.hash(state),
+            LuciaValue::Float(v) => {
+                if v.is_nan() {
+                    CANONICAL_NAN_BITS.hash(state)
+                } else if *v == 0.0f64 {
+                    CANONICAL_ZERO_BITS.hash(state)
+                } else {
+                    unsafe { mem::transmute::<f64, u64>(*v).hash(state) }
+                }
+            }
+            LuciaValue::ExtFunction(_) => 0.hash(state),
+            LuciaValue::GCObject(ptr) => unsafe {
+                match &(**ptr).kind {
+                    GCObjectKind::Str(v) => v.hash(state),
+                    GCObjectKind::Table(_) => ptr.hash(state),
+                    GCObjectKind::Closure(_) => ptr.hash(state),
+                    GCObjectKind::ExtClosure(_) => ptr.hash(state),
+                }
+            },
+        }
+        // core::mem::discriminant(self).hash(state);
     }
 }
 
@@ -240,123 +287,6 @@ impl PartialEq for GCObjectKind {
             (Self::ExtClosure(_), Self::ExtClosure(_)) => false,
             _ => false,
         }
-    }
-}
-
-/// The table implement.
-#[derive(Debug, Clone, PartialEq)]
-pub struct LuciaTable(pub Vec<(LuciaValue, LuciaValue)>);
-
-impl LuciaTable {
-    pub fn new() -> Self {
-        LuciaTable(Vec::new())
-    }
-
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn get_by_index(&self, index: usize) -> Option<&(LuciaValue, LuciaValue)> {
-        self.0.get(index)
-    }
-
-    pub fn raw_get(&self, key: &LuciaValue) -> Option<LuciaValue> {
-        for (k, v) in &self.0 {
-            if k == key {
-                return Some(*v);
-            }
-        }
-        None
-    }
-
-    pub fn raw_get_by_str(&self, key: &str) -> Option<LuciaValue> {
-        for (k, v) in &self.0 {
-            match String::try_from(*k) {
-                Ok(k) => {
-                    if k == key {
-                        return Some(*v);
-                    }
-                }
-                Err(_) => (),
-            }
-        }
-        None
-    }
-
-    pub fn get(&self, key: &LuciaValue) -> Option<LuciaValue> {
-        match self.raw_get(key) {
-            Some(v) => Some(v),
-            None => match self.raw_get_by_str("__base__") {
-                Some(v) => {
-                    let t: &LuciaTable = v.try_into().unwrap();
-                    t.get(key)
-                }
-                None => None,
-            },
-        }
-    }
-
-    pub fn get_by_str(&self, key: &str) -> Option<LuciaValue> {
-        match self.raw_get_by_str(key) {
-            Some(v) => Some(v),
-            None => match self.raw_get_by_str("__base__") {
-                Some(v) => {
-                    let t: &LuciaTable = v.try_into().unwrap();
-                    t.raw_get_by_str(key)
-                }
-                None => None,
-            },
-        }
-    }
-
-    pub fn set(&mut self, key: &LuciaValue, value: LuciaValue) {
-        for i in 0..self.0.len() {
-            let (k, _) = &self.0[i];
-            if k == key {
-                if value == LuciaValue::Null {
-                    self.0.remove(i);
-                } else {
-                    self.0[i] = (*key, value);
-                }
-                return;
-            }
-        }
-        if value != LuciaValue::Null {
-            self.0.push((*key, value));
-        }
-    }
-}
-
-impl Display for LuciaTable {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{{{}}}",
-            self.clone()
-                .into_iter()
-                .map(|(k, v)| format!("{}: {}", k, v))
-                .collect::<Vec<String>>()
-                .join(", ")
-        )
-    }
-}
-
-impl IntoIterator for LuciaTable {
-    type Item = (LuciaValue, LuciaValue);
-    type IntoIter = std::vec::IntoIter<Self::Item>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
-    }
-}
-
-impl From<Vec<LuciaValue>> for LuciaTable {
-    fn from(value: Vec<LuciaValue>) -> Self {
-        let mut temp: Vec<(LuciaValue, LuciaValue)> = Vec::new();
-        for (i, v) in value.iter().enumerate() {
-            temp.push((LuciaValue::Int(i.try_into().unwrap()), *v))
-        }
-        LuciaTable(temp)
     }
 }
 
