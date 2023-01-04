@@ -18,7 +18,7 @@ pub enum ConstlValue {
     Float(f64),
     /// ""abc"", ""abc"
     Str(String),
-    // func id
+    /// func id
     Func(usize),
 }
 
@@ -825,7 +825,7 @@ impl FunctionBuilder {
                     .iter()
                     .map(|x| x.name.clone())
                     .collect::<Vec<String>>()
-                    .join("/");
+                    .join("::");
                 code_list.push(OPCode::Import(
                     context.add_const(ConstlValue::Str(path_str)),
                 ));

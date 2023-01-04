@@ -317,13 +317,10 @@ impl Frame {
                     if let ConstlValue::Str(v) =
                         lvm.module_list[closure.module_id].const_list[*i].clone()
                     {
-                        if let Some(v) = v.strip_prefix("std/") {
-                            match lvm.std_libs.get(&String::from(v)) {
-                                Some(module) => match <&LuciaTable>::try_from(*module) {
-                                    Ok(_) => self.operate_stack.push(*module),
-                                    Err(_) => return Err(IMPORT_ERROR),
-                                },
-                                None => return Err(IMPORT_ERROR),
+                        if let Some(module) = lvm.libs.get(&v) {
+                            match <&LuciaTable>::try_from(*module) {
+                                Ok(_) => self.operate_stack.push(*module),
+                                Err(_) => return Err(IMPORT_ERROR),
                             }
                         } else {
                             let mut path = PathBuf::new();
@@ -612,7 +609,7 @@ pub struct Lvm {
     pub module_list: Vec<Program>,
     pub global_variables: HashMap<String, LuciaValue>,
     pub builtin_variables: HashMap<String, LuciaValue>,
-    pub std_libs: HashMap<String, LuciaValue>,
+    pub libs: HashMap<String, LuciaValue>,
     pub current_frame: NonNull<Frame>,
     mem_layout: Layout,
     heap: Vec<*mut GCObject>,
@@ -621,19 +618,19 @@ pub struct Lvm {
 }
 
 impl Lvm {
-    pub fn new(program: Program) -> Self {
+    pub fn new() -> Self {
         let mut t = Lvm {
-            module_list: vec![program],
+            module_list: Vec::new(),
             global_variables: HashMap::new(),
             builtin_variables: libs::builtin::builtin_variables(),
-            std_libs: HashMap::new(),
+            libs: HashMap::new(),
             current_frame: NonNull::dangling(),
             mem_layout: Layout::new::<GCObject>(),
-            heap: Vec::with_capacity(0),
+            heap: Vec::new(),
             last_heap_len: 64,
             builtin_str_value: HashMap::new(),
         };
-        t.std_libs = libs::std_libs(&mut t);
+        t.libs = libs::std_libs(&mut t);
         t
     }
 
@@ -771,5 +768,19 @@ fn gc_mark_object(ptr: *mut GCObject) {
             GCObjectKind::Str(_) => (),
             GCObjectKind::ExtClosure(_) => (),
         }
+    }
+}
+
+impl Default for Lvm {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl From<Program> for Lvm {
+    fn from(program: Program) -> Self {
+        let mut lvm = Lvm::new();
+        lvm.module_list.push(program);
+        lvm
     }
 }

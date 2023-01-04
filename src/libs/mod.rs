@@ -19,8 +19,8 @@ pub fn std_libs(lvm: &mut Lvm) -> HashMap<String, LuciaValue> {
             );
         };
     }
-    add_std_module!("convert", convert::libs);
-    add_std_module!("io", io::libs);
-    add_std_module!("table", table::libs);
+    add_std_module!("std::convert", convert::libs);
+    add_std_module!("std::io", io::libs);
+    add_std_module!("std::table", table::libs);
     std_libs
 }
