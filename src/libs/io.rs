@@ -29,13 +29,13 @@ pub fn libs(lvm: &mut Lvm) -> LuciaTable {
     t.set(
         &str_to_value!(lvm, "input"),
         LuciaValue::ExtFunction(|args, lvm| {
-            if args.len() != 0 {
+            if !args.is_empty() {
                 return Err(call_arguments_error!(None, 1, args.len()));
             }
             let mut t = String::new();
             io::stdin().read_line(&mut t).unwrap();
             Ok(lvm.new_gc_value(GCObjectKind::Str(String::from(
-                t.strip_suffix("\n").unwrap(),
+                t.strip_suffix('\n').unwrap(),
             ))))
         }),
     );

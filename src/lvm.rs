@@ -1,3 +1,5 @@
+#![allow(clippy::unnecessary_lazy_evaluations)]
+
 use core::ptr::NonNull;
 use std::alloc::{alloc, dealloc, Layout};
 use std::collections::HashMap;
@@ -229,10 +231,10 @@ impl Frame {
                 }
                 OPCode::LoadGlobal(i) => {
                     let t = &closure.function.global_names[*i];
-                    self.operate_stack.push(
-                        lvm.get_global_variable(t)
-                            .unwrap_or(lvm.get_builtin_variable(t).unwrap_or(LuciaValue::Null)),
-                    );
+                    self.operate_stack
+                        .push(lvm.get_global_variable(t).unwrap_or_else(|| {
+                            lvm.get_builtin_variable(t).unwrap_or(LuciaValue::Null)
+                        }));
                 }
                 OPCode::LoadUpvalue(i) => {
                     let (_, func_count, upvalue_id) = closure.function.upvalue_names[*i];
@@ -541,7 +543,7 @@ impl Frame {
                         }
                         return Ok(lvm.new_gc_value(GCObjectKind::Table(temp)));
                     } else {
-                        return Ok(self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?);
+                        return self.operate_stack.pop().ok_or_else(|| STACK_ERROR);
                     }
                 }
                 OPCode::JumpTarget(_) => return Err(PROGRAM_ERROR),
@@ -570,7 +572,7 @@ impl Frame {
                     v.get(&lvm.get_builtin_str("__call__"))
                         .ok_or_else(|| not_callable_error!(callee))?,
                 )
-                .or_else(|_| Err(not_callable_error!(callee)))?,
+                .map_err(|_| not_callable_error!(callee))?,
                 GCObjectKind::ExtClosure(v) => {
                     arguments.reverse();
                     self.operate_stack.push(v(arguments, lvm)?);
@@ -579,7 +581,7 @@ impl Frame {
                 _ => return Err(not_callable_error!(callee)),
             };
             let params_num = v.function.params.len();
-            if arg_num < params_num || (v.function.variadic == None && arg_num != params_num) {
+            if arg_num < params_num || (v.function.variadic.is_none() && arg_num != params_num) {
                 return Err(call_arguments_error!(
                     Some(Box::new(v.clone())),
                     params_num,
@@ -589,7 +591,7 @@ impl Frame {
             for i in 0..params_num {
                 v.variables[i] = arguments.pop().expect("unexpect error");
             }
-            if v.function.variadic != None {
+            if v.function.variadic.is_some() {
                 v.variables[params_num] =
                     lvm.new_gc_value(GCObjectKind::Table(LuciaTable::from(arguments)));
             }
@@ -672,17 +674,11 @@ impl Lvm {
     }
 
     pub fn get_global_variable(&self, key: &str) -> Option<LuciaValue> {
-        match self.global_variables.get(key) {
-            Some(v) => Some(*v),
-            None => None,
-        }
+        self.global_variables.get(key).copied()
     }
 
     pub fn get_builtin_variable(&self, key: &str) -> Option<LuciaValue> {
-        match self.builtin_variables.get(key) {
-            Some(v) => Some(*v),
-            None => None,
-        }
+        self.builtin_variables.get(key).copied()
     }
 
     pub fn get_builtin_str(&mut self, key: &str) -> LuciaValue {
@@ -714,33 +710,6 @@ impl Lvm {
         }
     }
 
-    fn gc_mark_object(&self, ptr: *mut GCObject) {
-        unsafe {
-            (*ptr).gc_state = false;
-            match &(*ptr).kind {
-                GCObjectKind::Table(table) => {
-                    for (_, v) in table.clone() {
-                        if let LuciaValue::GCObject(ptr) = v {
-                            self.gc_mark_object(ptr);
-                        }
-                    }
-                }
-                GCObjectKind::Closure(closure) => {
-                    if let Some(ptr) = closure.base_closure {
-                        self.gc_mark_object(ptr.as_ptr());
-                    }
-                    for v in &closure.variables {
-                        if let LuciaValue::GCObject(ptr) = v {
-                            self.gc_mark_object(*ptr);
-                        }
-                    }
-                }
-                GCObjectKind::Str(_) => (),
-                GCObjectKind::ExtClosure(_) => (),
-            }
-        }
-    }
-
     pub fn gc(&mut self) {
         unsafe {
             // mark
@@ -749,10 +718,10 @@ impl Lvm {
             }
             let mut frame = self.current_frame.as_ref();
             loop {
-                self.gc_mark_object(frame.closure);
+                gc_mark_object(frame.closure);
                 for value in &frame.operate_stack {
                     if let LuciaValue::GCObject(ptr) = value {
-                        self.gc_mark_object(*ptr);
+                        gc_mark_object(*ptr);
                     }
                 }
                 match frame.prev_frame {
@@ -761,7 +730,7 @@ impl Lvm {
                 }
             }
             for v in self.builtin_str_value.values() {
-                self.gc_mark_object(*v);
+                gc_mark_object(*v);
             }
             // sweep
             let mut t = Vec::new();
@@ -774,6 +743,33 @@ impl Lvm {
                 }
             }
             self.heap = t;
+        }
+    }
+}
+
+fn gc_mark_object(ptr: *mut GCObject) {
+    unsafe {
+        (*ptr).gc_state = false;
+        match &(*ptr).kind {
+            GCObjectKind::Table(table) => {
+                for (_, v) in table.clone() {
+                    if let LuciaValue::GCObject(ptr) = v {
+                        gc_mark_object(ptr);
+                    }
+                }
+            }
+            GCObjectKind::Closure(closure) => {
+                if let Some(ptr) = closure.base_closure {
+                    gc_mark_object(ptr.as_ptr());
+                }
+                for v in &closure.variables {
+                    if let LuciaValue::GCObject(ptr) = v {
+                        gc_mark_object(*ptr);
+                    }
+                }
+            }
+            GCObjectKind::Str(_) => (),
+            GCObjectKind::ExtClosure(_) => (),
         }
     }
 }

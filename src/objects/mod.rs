@@ -4,7 +4,6 @@ use core::ptr::NonNull;
 use std::convert::TryFrom;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
-use std::mem;
 
 use crate::codegen::Function;
 use crate::errors::{LResult, LuciaError};
@@ -77,7 +76,7 @@ impl Hash for LuciaValue {
                 } else if *v == 0.0f64 {
                     CANONICAL_ZERO_BITS.hash(state)
                 } else {
-                    unsafe { mem::transmute::<f64, u64>(*v).hash(state) }
+                    (*v).to_bits().hash(state)
                 }
             }
             LuciaValue::ExtFunction(_) => 0.hash(state),
@@ -259,12 +258,14 @@ impl PartialEq for GCObject {
     }
 }
 
+pub type ExtClosure = dyn FnMut(Vec<LuciaValue>, &mut Lvm) -> LResult<LuciaValue>;
+
 /// Enum of all collectable objects.
 pub enum GCObjectKind {
     Str(String),
     Table(LuciaTable),
     Closure(Closure),
-    ExtClosure(Box<dyn FnMut(Vec<LuciaValue>, &mut Lvm) -> LResult<LuciaValue>>),
+    ExtClosure(Box<ExtClosure>),
 }
 
 impl Debug for GCObjectKind {

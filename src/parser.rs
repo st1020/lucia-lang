@@ -238,8 +238,7 @@ impl<'a> Parser<'a> {
                                             match self.token.kind {
                                                 TokenKind::As => {
                                                     self.bump();
-                                                    let t = *self.parse_ident()?;
-                                                    t
+                                                    *self.parse_ident()?
                                                 }
                                                 _ => t,
                                             },
@@ -677,7 +676,7 @@ impl<'a> Parser<'a> {
                         if self.token.kind == TokenKind::Mul {
                             self.bump();
                             variadic = Some(self.parse_ident()?);
-                            self.expect(end_token.clone())?;
+                            self.expect(end_token)?;
                             break;
                         } else {
                             temp.push(*self.parse_ident()?);

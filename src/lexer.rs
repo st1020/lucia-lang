@@ -99,7 +99,7 @@ impl<'a> Cursor<'a> {
 }
 
 /// Location of token in the code.
-#[derive(Clone, Debug, Copy, PartialEq)]
+#[derive(Clone, Debug, Copy, PartialEq, Eq)]
 pub struct Location {
     pub lineno: u32,
     pub column: u32,
@@ -622,9 +622,9 @@ impl Cursor<'_> {
         if has_point || has_exponent {
             // only support decimal float literal
             if base != Base::Decimal {
-                return Literal(Float(Err(LuciaError::SyntaxError(
+                Literal(Float(Err(LuciaError::SyntaxError(
                     SyntaxErrorKind::NumberFormatError,
-                ))));
+                ))))
             } else {
                 match value.parse::<f64>() {
                     Ok(v) => Literal(Float(Ok(v))),
@@ -669,7 +669,7 @@ impl Cursor<'_> {
                             '\\' => '\\',
                             '\'' => '\'',
                             '0' => '\0',
-                            c @ _ => {
+                            c => {
                                 value.push('\\');
                                 c
                             }

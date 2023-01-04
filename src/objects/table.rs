@@ -122,6 +122,12 @@ impl LuciaTable {
     }
 }
 
+impl Default for LuciaTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Display for LuciaTable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(

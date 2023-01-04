@@ -179,10 +179,7 @@ pub fn gen_code(ast_root: Box<Block>) -> LResult<Program> {
         func_count += 1;
     }
 
-    let mut temp: Vec<usize> = Vec::with_capacity(context.jump_target_count);
-    for _ in 0..context.jump_target_count {
-        temp.push(0);
-    }
+    let mut temp: Vec<usize> = vec![0; context.jump_target_count];
     for func in &mut context.func_list {
         let mut i = 0;
         while i < func.code_list.len() {
@@ -208,7 +205,7 @@ pub fn gen_code(ast_root: Box<Block>) -> LResult<Program> {
                 OPCode::JumpIfFalseOrPop(JumpTarget(v)) => {
                     OPCode::JumpIfFalseOrPop(JumpTarget(temp[*v]))
                 }
-                v @ _ => v.clone(),
+                v => v.clone(),
             };
             i += 1;
         }
@@ -373,7 +370,7 @@ pub enum FunctionKind {
 pub struct Function {
     pub function_id: usize,
     pub params: Vec<String>,
-    pub variadic: Option<Box<String>>,
+    pub variadic: Option<String>,
     pub code_list: Vec<OPCode>,
     pub kind: FunctionKind,
     pub base_function: Option<usize>,
@@ -408,7 +405,7 @@ pub struct FunctionBuilder {
 
     pub function_id: usize,
     pub params: Vec<String>,
-    pub variadic: Option<Box<String>>,
+    pub variadic: Option<String>,
     pub code_list: Vec<OPCode>,
     pub kind: FunctionKind,
     pub base_function: Option<usize>,
@@ -429,7 +426,7 @@ impl FunctionBuilder {
         function_id: usize,
         base_function: Option<usize>,
         params: Vec<String>,
-        variadic: Option<Box<String>>,
+        variadic: Option<String>,
         kind: FunctionKind,
     ) -> Self {
         FunctionBuilder {
@@ -492,40 +489,31 @@ impl FunctionBuilder {
                     }
                 }
             }
+        } else if !(self.kind == FunctionKind::Closure) {
+            match kind {
+                LoadStore::Load => OPCode::LoadGlobal(self.add_global_name(name)),
+                LoadStore::Store => OPCode::StoreLocal(self.add_local_name(name)),
+            }
         } else {
-            if !(self.kind == FunctionKind::Closure) {
-                match kind {
-                    LoadStore::Load => OPCode::LoadGlobal(self.add_global_name(name)),
-                    LoadStore::Store => OPCode::StoreLocal(self.add_local_name(name)),
+            let mut base_func_count = 0;
+            let mut base_func_id = self.base_function.unwrap();
+            loop {
+                let base_func = &context.func_list[base_func_id];
+                if let Some(i) = base_func.local_names.iter().position(|x| x == name) {
+                    self.upvalue_names.push((name.clone(), base_func_count, i));
+                    break match kind {
+                        LoadStore::Load => OPCode::LoadUpvalue(self.upvalue_names.len() - 1),
+                        LoadStore::Store => OPCode::StoreUpvalue(self.upvalue_names.len() - 1),
+                    };
                 }
-            } else {
-                let mut base_func_count = 0;
-                let mut base_func_id = self.base_function.unwrap();
-                loop {
-                    let base_func = &context.func_list[base_func_id];
-                    match base_func.local_names.iter().position(|x| x == name) {
-                        Some(i) => {
-                            self.upvalue_names.push((name.clone(), base_func_count, i));
-                            break match kind {
-                                LoadStore::Load => {
-                                    OPCode::LoadUpvalue(self.upvalue_names.len() - 1)
-                                }
-                                LoadStore::Store => {
-                                    OPCode::StoreUpvalue(self.upvalue_names.len() - 1)
-                                }
-                            };
-                        }
-                        None => (),
-                    }
-                    if !(self.kind == FunctionKind::Closure) {
-                        break match kind {
-                            LoadStore::Load => OPCode::LoadGlobal(self.add_global_name(name)),
-                            LoadStore::Store => OPCode::StoreLocal(self.add_local_name(name)),
-                        };
-                    }
-                    base_func_id = base_func.base_function.unwrap();
-                    base_func_count += 1;
+                if !(self.kind == FunctionKind::Closure) {
+                    break match kind {
+                        LoadStore::Load => OPCode::LoadGlobal(self.add_global_name(name)),
+                        LoadStore::Store => OPCode::StoreLocal(self.add_local_name(name)),
+                    };
                 }
+                base_func_id = base_func.base_function.unwrap();
+                base_func_count += 1;
             }
         }
     }
@@ -534,23 +522,17 @@ impl FunctionBuilder {
         for param in self.params.clone() {
             self.add_local_name(&param);
         }
-        match self.variadic.clone() {
-            Some(v) => {
-                self.add_local_name(&v);
-            }
-            None => (),
-        };
-
+        if let Some(v) = self.variadic.clone() {
+            self.add_local_name(&v);
+        }
         let t = &mut self.gen_stmt(Stmt::from(*self.code.clone()), context)?;
         self.code_list.append(t);
         if self.kind == FunctionKind::Do {
             self.code_list.push(OPCode::Return);
-        } else {
-            if *self.code_list.last().unwrap_or(&OPCode::Pop) != OPCode::Return {
-                self.code_list
-                    .push(OPCode::LoadConst(context.add_const(ConstlValue::Null)));
-                self.code_list.push(OPCode::Return);
-            }
+        } else if *self.code_list.last().unwrap_or(&OPCode::Pop) != OPCode::Return {
+            self.code_list
+                .push(OPCode::LoadConst(context.add_const(ConstlValue::Null)));
+            self.code_list.push(OPCode::Return);
         }
         Ok(())
     }
@@ -594,10 +576,7 @@ impl FunctionBuilder {
                         }
                         temp
                     },
-                    match variadic {
-                        Some(v) => Some(Box::new(v.name)),
-                        None => None,
-                    },
+                    variadic.map(|v| v.name),
                     if is_closure {
                         FunctionKind::Closure
                     } else {
@@ -646,7 +625,7 @@ impl FunctionBuilder {
                     code_list.append(&mut self.gen_expr(*right, context)?);
                     code_list.push(OPCode::JumpTarget(label));
                 }
-                operator @ _ => {
+                operator => {
                     code_list.append(&mut self.gen_expr(*left, context)?);
                     code_list.append(&mut self.gen_expr(*right, context)?);
                     code_list.push(OPCode::try_from(operator)?);
@@ -748,7 +727,7 @@ impl FunctionBuilder {
                     code_list.append(&mut self.gen_stmt(Stmt::from(*consequent), context)?);
                     code_list.push(OPCode::Jump(end_label));
                     code_list.push(OPCode::JumpTarget(false_label));
-                    code_list.append(&mut self.gen_stmt(Stmt::from(*alternate), context)?);
+                    code_list.append(&mut self.gen_stmt(*alternate, context)?);
                     code_list.push(OPCode::JumpTarget(end_label));
                 } else {
                     let end_label = context.get_jump_target();

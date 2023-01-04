@@ -67,7 +67,7 @@ pub enum ExpectedToken {
 }
 
 /// Kind of RuntimeError.
-#[derive(Error, Debug, Clone, PartialEq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum RuntimeErrorKind {
     #[error("stack error")]
     StackError,

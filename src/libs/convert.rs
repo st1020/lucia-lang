@@ -15,20 +15,8 @@ pub fn libs(lvm: &mut Lvm) -> LuciaTable {
             Ok(LuciaValue::Bool(match args.first().unwrap() {
                 LuciaValue::Null => false,
                 LuciaValue::Bool(v) => *v,
-                LuciaValue::Int(v) => {
-                    if *v == 0 {
-                        false
-                    } else {
-                        true
-                    }
-                }
-                LuciaValue::Float(v) => {
-                    if *v == 0.0 {
-                        false
-                    } else {
-                        true
-                    }
-                }
+                LuciaValue::Int(v) => *v != 0,
+                LuciaValue::Float(v) => *v != 0.0,
                 LuciaValue::ExtFunction(_) => true,
                 LuciaValue::GCObject(_) => true,
             }))
@@ -43,13 +31,7 @@ pub fn libs(lvm: &mut Lvm) -> LuciaTable {
             let arg1 = args.first().unwrap();
             Ok(LuciaValue::Int(match arg1 {
                 LuciaValue::Null => 0,
-                LuciaValue::Bool(v) => {
-                    if *v {
-                        1
-                    } else {
-                        0
-                    }
-                }
+                LuciaValue::Bool(v) => i64::from(*v),
                 LuciaValue::Int(v) => *v,
                 LuciaValue::Float(v) => *v as i64,
                 LuciaValue::ExtFunction(_) => {
@@ -59,14 +41,9 @@ pub fn libs(lvm: &mut Lvm) -> LuciaTable {
                     ))
                 }
                 LuciaValue::GCObject(_) => String::try_from(*arg1)
-                    .or_else(|_| Err(type_convert_error!(arg1.value_type(), LuciaValueType::Int)))?
+                    .map_err(|_| type_convert_error!(arg1.value_type(), LuciaValueType::Int))?
                     .parse()
-                    .or_else(|_| {
-                        Err(type_convert_error!(
-                            LuciaValueType::Str,
-                            LuciaValueType::Int
-                        ))
-                    })?,
+                    .map_err(|_| type_convert_error!(LuciaValueType::Str, LuciaValueType::Int))?,
             }))
         }),
     );
@@ -95,19 +72,9 @@ pub fn libs(lvm: &mut Lvm) -> LuciaTable {
                     ))
                 }
                 LuciaValue::GCObject(_) => String::try_from(*arg1)
-                    .or_else(|_| {
-                        Err(type_convert_error!(
-                            arg1.value_type(),
-                            LuciaValueType::Float
-                        ))
-                    })?
+                    .map_err(|_| type_convert_error!(arg1.value_type(), LuciaValueType::Float))?
                     .parse()
-                    .or_else(|_| {
-                        Err(type_convert_error!(
-                            LuciaValueType::Str,
-                            LuciaValueType::Float
-                        ))
-                    })?,
+                    .map_err(|_| type_convert_error!(LuciaValueType::Str, LuciaValueType::Float))?,
             }))
         }),
     );
