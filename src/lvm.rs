@@ -552,24 +552,27 @@ impl Frame {
     fn call(&mut self, arg_num: usize, pop: bool) -> LResult<()> {
         let lvm = unsafe { self.lvm.as_mut().expect("unexpect error") };
 
-        let mut arguments = Vec::with_capacity(arg_num);
+        let mut arguments = Vec::with_capacity(arg_num + 1);
         for _ in 0..arg_num {
             arguments.push(self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?);
         }
 
-        let callee = if pop {
+        let mut callee = if pop {
             self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?
         } else {
             *self.operate_stack.last().ok_or_else(|| STACK_ERROR)?
         };
+
+        if let Ok(t) = <&mut LuciaTable>::try_from(callee) {
+            arguments.push(callee);
+            callee = t
+                .get(&lvm.get_builtin_str("__call__"))
+                .ok_or_else(|| not_callable_error!(callee))?;
+        }
+
         if let LuciaValue::GCObject(gc_obj) = callee {
             let v = match unsafe { &mut gc_obj.as_mut().expect("unexpect error").kind } {
                 GCObjectKind::Closure(v) => v,
-                GCObjectKind::Table(v) => <&mut Closure>::try_from(
-                    v.get(&lvm.get_builtin_str("__call__"))
-                        .ok_or_else(|| not_callable_error!(callee))?,
-                )
-                .map_err(|_| not_callable_error!(callee))?,
                 GCObjectKind::ExtClosure(v) => {
                     arguments.reverse();
                     self.operate_stack.push(v(arguments, lvm)?);
@@ -578,17 +581,20 @@ impl Frame {
                 _ => return Err(not_callable_error!(callee)),
             };
             let params_num = v.function.params.len();
-            if arg_num < params_num || (v.function.variadic.is_none() && arg_num != params_num) {
+            if arguments.len() < params_num
+                || (v.function.variadic.is_none() && arguments.len() != params_num)
+            {
                 return Err(call_arguments_error!(
                     Some(Box::new(v.clone())),
                     params_num,
-                    arg_num
+                    arguments.len()
                 ));
             }
             for i in 0..params_num {
                 v.variables[i] = arguments.pop().expect("unexpect error");
             }
             if v.function.variadic.is_some() {
+                arguments.reverse();
                 v.variables[params_num] =
                     lvm.new_gc_value(GCObjectKind::Table(LuciaTable::from(arguments)));
             }
