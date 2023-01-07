@@ -9,7 +9,7 @@ pub fn libs(lvm: &mut Lvm) -> LuciaTable {
     t.set(
         &str_to_value!(lvm, "print"),
         LuciaValue::ExtFunction(|args, _| {
-            if args.len() == 1 {
+            if args.len() != 1 {
                 return Err(call_arguments_error!(None, 1, args.len()));
             }
             print!("{}", args.first().unwrap());
