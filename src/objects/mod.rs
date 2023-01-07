@@ -1,15 +1,15 @@
+pub mod closure;
 pub mod table;
 
-use core::ptr::NonNull;
 use std::convert::TryFrom;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
-use crate::codegen::Function;
 use crate::errors::{LResult, LuciaError};
 use crate::lvm::Lvm;
 use crate::type_convert_error;
 
+pub use self::closure::Closure;
 pub use self::table::LuciaTable;
 
 // canonical raw float bit
@@ -290,26 +290,5 @@ impl PartialEq for GCObjectKind {
             (Self::ExtClosure(_), Self::ExtClosure(_)) => false,
             _ => false,
         }
-    }
-}
-
-/// The closure object. Any function is a closure.
-#[derive(Debug, Clone)]
-pub struct Closure {
-    pub module_id: usize,
-    pub function: Function,
-    pub base_closure: Option<NonNull<GCObject>>,
-    pub variables: Vec<LuciaValue>,
-}
-
-impl PartialEq for Closure {
-    fn eq(&self, _: &Self) -> bool {
-        false
-    }
-}
-
-impl Display for Closure {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "function")
     }
 }
