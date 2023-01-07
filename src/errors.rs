@@ -17,8 +17,6 @@ pub enum LuciaError {
     RuntimeError(#[source] RuntimeErrorKind),
     #[error("type error: {0}")]
     TypeError(#[source] TypeErrorKind),
-    #[error("user error: {0}")]
-    UserError(String),
 }
 
 /// Kind of SyntaxError.

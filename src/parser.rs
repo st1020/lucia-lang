@@ -154,6 +154,19 @@ impl<'a> Parser<'a> {
                 },
                 end: self.prev_token.end,
             },
+            TokenKind::Throw => Stmt {
+                start: self.token.start,
+                kind: StmtKind::Throw {
+                    argument: {
+                        self.bump();
+                        let temp = self.parse_expr(1)?;
+                        self.expect(TokenKind::EOL)?;
+                        self.bump();
+                        temp
+                    },
+                },
+                end: self.prev_token.end,
+            },
             TokenKind::Global => Stmt {
                 start: self.token.start,
                 kind: StmtKind::Global {
@@ -497,11 +510,19 @@ impl<'a> Parser<'a> {
                                 }
                                 temp
                             },
+                            propagating_error: {
+                                self.bump();
+                                if self.token.kind == TokenKind::Question {
+                                    self.bump();
+                                    true
+                                } else {
+                                    false
+                                }
+                            },
                         },
                         start,
                         end: self.prev_token.end,
                     });
-                    self.bump();
                 }
                 TokenKind::OpenBracket => {
                     ast_node = Box::new(Expr {
@@ -513,11 +534,13 @@ impl<'a> Parser<'a> {
                                 self.parse_expr(1)?
                             },
                         },
-                        start,
+                        start: {
+                            self.expect(TokenKind::CloseBracket)?;
+                            self.bump();
+                            start
+                        },
                         end: self.prev_token.end,
                     });
-                    self.expect(TokenKind::CloseBracket)?;
-                    self.bump()
                 }
                 TokenKind::Dot => member_expr!(ast_node, start, MemberKind::Dot),
                 TokenKind::DoubleColon => {

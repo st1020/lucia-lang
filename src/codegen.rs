@@ -127,8 +127,12 @@ pub enum OPCode {
 
     /// Pops numbers of item for function arguments, then pop an callable value and call it.
     Call(usize),
+    /// Call with a shortcut for propagating errors.
+    TryCall(usize),
     /// Returns with TOS to the caller of the function.
     Return,
+    /// Returns with TOS as a error.
+    Throw,
 
     /// A jump target, only used during code generation.
     JumpTarget(JumpTarget),
@@ -268,7 +272,8 @@ fn get_stack_size(code: &Vec<OPCode>, mut offset: usize, init_size: usize) -> us
                 t -= 1;
             }
             OPCode::Call(i) => t = t - i + 1,
-            OPCode::Return => break,
+            OPCode::TryCall(i) => t = t - i + 1,
+            OPCode::Return | OPCode::Throw => break,
             OPCode::JumpTarget(_) => panic!(),
         }
         if t > stack_size {
@@ -655,7 +660,11 @@ impl FunctionBuilder {
                     }
                 }
             }
-            ExprKind::Call { callee, arguments } => {
+            ExprKind::Call {
+                callee,
+                arguments,
+                propagating_error,
+            } => {
                 let temp: usize;
                 match callee.kind.clone() {
                     ExprKind::Member {
@@ -694,7 +703,11 @@ impl FunctionBuilder {
                 for arg in arguments {
                     code_list.append(&mut self.gen_expr(arg, context)?);
                 }
-                code_list.push(OPCode::Call(temp));
+                code_list.push(if propagating_error {
+                    OPCode::TryCall(temp)
+                } else {
+                    OPCode::Call(temp)
+                });
             }
         }
         Ok(code_list)
@@ -809,6 +822,15 @@ impl FunctionBuilder {
                 }
                 code_list.append(&mut self.gen_expr(*argument, context)?);
                 code_list.push(OPCode::Return);
+            }
+            StmtKind::Throw { argument } => {
+                if self.kind == FunctionKind::Do {
+                    return Err(LuciaError::SyntaxError(
+                        SyntaxErrorKind::ReturnOutsideFunction,
+                    ));
+                }
+                code_list.append(&mut self.gen_expr(*argument, context)?);
+                code_list.push(OPCode::Throw);
             }
             StmtKind::Global { arguments } => {
                 if self.kind == FunctionKind::Do {

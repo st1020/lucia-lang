@@ -241,6 +241,7 @@ impl Display for LuciaValueType {
 pub struct GCObject {
     pub kind: GCObjectKind,
     pub gc_state: bool,
+    pub is_error: bool,
 }
 
 impl GCObject {
@@ -248,6 +249,7 @@ impl GCObject {
         Self {
             kind,
             gc_state: false,
+            is_error: false,
         }
     }
 }

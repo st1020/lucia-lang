@@ -56,6 +56,9 @@ pub enum StmtKind {
     Return {
         argument: Box<Expr>,
     },
+    Throw {
+        argument: Box<Expr>,
+    },
     Global {
         arguments: Vec<Ident>,
     },
@@ -124,6 +127,7 @@ pub enum ExprKind {
     Call {
         callee: Box<Expr>,
         arguments: Vec<Expr>,
+        propagating_error: bool,
     },
 }
 
