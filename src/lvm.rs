@@ -76,13 +76,11 @@ pub struct Frame {
     closure: *mut GCObject,
     operate_stack: Vec<LuciaValue>,
     prev_frame: Option<NonNull<Frame>>,
-    lvm: *mut Lvm,
 }
 
 impl Frame {
     pub fn new(
         closure: *mut GCObject,
-        lvm: *mut Lvm,
         prev_frame: Option<NonNull<Frame>>,
         stack_size: usize,
     ) -> Self {
@@ -91,11 +89,10 @@ impl Frame {
             closure,
             operate_stack: Vec::with_capacity(stack_size),
             prev_frame,
-            lvm,
         }
     }
 
-    pub fn run(&mut self) -> LResult<LuciaValue> {
+    pub fn run(&mut self, lvm: &mut Lvm) -> LResult<LuciaValue> {
         macro_rules! run_default {
             ($lvm:expr, $block:expr, $arg1:ident, $arg2:ident, $special_name:expr, $operator:expr) => {
                 if $arg1.value_type() == LuciaValueType::Table {
@@ -107,7 +104,7 @@ impl Frame {
                             self.operate_stack.push(v);
                             self.operate_stack.push($arg1);
                             self.operate_stack.push($arg2);
-                            self.call(2, true)?;
+                            self.call(2, true, lvm)?;
                         }
                         None => return Err(unsupported_operand_type!($operator, $arg1, $arg2)),
                     }
@@ -165,7 +162,7 @@ impl Frame {
                         self.operate_stack.push(v);
                         self.operate_stack.push(arg1);
                         self.operate_stack.push(arg2);
-                        self.call(2, true)?;
+                        self.call(2, true, lvm)?;
                     }
                     None => self
                         .operate_stack
@@ -186,14 +183,13 @@ impl Frame {
                         self.operate_stack.push(arg1);
                         self.operate_stack.push(arg2);
                         self.operate_stack.push(arg3);
-                        self.call(3, true)?;
+                        self.call(3, true, lvm)?;
                     }
                     None => t.set(&arg2, arg3),
                 }
             }};
         }
 
-        let lvm = unsafe { self.lvm.as_mut().expect("unexpect error") };
         let closure = unsafe {
             match &mut self.closure.as_mut().unwrap().kind {
                 GCObjectKind::Closure(v) => v,
@@ -399,7 +395,7 @@ impl Frame {
                             Some(v) => {
                                 self.operate_stack.push(v);
                                 self.operate_stack.push(arg1);
-                                self.call(1, true)?;
+                                self.call(1, true, lvm)?;
                             }
                             None => return Err(unsupported_operand_type!(code.clone(), arg1)),
                         },
@@ -438,7 +434,7 @@ impl Frame {
                                     self.operate_stack.push(v);
                                     self.operate_stack.push(arg1);
                                     self.operate_stack.push(arg2);
-                                    self.call(2, true)?;
+                                    self.call(2, true, lvm)?;
                                 }
                                 None => {
                                     return Err(unsupported_operand_type!(code.clone(), arg1, arg2))
@@ -484,7 +480,7 @@ impl Frame {
                         }));
                 }
                 OPCode::For(JumpTarget(i)) => {
-                    self.call(0, false)?;
+                    self.call(0, false, lvm)?;
                     if self.operate_stack.last().ok_or_else(|| STACK_ERROR)? == &LuciaValue::Null {
                         self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                         self.pc = *i;
@@ -527,7 +523,7 @@ impl Frame {
                     }
                 }
                 OPCode::Call(i) => {
-                    self.call(*i, true)?;
+                    self.call(*i, true, lvm)?;
                 }
                 OPCode::Return => {
                     if closure.function.kind == FunctionKind::Do {
@@ -549,8 +545,8 @@ impl Frame {
         }
     }
 
-    fn call(&mut self, arg_num: usize, pop: bool) -> LResult<()> {
-        let lvm = unsafe { self.lvm.as_mut().expect("unexpect error") };
+    fn call(&mut self, arg_num: usize, pop: bool, lvm: &mut Lvm) -> LResult<()> {
+        // let lvm = unsafe { self.lvm.as_mut().expect("unexpect error") };
 
         let mut arguments = Vec::with_capacity(arg_num + 1);
         for _ in 0..arg_num {
@@ -598,8 +594,8 @@ impl Frame {
                 v.variables[params_num] =
                     lvm.new_gc_value(GCObjectKind::Table(LuciaTable::from(arguments)));
             }
-            let mut frame = Frame::new(gc_obj, self.lvm, NonNull::new(self), v.function.stack_size);
-            self.operate_stack.push(frame.run()?);
+            let mut frame = Frame::new(gc_obj, NonNull::new(self), v.function.stack_size);
+            self.operate_stack.push(frame.run(lvm)?);
         } else if let LuciaValue::ExtFunction(f) = callee {
             arguments.reverse();
             self.operate_stack.push(f(arguments, lvm)?);
@@ -664,12 +660,11 @@ impl Lvm {
                 },
                 function: func,
             })),
-            self,
             None,
             stack_size,
         );
         self.current_frame = NonNull::new(&mut frame).expect("unexpect error");
-        frame.run()
+        frame.run(self)
     }
 
     pub fn set_global_variable(&mut self, key: String, value: LuciaValue) {
