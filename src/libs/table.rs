@@ -1,15 +1,13 @@
 use crate::lvm::Lvm;
 use crate::objects::{GCObjectKind, LuciaTable, LuciaValue};
-use crate::{call_arguments_error, str_to_value};
+use crate::{check_arguments_num, str_to_value};
 
 pub fn libs(lvm: &mut Lvm) -> LuciaTable {
     let mut t = LuciaTable::new();
     t.set(
         &str_to_value!(lvm, "keys"),
         LuciaValue::ExtFunction(|args, lvm| {
-            if args.len() != 1 {
-                return Err(call_arguments_error!(None, 1, args.len()));
-            }
+            check_arguments_num!(args, None, 1);
             let table: &mut LuciaTable = (*args.first().unwrap()).try_into().unwrap();
             let mut keys = table.keys();
             Ok(
@@ -26,9 +24,7 @@ pub fn libs(lvm: &mut Lvm) -> LuciaTable {
     t.set(
         &str_to_value!(lvm, "values"),
         LuciaValue::ExtFunction(|args, lvm| {
-            if args.len() != 1 {
-                return Err(call_arguments_error!(None, 1, args.len()));
-            }
+            check_arguments_num!(args, None, 1);
             let table: &mut LuciaTable = (*args.first().unwrap()).try_into().unwrap();
             let mut values = table.values();
             Ok(
@@ -45,9 +41,7 @@ pub fn libs(lvm: &mut Lvm) -> LuciaTable {
     t.set(
         &str_to_value!(lvm, "raw_len"),
         LuciaValue::ExtFunction(|args, _| {
-            if args.len() != 1 {
-                return Err(call_arguments_error!(None, 1, args.len()));
-            }
+            check_arguments_num!(args, None, 1);
             let table: &mut LuciaTable = (*args.first().unwrap()).try_into().unwrap();
             Ok(LuciaValue::Int(table.len().try_into().unwrap()))
         }),
@@ -55,9 +49,7 @@ pub fn libs(lvm: &mut Lvm) -> LuciaTable {
     t.set(
         &str_to_value!(lvm, "raw_get"),
         LuciaValue::ExtFunction(|args, _| {
-            if args.len() != 2 {
-                return Err(call_arguments_error!(None, 2, args.len()));
-            }
+            check_arguments_num!(args, None, 2);
             let table: &mut LuciaTable = (*args.first().unwrap()).try_into().unwrap();
             Ok(match table.raw_get(args.last().unwrap()) {
                 Some(v) => v,
@@ -68,9 +60,7 @@ pub fn libs(lvm: &mut Lvm) -> LuciaTable {
     t.set(
         &str_to_value!(lvm, "raw_set"),
         LuciaValue::ExtFunction(|args, _| {
-            if args.len() != 3 {
-                return Err(call_arguments_error!(None, 3, args.len()));
-            }
+            check_arguments_num!(args, None, 3);
             let table: &mut LuciaTable = (*args.first().unwrap()).try_into().unwrap();
             let key = args.get(1).unwrap();
             let value = args.get(2).unwrap();

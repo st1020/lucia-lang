@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::call_arguments_error;
+use crate::check_arguments_num;
 use crate::objects::{GCObjectKind, LuciaValue};
 
 pub fn builtin_variables() -> HashMap<String, LuciaValue> {
@@ -8,9 +8,7 @@ pub fn builtin_variables() -> HashMap<String, LuciaValue> {
     t.insert(
         String::from("id"),
         LuciaValue::ExtFunction(|args, _| {
-            if args.len() != 1 {
-                return Err(call_arguments_error!(None, 1, args.len()));
-            }
+            check_arguments_num!(args, None, 1);
             Ok(match args.first().unwrap() {
                 LuciaValue::GCObject(v) => LuciaValue::Int((*v as usize).try_into().unwrap()),
                 _ => LuciaValue::Null,
@@ -20,9 +18,7 @@ pub fn builtin_variables() -> HashMap<String, LuciaValue> {
     t.insert(
         String::from("type"),
         LuciaValue::ExtFunction(|args, lvm| {
-            if args.len() != 1 {
-                return Err(call_arguments_error!(None, 1, args.len()));
-            }
+            check_arguments_num!(args, None, 1);
             Ok(lvm.new_gc_value(GCObjectKind::Str(
                 args.first().unwrap().value_type().to_string(),
             )))

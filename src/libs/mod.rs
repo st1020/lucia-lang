@@ -8,6 +8,15 @@ use std::collections::HashMap;
 use crate::lvm::Lvm;
 use crate::objects::{GCObjectKind, LuciaValue};
 
+#[macro_export]
+macro_rules! check_arguments_num {
+    ($args:expr, $value:expr, $require:expr) => {
+        if $args.len() != $require {
+            return Err($crate::call_arguments_error!($value, $require, $args.len()));
+        }
+    };
+}
+
 pub fn std_libs(lvm: &mut Lvm) -> HashMap<String, LuciaValue> {
     let mut std_libs = HashMap::new();
     macro_rules! add_std_module {
