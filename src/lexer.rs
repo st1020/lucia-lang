@@ -383,7 +383,10 @@ impl Cursor<'_> {
             },
 
             // Whitespace sequence.
-            c if is_whitespace(c) => self.whitespace(),
+            c if is_whitespace(c) => {
+                self.eat_while(is_whitespace);
+                Whitespace
+            }
 
             // Identifier (this should be checked after other variant that can
             // start as identifier).
@@ -471,7 +474,6 @@ impl Cursor<'_> {
 
     fn eol(&mut self) -> TokenKind {
         debug_assert!(self.prev() == '\n');
-        self.bump();
         self.eat_while(|c| c == '\n');
         EOL
     }
@@ -507,12 +509,6 @@ impl Cursor<'_> {
             }
         }
         BlockComment
-    }
-
-    fn whitespace(&mut self) -> TokenKind {
-        debug_assert!(is_whitespace(self.prev()));
-        self.eat_while(is_whitespace);
-        Whitespace
     }
 
     fn ident_or_reserved_word(&mut self, first_char: char) -> TokenKind {
