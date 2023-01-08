@@ -248,7 +248,7 @@ impl Frame {
                     };
                 }
                 OPCode::LoadConst(i) => {
-                    let t = lvm.module_list[closure.module_id].const_list[*i].clone();
+                    let t = lvm.modules[closure.module_id].const_list[*i].clone();
                     let v = match t {
                         ConstlValue::Null => LuciaValue::Null,
                         ConstlValue::Bool(v) => LuciaValue::Bool(v),
@@ -256,7 +256,7 @@ impl Frame {
                         ConstlValue::Float(v) => LuciaValue::Float(v),
                         ConstlValue::Str(v) => lvm.new_str_value(v),
                         ConstlValue::Func(func_id) => {
-                            let f = lvm.module_list[closure.module_id].func_list[func_id].clone();
+                            let f = lvm.modules[closure.module_id].func_list[func_id].clone();
                             lvm.new_closure_value(Closure {
                                 module_id: closure.module_id,
                                 base_closure: if f.kind == FunctionKind::Closure {
@@ -308,7 +308,7 @@ impl Frame {
                 }
                 OPCode::Import(i) => {
                     if let ConstlValue::Str(v) =
-                        lvm.module_list[closure.module_id].const_list[*i].clone()
+                        lvm.modules[closure.module_id].const_list[*i].clone()
                     {
                         if let Some(module) = lvm.libs.get(&v) {
                             match <&LuciaTable>::try_from(*module) {
@@ -323,8 +323,8 @@ impl Frame {
                             path.push(v);
                             path.set_extension("lucia");
                             let input_file = fs::read_to_string(path).expect("Read file error!");
-                            lvm.module_list.push(Program::try_from(&input_file)?);
-                            let module = lvm.run_module(lvm.module_list.len() - 1)?;
+                            lvm.modules.push(Program::try_from(&input_file)?);
+                            let module = lvm.run_module(lvm.modules.len() - 1)?;
                             match <&LuciaTable>::try_from(module) {
                                 Ok(_) => self.operate_stack.push(module),
                                 Err(_) => return Err(IMPORT_ERROR),
@@ -342,7 +342,7 @@ impl Frame {
                         )
                     );
                     if let ConstlValue::Str(t) =
-                        &lvm.module_list[closure.module_id].const_list[*i].clone()
+                        &lvm.modules[closure.module_id].const_list[*i].clone()
                     {
                         self.operate_stack.push(
                             module
@@ -620,6 +620,7 @@ impl Frame {
                         }
                         let mut frame =
                             Frame::new(gc_obj, NonNull::new(self), v.function.stack_size);
+                        lvm.current_frame = NonNull::new(&mut frame).unwrap();
                         Ok(frame.run(lvm)?)
                     }
                     GCObjectKind::ExtClosure(v) => {
@@ -636,7 +637,7 @@ impl Frame {
 
 #[derive(Debug, Clone)]
 pub struct Lvm {
-    pub module_list: Vec<Program>,
+    pub modules: Vec<Program>,
     pub global_variables: HashMap<String, LuciaValue>,
     pub builtin_variables: HashMap<String, LuciaValue>,
     pub libs: HashMap<String, LuciaValue>,
@@ -650,7 +651,7 @@ pub struct Lvm {
 impl Lvm {
     pub fn new() -> Self {
         let mut t = Lvm {
-            module_list: Vec::new(),
+            modules: Vec::new(),
             global_variables: HashMap::new(),
             builtin_variables: libs::builtin::builtin_variables(),
             libs: HashMap::new(),
@@ -669,7 +670,10 @@ impl Lvm {
     }
 
     pub fn run_module(&mut self, module_id: usize) -> LResult<LuciaValue> {
-        let func = self.module_list[module_id]
+        if module_id >= self.modules.len() {
+            return Err(PROGRAM_ERROR);
+        }
+        let func = self.modules[module_id]
             .func_list
             .first()
             .ok_or_else(|| PROGRAM_ERROR)?
@@ -780,16 +784,16 @@ impl Lvm {
                 Self::gc_mark_object(*v);
             }
             // sweep
-            let mut t = Vec::new();
+            let mut new_heap = Vec::new();
             for ptr in &self.heap {
                 if (**ptr).gc_state {
                     ptr.drop_in_place();
                     dealloc(*ptr as *mut u8, self.mem_layout);
                 } else {
-                    t.push(*ptr);
+                    new_heap.push(*ptr);
                 }
             }
-            self.heap = t;
+            self.heap = new_heap;
         }
     }
 
@@ -830,7 +834,7 @@ impl Default for Lvm {
 impl From<Program> for Lvm {
     fn from(program: Program) -> Self {
         let mut lvm = Lvm::new();
-        lvm.module_list.push(program);
+        lvm.modules.push(program);
         lvm
     }
 }
