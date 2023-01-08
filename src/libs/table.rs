@@ -7,7 +7,7 @@ pub fn libs(lvm: &mut Lvm) -> LuciaTable {
     t.set(
         &lvm.new_str_value("keys".to_string()),
         LuciaValue::ExtFunction(|args, lvm| {
-            check_arguments_num!(args, None, 1);
+            check_arguments_num!(lvm, args, None, 1);
             let table: &mut LuciaTable = (*args.first().unwrap()).try_into().unwrap();
             let mut keys = table.keys();
             Ok(lvm.new_ext_closure_value(Box::new(move |_, _| {
@@ -22,7 +22,7 @@ pub fn libs(lvm: &mut Lvm) -> LuciaTable {
     t.set(
         &lvm.new_str_value("values".to_string()),
         LuciaValue::ExtFunction(|args, lvm| {
-            check_arguments_num!(args, None, 1);
+            check_arguments_num!(lvm, args, None, 1);
             let table: &mut LuciaTable = (*args.first().unwrap()).try_into().unwrap();
             let mut values = table.values();
             Ok(lvm.new_ext_closure_value(Box::new(move |_, _| {
@@ -36,16 +36,16 @@ pub fn libs(lvm: &mut Lvm) -> LuciaTable {
     );
     t.set(
         &lvm.new_str_value("raw_len".to_string()),
-        LuciaValue::ExtFunction(|args, _| {
-            check_arguments_num!(args, None, 1);
+        LuciaValue::ExtFunction(|args, lvm| {
+            check_arguments_num!(lvm, args, None, 1);
             let table: &mut LuciaTable = (*args.first().unwrap()).try_into().unwrap();
             Ok(LuciaValue::Int(table.len().try_into().unwrap()))
         }),
     );
     t.set(
         &lvm.new_str_value("raw_get".to_string()),
-        LuciaValue::ExtFunction(|args, _| {
-            check_arguments_num!(args, None, 2);
+        LuciaValue::ExtFunction(|args, lvm| {
+            check_arguments_num!(lvm, args, None, 2);
             let table: &mut LuciaTable = (*args.first().unwrap()).try_into().unwrap();
             Ok(match table.raw_get(args.last().unwrap()) {
                 Some(v) => v,
@@ -55,8 +55,8 @@ pub fn libs(lvm: &mut Lvm) -> LuciaTable {
     );
     t.set(
         &lvm.new_str_value("raw_set".to_string()),
-        LuciaValue::ExtFunction(|args, _| {
-            check_arguments_num!(args, None, 3);
+        LuciaValue::ExtFunction(|args, lvm| {
+            check_arguments_num!(lvm, args, None, 3);
             let table: &mut LuciaTable = (*args.first().unwrap()).try_into().unwrap();
             let key = args.get(1).unwrap();
             let value = args.get(2).unwrap();

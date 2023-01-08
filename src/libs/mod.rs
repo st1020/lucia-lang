@@ -10,9 +10,12 @@ use crate::objects::LuciaValue;
 
 #[macro_export]
 macro_rules! check_arguments_num {
-    ($args:expr, $value:expr, $require:expr) => {
+    ($lvm:expr, $args:expr, $value:expr, $require:expr) => {
         if $args.len() != $require {
-            return Err($crate::call_arguments_error!($value, $require, $args.len()));
+            $crate::return_type_error!(
+                $lvm,
+                $crate::call_arguments_error!($value, $require, $args.len())
+            );
         }
     };
 }

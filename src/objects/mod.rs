@@ -5,7 +5,7 @@ use std::convert::TryFrom;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
-use crate::errors::{LResult, LuciaError};
+use crate::errors::{BuiltinError, LResult};
 use crate::lvm::Lvm;
 use crate::type_convert_error;
 
@@ -122,7 +122,7 @@ macro_rules! impl_from_for_value {
         }
 
         impl TryFrom<LuciaValue> for $ty {
-            type Error = LuciaError;
+            type Error = BuiltinError;
 
             fn try_from(value: LuciaValue) -> Result<Self, Self::Error> {
                 match value {
@@ -139,7 +139,7 @@ impl_from_for_value!(i64, Int, LuciaValueType::Int);
 impl_from_for_value!(f64, Float, LuciaValueType::Float);
 
 impl TryFrom<LuciaValue> for String {
-    type Error = LuciaError;
+    type Error = BuiltinError;
 
     fn try_from(value: LuciaValue) -> Result<Self, Self::Error> {
         match value {
@@ -157,7 +157,7 @@ impl TryFrom<LuciaValue> for String {
 macro_rules! impl_try_from_value {
     ($ty:ty, $kind:tt, $type_name:expr) => {
         impl TryFrom<LuciaValue> for $ty {
-            type Error = LuciaError;
+            type Error = BuiltinError;
 
             fn try_from(value: LuciaValue) -> Result<Self, Self::Error> {
                 match value {
@@ -196,6 +196,13 @@ impl LuciaValue {
                 },
                 None => LuciaValueType::UnknownGCObject,
             },
+        }
+    }
+
+    pub fn is_error(&self) -> bool {
+        match self {
+            LuciaValue::GCObject(v) => unsafe { (**v).is_error },
+            _ => false,
         }
     }
 }

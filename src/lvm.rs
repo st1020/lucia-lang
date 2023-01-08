@@ -8,53 +8,45 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::codegen::{ConstlValue, FunctionKind, JumpTarget, OPCode, Program};
-use crate::errors::{LResult, LuciaError, RuntimeErrorKind, TypeErrorKind};
-use crate::libs;
-use crate::objects::*;
+use crate::errors::{LResult, LuciaError, RuntimeErrorKind};
+use crate::{build_table_error, unsupported_operand_type};
+use crate::{call_arguments_error, objects::*};
+use crate::{libs, not_callable_error};
 
 #[macro_export]
-macro_rules! unsupported_operand_type {
-    ($operator:expr, $arg1:expr) => {
-        $crate::errors::LuciaError::TypeError($crate::errors::TypeErrorKind::UnOperatorError {
-            operator: $operator,
-            operand: $arg1.value_type(),
-        })
-    };
-    ($operator:expr, $arg1:expr, $arg2:expr) => {
-        $crate::errors::LuciaError::TypeError($crate::errors::TypeErrorKind::BinOperatorError {
-            operator: $operator,
-            operand: ($arg1.value_type(), $arg2.value_type()),
-        })
-    };
+macro_rules! error {
+    ($value:expr) => {{
+        if let $crate::objects::LuciaValue::GCObject(v) = $value {
+            unsafe { (*v).is_error = true }
+        }
+        $value
+    }};
 }
 
 #[macro_export]
-macro_rules! type_convert_error {
-    ($from:expr, $to:expr) => {
-        $crate::errors::LuciaError::TypeError($crate::errors::TypeErrorKind::ConvertError {
-            from: $from,
-            to: $to,
-        })
-    };
+macro_rules! return_type_error {
+    ($lvm:expr, $value:expr) => {{
+        let mut error_table = $crate::objects::LuciaTable::new();
+        error_table.set(
+            &$lvm.get_builtin_str("type"),
+            $lvm.new_str_value($value.error_type().to_string()),
+        );
+        error_table.set(
+            &$lvm.get_builtin_str("msg"),
+            $lvm.new_str_value($value.msg()),
+        );
+        let error_table_value = $lvm.new_table_value(error_table);
+        return Ok($crate::error!(error_table_value));
+    }};
 }
 
 #[macro_export]
-macro_rules! not_callable_error {
-    ($value:expr) => {
-        $crate::errors::LuciaError::TypeError($crate::errors::TypeErrorKind::NotCallableError(
-            $value.value_type(),
-        ))
-    };
-}
-
-#[macro_export]
-macro_rules! call_arguments_error {
-    ($value:expr, $require:expr, $give:expr) => {
-        $crate::errors::LuciaError::TypeError($crate::errors::TypeErrorKind::CallArgumentsError {
-            value: $value,
-            required: $require,
-            given: $give,
-        })
+macro_rules! try_error {
+    ($lvm:expr, $expr:expr) => {
+        match $expr {
+            Ok(val) => val,
+            Err(err) => return_type_error!($lvm, err.clone()),
+        }
     };
 }
 
@@ -100,7 +92,10 @@ impl Frame {
                             let return_value = self.call(lvm, 2, true)?;
                             self.operate_stack.push(return_value);
                         }
-                        None => return Err(unsupported_operand_type!($operator, $arg1, $arg2)),
+                        None => return_type_error!(
+                            lvm,
+                            unsupported_operand_type!($operator, $arg1, $arg2)
+                        ),
                     }
                 } else {
                     $block
@@ -116,7 +111,10 @@ impl Frame {
                     self.operate_stack.push(match (arg1, arg2) {
                         (LuciaValue::Int(v1), LuciaValue::Int(v2)) => LuciaValue::Int(v1 $op v2),
                         (LuciaValue::Float(v1), LuciaValue::Float(v2)) => LuciaValue::Float(v1 $op v2),
-                        _ => return Err(unsupported_operand_type!($operator, arg1, arg2)),
+                        _ => return_type_error!(
+                            lvm,
+                            unsupported_operand_type!($operator, arg1, arg2)
+                        ),
                     });
                 }, arg1, arg2, $special_name, $operator)
             }};
@@ -140,7 +138,10 @@ impl Frame {
                     self.operate_stack.push(LuciaValue::Bool(match (arg1, arg2) {
                         (LuciaValue::Int(v1), LuciaValue::Int(v2)) => v1 $op v2,
                         (LuciaValue::Float(v1), LuciaValue::Float(v2)) => v1 $op v2,
-                        _ => return Err(unsupported_operand_type!($operator, arg1, arg2)),
+                        _ => return_type_error!(
+                            lvm,
+                            unsupported_operand_type!($operator, arg1, arg2)
+                        ),
                     }));
                 }, arg1, arg2, $special_name, $operator)
             }};
@@ -150,7 +151,7 @@ impl Frame {
             ($lvm:expr, $special_name:expr) => {{
                 let arg2 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                 let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
-                let t = <&mut LuciaTable>::try_from(arg1)?;
+                let t = try_error!($lvm, <&mut LuciaTable>::try_from(arg1));
                 match t.get(&$lvm.get_builtin_str($special_name)) {
                     Some(v) => {
                         self.operate_stack.push(v);
@@ -171,7 +172,7 @@ impl Frame {
                 let arg3 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                 let arg2 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                 let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
-                let t = <&mut LuciaTable>::try_from(arg1)?;
+                let t = try_error!($lvm, <&mut LuciaTable>::try_from(arg1));
                 match t.get(&$lvm.get_builtin_str($special_name)) {
                     Some(v) => {
                         self.operate_stack.push(v);
@@ -317,7 +318,7 @@ impl Frame {
                         } else {
                             let mut path = PathBuf::new();
                             if let Some(v) = lvm.get_global_variable("__module_path__") {
-                                path.push(String::try_from(v)?);
+                                path.push(try_error!(lvm, String::try_from(v)));
                             }
                             path.push(v);
                             path.set_extension("lucia");
@@ -334,9 +335,12 @@ impl Frame {
                     }
                 }
                 OPCode::ImportFrom(i) => {
-                    let module = <&LuciaTable>::try_from(
-                        *self.operate_stack.last().ok_or_else(|| STACK_ERROR)?,
-                    )?;
+                    let module = try_error!(
+                        lvm,
+                        <&LuciaTable>::try_from(
+                            *self.operate_stack.last().ok_or_else(|| STACK_ERROR)?,
+                        )
+                    );
                     if let ConstlValue::Str(t) =
                         &lvm.module_list[closure.module_id].const_list[*i].clone()
                     {
@@ -350,11 +354,14 @@ impl Frame {
                     }
                 }
                 OPCode::ImportGlob => {
-                    let module = <&LuciaTable>::try_from(
-                        self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?,
-                    )?;
+                    let module = try_error!(
+                        lvm,
+                        <&LuciaTable>::try_from(
+                            self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?,
+                        )
+                    );
                     for (k, v) in module.clone() {
-                        lvm.set_global_variable(String::try_from(k)?, v);
+                        lvm.set_global_variable(try_error!(lvm, String::try_from(k)), v);
                     }
                 }
                 OPCode::BuildTable(i) => {
@@ -368,9 +375,7 @@ impl Frame {
                         let arg2 = temp.pop().expect("unexpect error");
                         if let LuciaValue::GCObject(_) = arg1 {
                             if String::try_from(arg1).is_err() {
-                                return Err(LuciaError::TypeError(TypeErrorKind::BuildTableError(
-                                    arg1.value_type(),
-                                )));
+                                return_type_error!(lvm, build_table_error!(arg1));
                             }
                         }
                         table.set(&arg1, arg2);
@@ -391,19 +396,25 @@ impl Frame {
                                 let return_value = self.call(lvm, 1, true)?;
                                 self.operate_stack.push(return_value);
                             }
-                            None => return Err(unsupported_operand_type!(code.clone(), arg1)),
+                            None => return_type_error!(
+                                lvm,
+                                unsupported_operand_type!(code.clone(), arg1)
+                            ),
                         },
                         Err(_) => self.operate_stack.push(match arg1 {
                             LuciaValue::Int(v) => LuciaValue::Int(-v),
                             LuciaValue::Float(v) => LuciaValue::Float(-v),
-                            _ => return Err(unsupported_operand_type!(code.clone(), arg1)),
+                            _ => return_type_error!(
+                                lvm,
+                                unsupported_operand_type!(code.clone(), arg1)
+                            ),
                         }),
                     }
                 }
                 OPCode::Not => {
                     let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                     self.operate_stack
-                        .push(LuciaValue::Bool(!bool::try_from(arg1)?));
+                        .push(LuciaValue::Bool(!try_error!(lvm, bool::try_from(arg1))));
                 }
                 OPCode::Add => {
                     let arg2 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
@@ -414,9 +425,10 @@ impl Frame {
                                 (Ok(v1), Ok(v2)) => {
                                     self.operate_stack.push(lvm.new_str_value(v1 + &v2))
                                 }
-                                _ => {
-                                    return Err(unsupported_operand_type!(code.clone(), arg1, arg2))
-                                }
+                                _ => return_type_error!(
+                                    lvm,
+                                    unsupported_operand_type!(code.clone(), arg1, arg2)
+                                ),
                             };
                         }
                         LuciaValueType::Table => {
@@ -431,9 +443,10 @@ impl Frame {
                                     let return_value = self.call(lvm, 2, true)?;
                                     self.operate_stack.push(return_value);
                                 }
-                                None => {
-                                    return Err(unsupported_operand_type!(code.clone(), arg1, arg2))
-                                }
+                                None => return_type_error!(
+                                    lvm,
+                                    unsupported_operand_type!(code.clone(), arg1, arg2)
+                                ),
                             }
                         }
                         _ => {
@@ -444,9 +457,10 @@ impl Frame {
                                 (LuciaValue::Float(v1), LuciaValue::Float(v2)) => {
                                     LuciaValue::Float(v1 + v2)
                                 }
-                                _ => {
-                                    return Err(unsupported_operand_type!(code.clone(), arg1, arg2))
-                                }
+                                _ => return_type_error!(
+                                    lvm,
+                                    unsupported_operand_type!(code.clone(), arg1, arg2)
+                                ),
                             });
                         }
                     }
@@ -524,10 +538,8 @@ impl Frame {
                 }
                 OPCode::TryCall(i) => {
                     let return_value = self.call(lvm, *i, true)?;
-                    if let LuciaValue::GCObject(v) = return_value {
-                        if unsafe { (*v).is_error } {
-                            return Ok(return_value);
-                        }
+                    if return_value.is_error() {
+                        return Ok(return_value);
                     }
                     self.operate_stack.push(return_value);
                 }
@@ -572,9 +584,10 @@ impl Frame {
 
         if let Ok(t) = <&mut LuciaTable>::try_from(callee) {
             arguments.push(callee);
-            callee = t
-                .get(&lvm.get_builtin_str("__call__"))
-                .ok_or_else(|| not_callable_error!(callee))?;
+            callee = match t.get(&lvm.get_builtin_str("__call__")) {
+                Some(v) => v,
+                None => return_type_error!(lvm, not_callable_error!(callee)),
+            };
         }
 
         match callee {
@@ -589,11 +602,14 @@ impl Frame {
                         if arguments.len() < params_num
                             || (v.function.variadic.is_none() && arguments.len() != params_num)
                         {
-                            return Err(call_arguments_error!(
-                                Some(Box::new(v.clone())),
-                                params_num,
-                                arguments.len()
-                            ));
+                            return_type_error!(
+                                lvm,
+                                call_arguments_error!(
+                                    Some(Box::new(v.clone())),
+                                    params_num,
+                                    arguments.len()
+                                )
+                            );
                         }
                         for i in 0..params_num {
                             v.variables[i] = arguments.pop().expect("unexpect error");
@@ -610,10 +626,10 @@ impl Frame {
                         arguments.reverse();
                         Ok(v(arguments, lvm)?)
                     }
-                    _ => Err(not_callable_error!(callee)),
+                    _ => return_type_error!(lvm, not_callable_error!(callee)),
                 }
             }
-            _ => Err(not_callable_error!(callee)),
+            _ => return_type_error!(lvm, not_callable_error!(callee)),
         }
     }
 }

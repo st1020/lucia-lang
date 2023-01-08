@@ -1,10 +1,11 @@
+use std::fmt::Display;
 use std::num::{ParseFloatError, ParseIntError};
 
 use thiserror::Error;
 
 use crate::codegen::OPCode;
 use crate::lexer::{Token, TokenKind};
-use crate::objects::{Closure, LuciaValueType};
+use crate::objects::{Closure, LuciaValue, LuciaValueType};
 
 pub type LResult<T> = Result<T, LuciaError>;
 
@@ -15,8 +16,8 @@ pub enum LuciaError {
     SyntaxError(#[source] SyntaxErrorKind),
     #[error("runtime error: {0}")]
     RuntimeError(#[source] RuntimeErrorKind),
-    #[error("type error: {0}")]
-    TypeError(#[source] TypeErrorKind),
+    #[error("user panic: {0}")]
+    UserPanic(LuciaValue),
 }
 
 /// Kind of SyntaxError.
@@ -77,6 +78,33 @@ pub enum RuntimeErrorKind {
     ImportError,
 }
 
+/// Enum representing any lucia lang builtin error.
+/// BuiltinError will be converted to the LuciaTable and handled by lucia lang runtime.
+#[derive(Debug, Clone, PartialEq)]
+pub enum BuiltinError {
+    TypeError(TypeErrorKind),
+}
+
+impl BuiltinError {
+    pub fn error_type(&self) -> &'static str {
+        match self {
+            BuiltinError::TypeError(_) => "type_error",
+        }
+    }
+
+    pub fn msg(&self) -> String {
+        match self {
+            BuiltinError::TypeError(v) => v.to_string(),
+        }
+    }
+}
+
+impl Display for BuiltinError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.error_type(), self.msg())
+    }
+}
+
 /// Kind of TypeError.
 #[derive(Error, Debug, Clone, PartialEq)]
 pub enum TypeErrorKind {
@@ -105,4 +133,68 @@ pub enum TypeErrorKind {
     },
     #[error("build table error ({0} value can't be table key)")]
     BuildTableError(LuciaValueType),
+    #[error("{0}")]
+    TypeError(String),
+}
+
+#[macro_export]
+macro_rules! unsupported_operand_type {
+    ($operator:expr, $arg1:expr) => {
+        $crate::errors::BuiltinError::TypeError($crate::errors::TypeErrorKind::UnOperatorError {
+            operator: $operator,
+            operand: $arg1.value_type(),
+        })
+    };
+    ($operator:expr, $arg1:expr, $arg2:expr) => {
+        $crate::errors::BuiltinError::TypeError($crate::errors::TypeErrorKind::BinOperatorError {
+            operator: $operator,
+            operand: ($arg1.value_type(), $arg2.value_type()),
+        })
+    };
+}
+
+#[macro_export]
+macro_rules! type_convert_error {
+    ($from:expr, $to:expr) => {
+        $crate::errors::BuiltinError::TypeError($crate::errors::TypeErrorKind::ConvertError {
+            from: $from,
+            to: $to,
+        })
+    };
+}
+
+#[macro_export]
+macro_rules! not_callable_error {
+    ($value:expr) => {
+        $crate::errors::BuiltinError::TypeError($crate::errors::TypeErrorKind::NotCallableError(
+            $value.value_type(),
+        ))
+    };
+}
+
+#[macro_export]
+macro_rules! call_arguments_error {
+    ($value:expr, $require:expr, $give:expr) => {
+        $crate::errors::BuiltinError::TypeError($crate::errors::TypeErrorKind::CallArgumentsError {
+            value: $value,
+            required: $require,
+            given: $give,
+        })
+    };
+}
+
+#[macro_export]
+macro_rules! build_table_error {
+    ($value:expr) => {
+        $crate::errors::BuiltinError::TypeError($crate::errors::TypeErrorKind::BuildTableError(
+            $value.value_type(),
+        ))
+    };
+}
+
+#[macro_export]
+macro_rules! type_error {
+    ($value:expr) => {
+        $crate::errors::BuiltinError::TypeError($crate::errors::TypeErrorKind::TypeError($value))
+    };
 }
