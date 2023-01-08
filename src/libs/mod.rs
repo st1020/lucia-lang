@@ -6,7 +6,7 @@ pub mod table;
 use std::collections::HashMap;
 
 use crate::lvm::Lvm;
-use crate::objects::{GCObjectKind, LuciaValue};
+use crate::objects::LuciaValue;
 
 #[macro_export]
 macro_rules! check_arguments_num {
@@ -22,10 +22,7 @@ pub fn std_libs(lvm: &mut Lvm) -> HashMap<String, LuciaValue> {
     macro_rules! add_std_module {
         ($name:expr, $path:path) => {
             let t = $path(lvm);
-            std_libs.insert(
-                String::from($name),
-                lvm.new_gc_value(GCObjectKind::Table(t)),
-            );
+            std_libs.insert(String::from($name), lvm.new_table_value(t));
         };
     }
     add_std_module!("std::convert", convert::libs);

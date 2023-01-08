@@ -1,13 +1,13 @@
 use std::convert::TryFrom;
 
 use crate::lvm::Lvm;
-use crate::objects::{GCObjectKind, LuciaTable, LuciaValue, LuciaValueType};
-use crate::{check_arguments_num, str_to_value, type_convert_error};
+use crate::objects::{LuciaTable, LuciaValue, LuciaValueType};
+use crate::{check_arguments_num, type_convert_error};
 
 pub fn libs(lvm: &mut Lvm) -> LuciaTable {
     let mut t = LuciaTable::new();
     t.set(
-        &str_to_value!(lvm, "bool"),
+        &lvm.new_str_value("bool".to_string()),
         LuciaValue::ExtFunction(|args, _| {
             check_arguments_num!(args, None, 1);
             Ok(LuciaValue::Bool(match args.first().unwrap() {
@@ -21,7 +21,7 @@ pub fn libs(lvm: &mut Lvm) -> LuciaTable {
         }),
     );
     t.set(
-        &str_to_value!(lvm, "int"),
+        &lvm.new_str_value("int".to_string()),
         LuciaValue::ExtFunction(|args, _| {
             check_arguments_num!(args, None, 1);
             let arg1 = args.first().unwrap();
@@ -44,7 +44,7 @@ pub fn libs(lvm: &mut Lvm) -> LuciaTable {
         }),
     );
     t.set(
-        &str_to_value!(lvm, "float"),
+        &lvm.new_str_value("float".to_string()),
         LuciaValue::ExtFunction(|args, _| {
             check_arguments_num!(args, None, 1);
             let arg1 = args.first().unwrap();
@@ -73,10 +73,10 @@ pub fn libs(lvm: &mut Lvm) -> LuciaTable {
         }),
     );
     t.set(
-        &str_to_value!(lvm, "str"),
+        &lvm.new_str_value("str".to_string()),
         LuciaValue::ExtFunction(|args, lvm| {
             check_arguments_num!(args, None, 1);
-            Ok(lvm.new_gc_value(GCObjectKind::Str(args.first().unwrap().to_string())))
+            Ok(lvm.new_str_value(args.first().unwrap().to_string()))
         }),
     );
     t

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::check_arguments_num;
-use crate::objects::{GCObjectKind, LuciaValue};
+use crate::objects::LuciaValue;
 
 pub fn builtin_variables() -> HashMap<String, LuciaValue> {
     let mut t = HashMap::new();
@@ -19,9 +19,7 @@ pub fn builtin_variables() -> HashMap<String, LuciaValue> {
         String::from("type"),
         LuciaValue::ExtFunction(|args, lvm| {
             check_arguments_num!(args, None, 1);
-            Ok(lvm.new_gc_value(GCObjectKind::Str(
-                args.first().unwrap().value_type().to_string(),
-            )))
+            Ok(lvm.new_str_value(args.first().unwrap().value_type().to_string()))
         }),
     );
     t
