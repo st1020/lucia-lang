@@ -780,6 +780,16 @@ impl Lvm {
                     None => break,
                 }
             }
+            for v in self.global_variables.values() {
+                if let LuciaValue::GCObject(ptr) = v {
+                    Self::gc_mark_object(*ptr);
+                }
+            }
+            for v in self.builtin_variables.values() {
+                if let LuciaValue::GCObject(ptr) = v {
+                    Self::gc_mark_object(*ptr);
+                }
+            }
             for v in self.builtin_str_value.values() {
                 Self::gc_mark_object(*v);
             }
