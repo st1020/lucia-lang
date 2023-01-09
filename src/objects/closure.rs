@@ -25,3 +25,24 @@ impl Display for Closure {
         write!(f, "function")
     }
 }
+
+impl Closure {
+    pub fn new(
+        module_id: usize,
+        function: Function,
+        base_closure: Option<NonNull<GCObject>>,
+    ) -> Self {
+        Closure {
+            module_id,
+            base_closure,
+            variables: {
+                let mut temp: Vec<LuciaValue> = Vec::with_capacity(function.local_names.len());
+                for _ in 0..function.local_names.len() {
+                    temp.push(LuciaValue::Null);
+                }
+                temp
+            },
+            function,
+        }
+    }
+}
