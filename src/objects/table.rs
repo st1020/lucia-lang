@@ -2,20 +2,20 @@ use std::collections::HashMap;
 use std::fmt::Display;
 use std::iter::FusedIterator;
 
-use super::LuciaValue;
+use super::Value;
 
 /// The table implement.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LuciaTable {
-    pub array: Vec<(LuciaValue, LuciaValue)>,
-    pub mapping: HashMap<LuciaValue, LuciaValue>,
-    base_value: Option<LuciaValue>,
+pub struct Table {
+    pub array: Vec<(Value, Value)>,
+    pub mapping: HashMap<Value, Value>,
+    base_value: Option<Value>,
 }
 
-impl LuciaTable {
+impl Table {
     #[inline]
     pub fn new() -> Self {
-        LuciaTable {
+        Table {
             array: Vec::new(),
             mapping: HashMap::new(),
             base_value: None,
@@ -79,7 +79,7 @@ impl LuciaTable {
         self.base_value = None;
     }
 
-    pub fn raw_get(&self, key: &LuciaValue) -> Option<LuciaValue> {
+    pub fn raw_get(&self, key: &Value) -> Option<Value> {
         if let Ok(key) = i64::try_from(*key) {
             if let Ok(key) = usize::try_from(key) {
                 if let Some(v) = self.array.get(key) {
@@ -90,18 +90,17 @@ impl LuciaTable {
         self.mapping.get(key).copied()
     }
 
-    pub fn get(&self, key: &LuciaValue) -> Option<LuciaValue> {
+    pub fn get(&self, key: &Value) -> Option<Value> {
         self.raw_get(key).or_else(|| {
-            self.base_value.and_then(
-                |v| match <&LuciaTable>::try_from(self.raw_get(&v).unwrap()) {
+            self.base_value
+                .and_then(|v| match <&Table>::try_from(self.raw_get(&v).unwrap()) {
                     Ok(v) => v.get(key),
                     Err(_) => None,
-                },
-            )
+                })
         })
     }
 
-    pub fn set(&mut self, key: &LuciaValue, value: LuciaValue) {
+    pub fn set(&mut self, key: &Value, value: Value) {
         if let Ok(k) = i64::try_from(*key) {
             if let Ok(k) = usize::try_from(k) {
                 if k == self.array.len() {
@@ -110,11 +109,11 @@ impl LuciaTable {
                 }
             }
         } else if let Ok(k) = String::try_from(*key) {
-            if k == "__base__" && value != LuciaValue::Null {
+            if k == "__base__" && value != Value::Null {
                 self.base_value = Some(*key);
             }
         }
-        if value != LuciaValue::Null {
+        if value != Value::Null {
             self.mapping.insert(*key, value);
         } else {
             self.mapping.remove(key);
@@ -122,13 +121,13 @@ impl LuciaTable {
     }
 }
 
-impl Default for LuciaTable {
+impl Default for Table {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Display for LuciaTable {
+impl Display for Table {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -141,13 +140,13 @@ impl Display for LuciaTable {
     }
 }
 
-impl From<Vec<LuciaValue>> for LuciaTable {
-    fn from(value: Vec<LuciaValue>) -> Self {
+impl From<Vec<Value>> for Table {
+    fn from(value: Vec<Value>) -> Self {
         let mut temp = Vec::new();
         for (i, t) in value.into_iter().enumerate() {
-            temp.push((LuciaValue::Int(i.try_into().unwrap()), t));
+            temp.push((Value::Int(i.try_into().unwrap()), t));
         }
-        LuciaTable {
+        Table {
             array: temp,
             mapping: HashMap::new(),
             base_value: None,
@@ -155,8 +154,8 @@ impl From<Vec<LuciaValue>> for LuciaTable {
     }
 }
 
-impl IntoIterator for LuciaTable {
-    type Item = (LuciaValue, LuciaValue);
+impl IntoIterator for Table {
+    type Item = (Value, Value);
     type IntoIter = IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -169,12 +168,12 @@ impl IntoIterator for LuciaTable {
 
 #[derive(Clone)]
 pub struct Iter<'a> {
-    array: std::slice::Iter<'a, (LuciaValue, LuciaValue)>,
-    mapping: std::collections::hash_map::Iter<'a, LuciaValue, LuciaValue>,
+    array: std::slice::Iter<'a, (Value, Value)>,
+    mapping: std::collections::hash_map::Iter<'a, Value, Value>,
 }
 
 impl<'a> Iterator for Iter<'a> {
-    type Item = (&'a LuciaValue, &'a LuciaValue);
+    type Item = (&'a Value, &'a Value);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -202,12 +201,12 @@ impl ExactSizeIterator for Iter<'_> {
 impl FusedIterator for Iter<'_> {}
 
 pub struct IterMut<'a> {
-    array: std::slice::IterMut<'a, (LuciaValue, LuciaValue)>,
-    mapping: std::collections::hash_map::IterMut<'a, LuciaValue, LuciaValue>,
+    array: std::slice::IterMut<'a, (Value, Value)>,
+    mapping: std::collections::hash_map::IterMut<'a, Value, Value>,
 }
 
 impl<'a> Iterator for IterMut<'a> {
-    type Item = (&'a LuciaValue, &'a mut LuciaValue);
+    type Item = (&'a Value, &'a mut Value);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -235,12 +234,12 @@ impl ExactSizeIterator for IterMut<'_> {
 impl FusedIterator for IterMut<'_> {}
 
 pub struct IntoIter {
-    array: std::vec::IntoIter<(LuciaValue, LuciaValue)>,
-    mapping: std::collections::hash_map::IntoIter<LuciaValue, LuciaValue>,
+    array: std::vec::IntoIter<(Value, Value)>,
+    mapping: std::collections::hash_map::IntoIter<Value, Value>,
 }
 
 impl Iterator for IntoIter {
-    type Item = (LuciaValue, LuciaValue);
+    type Item = (Value, Value);
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -270,7 +269,7 @@ pub struct Keys<'a> {
 }
 
 impl<'a> Iterator for Keys<'a> {
-    type Item = &'a LuciaValue;
+    type Item = &'a Value;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -297,7 +296,7 @@ pub struct Values<'a> {
 }
 
 impl<'a> Iterator for Values<'a> {
-    type Item = &'a LuciaValue;
+    type Item = &'a Value;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -324,7 +323,7 @@ pub struct ValuesMut<'a> {
 }
 
 impl<'a> Iterator for ValuesMut<'a> {
-    type Item = &'a mut LuciaValue;
+    type Item = &'a mut Value;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -351,7 +350,7 @@ pub struct IntoKeys {
 }
 
 impl Iterator for IntoKeys {
-    type Item = LuciaValue;
+    type Item = Value;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -378,7 +377,7 @@ pub struct IntoValues {
 }
 
 impl Iterator for IntoValues {
-    type Item = LuciaValue;
+    type Item = Value;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {

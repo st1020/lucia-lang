@@ -1,7 +1,5 @@
-use std::convert::TryFrom;
-
 use crate::ast::*;
-use crate::errors::{ExpectedToken, LResult, LuciaError, SyntaxErrorKind};
+use crate::errors::{Error, ExpectedToken, Result, SyntaxError};
 use crate::lexer::{Token, TokenKind};
 
 /// The parser. Turns token iter into AST.
@@ -49,12 +47,12 @@ impl<'a> Parser<'a> {
     }
 
     /// Expect the kind of current token is `t`, return `Err()` if not.
-    pub fn expect(&self, t: TokenKind) -> LResult<()> {
+    pub fn expect(&self, t: TokenKind) -> Result<()> {
         if self.token.kind != t {
             if self.is_eof {
-                Err(LuciaError::SyntaxError(SyntaxErrorKind::UnexpectEOF))
+                Err(Error::SyntaxError(SyntaxError::UnexpectEOF))
             } else {
-                Err(LuciaError::SyntaxError(SyntaxErrorKind::UnexpectToken {
+                Err(Error::SyntaxError(SyntaxError::UnexpectToken {
                     token: Box::new(self.token.clone()),
                     expected: ExpectedToken::TokenKind(Box::new(t)),
                 }))
@@ -65,7 +63,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse token iter into AST `Box<Block>`.
-    pub fn parse(&mut self) -> LResult<Box<Block>> {
+    pub fn parse(&mut self) -> Result<Box<Block>> {
         self.eat_eol();
         Ok(Box::new(Block {
             start: self.token.start,
@@ -81,7 +79,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse statement.
-    fn parse_stmt(&mut self) -> LResult<Box<Stmt>> {
+    fn parse_stmt(&mut self) -> Result<Box<Stmt>> {
         let ast_node = Box::new(match self.token.kind {
             TokenKind::If => *self.parse_stmt_if()?,
             TokenKind::Loop => Stmt {
@@ -222,12 +220,10 @@ impl<'a> Parser<'a> {
                                 ImportKind::Simple(Box::new(
                                     path.last()
                                         .ok_or_else(|| {
-                                            LuciaError::SyntaxError(
-                                                SyntaxErrorKind::UnexpectToken {
-                                                    token: Box::new(self.token.clone()),
-                                                    expected: ExpectedToken::Ident,
-                                                },
-                                            )
+                                            Error::SyntaxError(SyntaxError::UnexpectToken {
+                                                token: Box::new(self.token.clone()),
+                                                expected: ExpectedToken::Ident,
+                                            })
                                         })?
                                         .clone(),
                                 ))
@@ -271,7 +267,7 @@ impl<'a> Parser<'a> {
                             self.expect(TokenKind::EOL)?;
                         }
                         _ => {
-                            return Err(LuciaError::SyntaxError(SyntaxErrorKind::UnexpectToken {
+                            return Err(Error::SyntaxError(SyntaxError::UnexpectToken {
                                 token: Box::new(self.token.clone()),
                                 expected: ExpectedToken::TokenKind(Box::new(TokenKind::EOL)),
                             }));
@@ -293,11 +289,7 @@ impl<'a> Parser<'a> {
                                 property: _,
                                 kind: _,
                             } => (),
-                            _ => {
-                                return Err(LuciaError::SyntaxError(
-                                    SyntaxErrorKind::ParseAssignStmtError,
-                                ))
-                            }
+                            _ => return Err(Error::SyntaxError(SyntaxError::ParseAssignStmtError)),
                         }
                     };
                 }
@@ -353,7 +345,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse block.
-    fn parse_block(&mut self) -> LResult<Box<Block>> {
+    fn parse_block(&mut self) -> Result<Box<Block>> {
         self.expect(TokenKind::OpenBrace)?;
         Ok(Box::new(Block {
             start: self.token.start,
@@ -372,7 +364,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse block statement.
-    fn parse_stmt_block(&mut self) -> LResult<Box<Stmt>> {
+    fn parse_stmt_block(&mut self) -> Result<Box<Stmt>> {
         let temp = self.parse_block()?;
         Ok(Box::new(Stmt {
             start: temp.start,
@@ -382,7 +374,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse if statement.
-    fn parse_stmt_if(&mut self) -> LResult<Box<Stmt>> {
+    fn parse_stmt_if(&mut self) -> Result<Box<Stmt>> {
         Ok(Box::new(Stmt {
             start: self.token.start,
             kind: StmtKind::If {
@@ -408,7 +400,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse expression.
-    fn parse_expr(&mut self, min_precedence: u32) -> LResult<Box<Expr>> {
+    fn parse_expr(&mut self, min_precedence: u32) -> Result<Box<Expr>> {
         let start = self.token.start;
         let mut left = self.parse_expr_unary()?;
         loop {
@@ -448,7 +440,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse unary expression.
-    fn parse_expr_unary(&mut self) -> LResult<Box<Expr>> {
+    fn parse_expr_unary(&mut self) -> Result<Box<Expr>> {
         macro_rules! unary_expr {
             ($un_op:expr) => {{
                 let start = self.token.start;
@@ -471,7 +463,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse primary expression.
-    fn parse_expr_primary(&mut self) -> LResult<Box<Expr>> {
+    fn parse_expr_primary(&mut self) -> Result<Box<Expr>> {
         macro_rules! member_expr {
             ($ast_node:ident, $start:ident, $member_expr_kind:expr) => {
                 $ast_node = Box::new(Expr {
@@ -553,7 +545,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse atom expression.
-    fn parse_expr_atom(&mut self) -> LResult<Box<Expr>> {
+    fn parse_expr_atom(&mut self) -> Result<Box<Expr>> {
         macro_rules! lit_expr {
             ($lit_kind:expr) => {{
                 let temp = Box::new(Expr::from(Lit {
@@ -600,7 +592,7 @@ impl<'a> Parser<'a> {
                 }),
                 end: self.prev_token.end,
             })),
-            _ => Err(LuciaError::SyntaxError(SyntaxErrorKind::UnexpectToken {
+            _ => Err(Error::SyntaxError(SyntaxError::UnexpectToken {
                 token: Box::new(self.token.clone()),
                 expected: ExpectedToken::AtomExpr,
             })),
@@ -608,12 +600,12 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse ident expression.
-    fn parse_expr_ident(&mut self) -> LResult<Box<Expr>> {
+    fn parse_expr_ident(&mut self) -> Result<Box<Expr>> {
         Ok(Box::new(Expr::from(*self.parse_ident()?)))
     }
 
     /// Parse table expression.
-    fn parse_expr_table(&mut self) -> LResult<Box<Expr>> {
+    fn parse_expr_table(&mut self) -> Result<Box<Expr>> {
         Ok(Box::new(Expr {
             start: self.token.start,
             kind: ExprKind::Table {
@@ -666,7 +658,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse function expression.
-    fn parse_expr_func(&mut self) -> LResult<Box<Expr>> {
+    fn parse_expr_func(&mut self) -> Result<Box<Expr>> {
         let end_token;
         let mut variadic = None;
         Ok(Box::new(Expr {
@@ -685,7 +677,7 @@ impl<'a> Parser<'a> {
                             true
                         }
                         _ => {
-                            return Err(LuciaError::SyntaxError(SyntaxErrorKind::UnexpectToken {
+                            return Err(Error::SyntaxError(SyntaxError::UnexpectToken {
                                 token: Box::new(self.token.clone()),
                                 expected: ExpectedToken::FuncExpr,
                             }))
@@ -722,7 +714,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse ident.
-    fn parse_ident(&mut self) -> LResult<Box<Ident>> {
+    fn parse_ident(&mut self) -> Result<Box<Ident>> {
         match &self.token.kind {
             TokenKind::Ident(v) => {
                 let temp = Ident {
@@ -733,7 +725,7 @@ impl<'a> Parser<'a> {
                 self.bump();
                 Ok(Box::new(temp))
             }
-            _ => Err(LuciaError::SyntaxError(SyntaxErrorKind::UnexpectToken {
+            _ => Err(Error::SyntaxError(SyntaxError::UnexpectToken {
                 token: Box::new(self.token.clone()),
                 expected: ExpectedToken::Ident,
             })),

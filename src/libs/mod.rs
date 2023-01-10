@@ -6,7 +6,7 @@ pub mod table;
 use std::collections::HashMap;
 
 use crate::lvm::Lvm;
-use crate::objects::LuciaValue;
+use crate::objects::Value;
 
 #[macro_export]
 macro_rules! check_arguments_num {
@@ -20,7 +20,7 @@ macro_rules! check_arguments_num {
     };
 }
 
-pub fn std_libs(lvm: &mut Lvm) -> HashMap<String, LuciaValue> {
+pub fn std_libs(lvm: &mut Lvm) -> HashMap<String, Value> {
     let mut std_libs = HashMap::new();
     macro_rules! add_std_module {
         ($name:expr, $path:path) => {

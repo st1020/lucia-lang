@@ -2,7 +2,7 @@ use lucia_lang::*;
 use std::time::Instant;
 
 #[test]
-fn temp() -> errors::LResult<()> {
+fn temp() -> errors::Result<()> {
     let input = "
     import std::io::{println}
     import std::table::{raw_get}
@@ -33,7 +33,7 @@ fn temp() -> errors::LResult<()> {
 }
 
 #[test]
-fn variadic() -> errors::LResult<()> {
+fn variadic() -> errors::Result<()> {
     let input = "
     import std::io::{println}
     test = func (a, *b) {
@@ -47,7 +47,7 @@ fn variadic() -> errors::LResult<()> {
 }
 
 #[test]
-fn import() -> errors::LResult<()> {
+fn import() -> errors::Result<()> {
     let input = "
     import std::io::{input, println}
     import std::convert::{bool, int}
@@ -58,7 +58,7 @@ fn import() -> errors::LResult<()> {
 }
 
 #[test]
-fn for_table() -> errors::LResult<()> {
+fn for_table() -> errors::Result<()> {
     let input = "
     import std::io::{input, println}
     import std::convert::{bool, int}
@@ -74,7 +74,7 @@ fn for_table() -> errors::LResult<()> {
 }
 
 #[test]
-fn add_pref() -> errors::LResult<()> {
+fn add_pref() -> errors::Result<()> {
     let input = "
     i = 0
     ans = 0
@@ -93,7 +93,7 @@ fn add_pref() -> errors::LResult<()> {
 }
 
 #[test]
-fn gcd_pref() -> errors::LResult<()> {
+fn gcd_pref() -> errors::Result<()> {
     let input = "
     global gcd
     gcd = func (x, y) {
@@ -124,7 +124,7 @@ fn gcd_pref() -> errors::LResult<()> {
 }
 
 #[test]
-fn for_test() -> errors::LResult<()> {
+fn for_test() -> errors::Result<()> {
     let input = "
     import std::io::{println}
     a = func () {
@@ -152,7 +152,7 @@ fn for_test() -> errors::LResult<()> {
 }
 
 #[test]
-fn do_test() -> errors::LResult<()> {
+fn do_test() -> errors::Result<()> {
     let input = "
     import std::io::{println}
     global t

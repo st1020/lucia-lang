@@ -1,55 +1,53 @@
-use std::convert::TryFrom;
-
 use crate::lvm::Lvm;
-use crate::objects::{LuciaTable, LuciaValue, LuciaValueType};
+use crate::objects::{Table, Value, ValueType};
 use crate::{check_arguments_num, return_type_error, type_convert_error};
 
-pub fn libs(lvm: &mut Lvm) -> LuciaTable {
-    let mut t = LuciaTable::new();
+pub fn libs(lvm: &mut Lvm) -> Table {
+    let mut t = Table::new();
     t.set(
         &lvm.new_str_value("bool".to_string()),
-        LuciaValue::ExtFunction(|args, lvm| {
+        Value::ExtFunction(|args, lvm| {
             check_arguments_num!(lvm, args, None, 1);
-            Ok(LuciaValue::Bool(match args.first().unwrap() {
-                LuciaValue::Null => false,
-                LuciaValue::Bool(v) => *v,
-                LuciaValue::Int(v) => *v != 0,
-                LuciaValue::Float(v) => *v != 0.0,
-                LuciaValue::ExtFunction(_) => true,
-                LuciaValue::GCObject(_) => true,
+            Ok(Value::Bool(match args.first().unwrap() {
+                Value::Null => false,
+                Value::Bool(v) => *v,
+                Value::Int(v) => *v != 0,
+                Value::Float(v) => *v != 0.0,
+                Value::ExtFunction(_) => true,
+                Value::GCObject(_) => true,
             }))
         }),
     );
     t.set(
         &lvm.new_str_value("int".to_string()),
-        LuciaValue::ExtFunction(|args, lvm| {
+        Value::ExtFunction(|args, lvm| {
             check_arguments_num!(lvm, args, None, 1);
             let arg1 = args.first().unwrap();
-            Ok(LuciaValue::Int(match arg1 {
-                LuciaValue::Null => 0,
-                LuciaValue::Bool(v) => i64::from(*v),
-                LuciaValue::Int(v) => *v,
-                LuciaValue::Float(v) => *v as i64,
-                LuciaValue::ExtFunction(_) => {
+            Ok(Value::Int(match arg1 {
+                Value::Null => 0,
+                Value::Bool(v) => i64::from(*v),
+                Value::Int(v) => *v,
+                Value::Float(v) => *v as i64,
+                Value::ExtFunction(_) => {
                     return_type_error!(
                         lvm,
-                        type_convert_error!(LuciaValueType::ExtFunction, LuciaValueType::Int)
+                        type_convert_error!(ValueType::ExtFunction, ValueType::Int)
                     );
                 }
-                LuciaValue::GCObject(_) => {
+                Value::GCObject(_) => {
                     if let Ok(v) = String::try_from(*arg1) {
                         if let Ok(v) = v.parse() {
                             v
                         } else {
                             return_type_error!(
                                 lvm,
-                                type_convert_error!(LuciaValueType::Str, LuciaValueType::Int)
+                                type_convert_error!(ValueType::Str, ValueType::Int)
                             )
                         }
                     } else {
                         return_type_error!(
                             lvm,
-                            type_convert_error!(arg1.value_type(), LuciaValueType::Int)
+                            type_convert_error!(arg1.value_type(), ValueType::Int)
                         )
                     }
                 }
@@ -58,40 +56,40 @@ pub fn libs(lvm: &mut Lvm) -> LuciaTable {
     );
     t.set(
         &lvm.new_str_value("float".to_string()),
-        LuciaValue::ExtFunction(|args, lvm| {
+        Value::ExtFunction(|args, lvm| {
             check_arguments_num!(lvm, args, None, 1);
             let arg1 = args.first().unwrap();
-            Ok(LuciaValue::Float(match arg1 {
-                LuciaValue::Null => 0.0,
-                LuciaValue::Bool(v) => {
+            Ok(Value::Float(match arg1 {
+                Value::Null => 0.0,
+                Value::Bool(v) => {
                     if *v {
                         1.0
                     } else {
                         0.0
                     }
                 }
-                LuciaValue::Int(v) => *v as f64,
-                LuciaValue::Float(v) => *v,
-                LuciaValue::ExtFunction(_) => {
+                Value::Int(v) => *v as f64,
+                Value::Float(v) => *v,
+                Value::ExtFunction(_) => {
                     return_type_error!(
                         lvm,
-                        type_convert_error!(LuciaValueType::ExtFunction, LuciaValueType::Float)
+                        type_convert_error!(ValueType::ExtFunction, ValueType::Float)
                     );
                 }
-                LuciaValue::GCObject(_) => {
+                Value::GCObject(_) => {
                     if let Ok(v) = String::try_from(*arg1) {
                         if let Ok(v) = v.parse() {
                             v
                         } else {
                             return_type_error!(
                                 lvm,
-                                type_convert_error!(LuciaValueType::Str, LuciaValueType::Float)
+                                type_convert_error!(ValueType::Str, ValueType::Float)
                             )
                         }
                     } else {
                         return_type_error!(
                             lvm,
-                            type_convert_error!(arg1.value_type(), LuciaValueType::Float)
+                            type_convert_error!(arg1.value_type(), ValueType::Float)
                         )
                     }
                 }
@@ -100,7 +98,7 @@ pub fn libs(lvm: &mut Lvm) -> LuciaTable {
     );
     t.set(
         &lvm.new_str_value("str".to_string()),
-        LuciaValue::ExtFunction(|args, lvm| {
+        Value::ExtFunction(|args, lvm| {
             check_arguments_num!(lvm, args, None, 1);
             Ok(lvm.new_str_value(args.first().unwrap().to_string()))
         }),

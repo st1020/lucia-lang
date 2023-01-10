@@ -2,7 +2,7 @@ use std::str::Chars;
 
 use unicode_xid;
 
-use crate::errors::{LResult, LuciaError, SyntaxErrorKind};
+use crate::errors::{Error, Result, SyntaxError};
 
 use self::LiteralKind::*;
 use self::TokenKind::*;
@@ -285,11 +285,11 @@ pub enum TokenKind {
 #[derive(Clone, Debug, PartialEq)]
 pub enum LiteralKind {
     /// "12", "0o100", "0b110"
-    Int(LResult<i64>),
+    Int(Result<i64>),
     /// "12.34", "0b100.100"
-    Float(LResult<f64>),
+    Float(Result<f64>),
     /// ""abc"", ""abc"
-    Str(LResult<String>),
+    Str(Result<String>),
 }
 
 /// Base of numeric literal encoding according to its prefix.
@@ -594,16 +594,16 @@ impl Cursor<'_> {
                 }
                 '.' if base == Base::Decimal => {
                     if has_point {
-                        return Literal(Float(Err(LuciaError::SyntaxError(
-                            SyntaxErrorKind::NumberFormatError,
+                        return Literal(Float(Err(Error::SyntaxError(
+                            SyntaxError::NumberFormatError,
                         ))));
                     }
                     has_point = true;
                 }
                 'e' | 'E' if base == Base::Decimal => {
                     if has_exponent {
-                        return Literal(Float(Err(LuciaError::SyntaxError(
-                            SyntaxErrorKind::NumberFormatError,
+                        return Literal(Float(Err(Error::SyntaxError(
+                            SyntaxError::NumberFormatError,
                         ))));
                     }
                     has_exponent = true;
@@ -621,14 +621,14 @@ impl Cursor<'_> {
         if has_point || has_exponent {
             // only support decimal float literal
             if base != Base::Decimal {
-                Literal(Float(Err(LuciaError::SyntaxError(
-                    SyntaxErrorKind::NumberFormatError,
+                Literal(Float(Err(Error::SyntaxError(
+                    SyntaxError::NumberFormatError,
                 ))))
             } else {
                 match value.parse::<f64>() {
                     Ok(v) => Literal(Float(Ok(v))),
-                    Err(e) => Literal(Float(Err(LuciaError::SyntaxError(
-                        SyntaxErrorKind::ParseFloatError(e),
+                    Err(e) => Literal(Float(Err(Error::SyntaxError(
+                        SyntaxError::ParseFloatError(e),
                     )))),
                 }
             }
@@ -643,9 +643,7 @@ impl Cursor<'_> {
                 },
             ) {
                 Ok(v) => Literal(Int(Ok(v))),
-                Err(e) => Literal(Int(Err(LuciaError::SyntaxError(
-                    SyntaxErrorKind::ParseIntError(e),
-                )))),
+                Err(e) => Literal(Int(Err(Error::SyntaxError(SyntaxError::ParseIntError(e))))),
             }
         }
     }
@@ -679,8 +677,8 @@ impl Cursor<'_> {
                     _ => value.push(c),
                 }
             } else {
-                return Literal(Str(Err(LuciaError::SyntaxError(
-                    SyntaxErrorKind::UnterminatedStringError,
+                return Literal(Str(Err(Error::SyntaxError(
+                    SyntaxError::UnterminatedStringError,
                 ))));
             }
         }

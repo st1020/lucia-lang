@@ -3,7 +3,7 @@ use std::fmt::Display;
 
 use crate::codegen::Function;
 
-use super::{GCObject, LuciaValue};
+use super::{GCObject, Value};
 
 /// The closure object. Any function is a closure.
 #[derive(Debug, Clone)]
@@ -11,7 +11,7 @@ pub struct Closure {
     pub module_id: usize,
     pub function: Function,
     pub base_closure: Option<NonNull<GCObject>>,
-    pub variables: Vec<LuciaValue>,
+    pub variables: Vec<Value>,
 }
 
 impl PartialEq for Closure {
@@ -36,9 +36,9 @@ impl Closure {
             module_id,
             base_closure,
             variables: {
-                let mut temp: Vec<LuciaValue> = Vec::with_capacity(function.local_names.len());
+                let mut temp: Vec<Value> = Vec::with_capacity(function.local_names.len());
                 for _ in 0..function.local_names.len() {
-                    temp.push(LuciaValue::Null);
+                    temp.push(Value::Null);
                 }
                 temp
             },

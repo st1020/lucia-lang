@@ -1,7 +1,7 @@
 use std::convert::TryFrom;
 
 use crate::ast::*;
-use crate::errors::{LResult, LuciaError, SyntaxErrorKind};
+use crate::errors::{Error, Result, SyntaxError};
 use crate::lexer::tokenize;
 use crate::parser::Parser;
 
@@ -139,9 +139,9 @@ pub enum OPCode {
 }
 
 impl TryFrom<BinOp> for OPCode {
-    type Error = LuciaError;
+    type Error = Error;
 
-    fn try_from(value: BinOp) -> Result<Self, Self::Error> {
+    fn try_from(value: BinOp) -> Result<Self> {
         Ok(match value {
             BinOp::Add => OPCode::Add,
             BinOp::Sub => OPCode::Sub,
@@ -155,7 +155,7 @@ impl TryFrom<BinOp> for OPCode {
             BinOp::Ge => OPCode::Ge,
             BinOp::Gt => OPCode::Gt,
             BinOp::Is => OPCode::Is,
-            _ => return Err(LuciaError::SyntaxError(SyntaxErrorKind::IllegalAst)),
+            _ => return Err(Error::SyntaxError(SyntaxError::IllegalAst)),
         })
     }
 }
@@ -170,7 +170,7 @@ impl From<UnOp> for OPCode {
 }
 
 /// Generate code from AST.
-pub fn gen_code(ast_root: Box<Block>) -> LResult<Program> {
+pub fn gen_code(ast_root: Box<Block>) -> Result<Program> {
     let mut context = Context::new();
     let func = FunctionBuilder::new(ast_root, 0, None, Vec::new(), None, FunctionKind::Funciton);
     context.func_list.push(func);
@@ -310,17 +310,17 @@ impl From<Context> for Program {
 }
 
 impl TryFrom<&str> for Program {
-    type Error = LuciaError;
+    type Error = Error;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self> {
         gen_code(Parser::new(&mut tokenize(value)).parse()?)
     }
 }
 
 impl TryFrom<&String> for Program {
-    type Error = LuciaError;
+    type Error = Error;
 
-    fn try_from(value: &String) -> Result<Self, Self::Error> {
+    fn try_from(value: &String) -> Result<Self> {
         gen_code(Parser::new(&mut tokenize(value)).parse()?)
     }
 }
@@ -523,7 +523,7 @@ impl FunctionBuilder {
         }
     }
 
-    fn gen_code(&mut self, context: &mut Context) -> LResult<()> {
+    fn gen_code(&mut self, context: &mut Context) -> Result<()> {
         for param in self.params.clone() {
             self.add_local_name(&param);
         }
@@ -542,7 +542,7 @@ impl FunctionBuilder {
         Ok(())
     }
 
-    fn gen_expr(&mut self, ast_node: Expr, context: &mut Context) -> LResult<Vec<OPCode>> {
+    fn gen_expr(&mut self, ast_node: Expr, context: &mut Context) -> Result<Vec<OPCode>> {
         let mut code_list = Vec::new();
         match ast_node.kind {
             ExprKind::Lit(lit) => code_list.push(OPCode::LoadConst(
@@ -654,7 +654,7 @@ impl FunctionBuilder {
                                     context.add_const(ConstlValue::Str(ident.name)),
                                 ));
                             }
-                            _ => return Err(LuciaError::SyntaxError(SyntaxErrorKind::IllegalAst)),
+                            _ => return Err(Error::SyntaxError(SyntaxError::IllegalAst)),
                         }
                         code_list.push(OPCode::GetAttr);
                     }
@@ -681,11 +681,7 @@ impl FunctionBuilder {
                                         context.add_const(ConstlValue::Str(ident.name)),
                                     ));
                                 }
-                                _ => {
-                                    return Err(LuciaError::SyntaxError(
-                                        SyntaxErrorKind::IllegalAst,
-                                    ))
-                                }
+                                _ => return Err(Error::SyntaxError(SyntaxError::IllegalAst)),
                             }
                             code_list.push(OPCode::GetAttr);
                             code_list.push(OPCode::Rot);
@@ -713,7 +709,7 @@ impl FunctionBuilder {
         Ok(code_list)
     }
 
-    fn gen_stmt(&mut self, ast_node: Stmt, context: &mut Context) -> LResult<Vec<OPCode>> {
+    fn gen_stmt(&mut self, ast_node: Stmt, context: &mut Context) -> Result<Vec<OPCode>> {
         let mut code_list = Vec::new();
         match ast_node.kind {
             StmtKind::If {
@@ -801,42 +797,32 @@ impl FunctionBuilder {
             StmtKind::Break => {
                 code_list.push(OPCode::Jump(match self.break_stack.last() {
                     Some(v) => *v,
-                    None => return Err(LuciaError::SyntaxError(SyntaxErrorKind::BreakOutsideLoop)),
+                    None => return Err(Error::SyntaxError(SyntaxError::BreakOutsideLoop)),
                 }));
             }
             StmtKind::Continue => {
                 code_list.push(OPCode::Jump(match self.continue_stack.last() {
                     Some(v) => *v,
-                    None => {
-                        return Err(LuciaError::SyntaxError(
-                            SyntaxErrorKind::ContinueOutsideLoop,
-                        ))
-                    }
+                    None => return Err(Error::SyntaxError(SyntaxError::ContinueOutsideLoop)),
                 }));
             }
             StmtKind::Return { argument } => {
                 if self.kind == FunctionKind::Do {
-                    return Err(LuciaError::SyntaxError(
-                        SyntaxErrorKind::ReturnOutsideFunction,
-                    ));
+                    return Err(Error::SyntaxError(SyntaxError::ReturnOutsideFunction));
                 }
                 code_list.append(&mut self.gen_expr(*argument, context)?);
                 code_list.push(OPCode::Return);
             }
             StmtKind::Throw { argument } => {
                 if self.kind == FunctionKind::Do {
-                    return Err(LuciaError::SyntaxError(
-                        SyntaxErrorKind::ReturnOutsideFunction,
-                    ));
+                    return Err(Error::SyntaxError(SyntaxError::ReturnOutsideFunction));
                 }
                 code_list.append(&mut self.gen_expr(*argument, context)?);
                 code_list.push(OPCode::Throw);
             }
             StmtKind::Global { arguments } => {
                 if self.kind == FunctionKind::Do {
-                    return Err(LuciaError::SyntaxError(
-                        SyntaxErrorKind::GlobalOutsideFunction,
-                    ));
+                    return Err(Error::SyntaxError(SyntaxError::GlobalOutsideFunction));
                 }
                 for arg in arguments {
                     self.global_names.push((arg.name, true));
@@ -887,7 +873,7 @@ impl FunctionBuilder {
                         MemberKind::Dot | MemberKind::DoubleColon => OPCode::SetAttr,
                     });
                 }
-                _ => return Err(LuciaError::SyntaxError(SyntaxErrorKind::IllegalAst)),
+                _ => return Err(Error::SyntaxError(SyntaxError::IllegalAst)),
             },
             StmtKind::AssignOp {
                 operator,
@@ -908,7 +894,7 @@ impl FunctionBuilder {
                     code_list.append(&mut self.gen_expr(*left, context)?);
                     let temp = match code_list.pop() {
                         Some(v) => v,
-                        None => return Err(LuciaError::SyntaxError(SyntaxErrorKind::IllegalAst)),
+                        None => return Err(Error::SyntaxError(SyntaxError::IllegalAst)),
                     };
                     code_list.push(OPCode::DupTwo);
                     code_list.push(temp);
@@ -919,7 +905,7 @@ impl FunctionBuilder {
                         MemberKind::Dot | MemberKind::DoubleColon => OPCode::SetAttr,
                     });
                 }
-                _ => return Err(LuciaError::SyntaxError(SyntaxErrorKind::IllegalAst)),
+                _ => return Err(Error::SyntaxError(SyntaxError::IllegalAst)),
             },
             StmtKind::Block(block) => {
                 for stmt in block.body {

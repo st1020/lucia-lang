@@ -3,20 +3,21 @@
 use core::ptr::NonNull;
 use std::alloc::{alloc, dealloc, Layout};
 use std::collections::HashMap;
-use std::convert::TryFrom;
 use std::fs;
 use std::path::PathBuf;
 
 use crate::codegen::{ConstlValue, FunctionKind, JumpTarget, OPCode, Program};
-use crate::errors::{LResult, LuciaError, RuntimeErrorKind};
-use crate::{build_table_error, unsupported_operand_type};
-use crate::{call_arguments_error, objects::*};
-use crate::{libs, not_callable_error};
+use crate::errors::{Error, Result, RuntimeError};
+use crate::libs;
+use crate::objects::*;
+use crate::{
+    build_table_error, call_arguments_error, not_callable_error, unsupported_operand_type,
+};
 
 #[macro_export]
 macro_rules! error {
     ($value:expr) => {{
-        if let $crate::objects::LuciaValue::GCObject(v) = $value {
+        if let $crate::objects::Value::GCObject(v) = $value {
             unsafe { (*v).is_error = true }
         }
         $value
@@ -26,7 +27,7 @@ macro_rules! error {
 #[macro_export]
 macro_rules! return_type_error {
     ($lvm:expr, $value:expr) => {{
-        let mut error_table = $crate::objects::LuciaTable::new();
+        let mut error_table = $crate::objects::Table::new();
         error_table.set(
             &$lvm.get_builtin_str("type"),
             $lvm.new_str_value($value.error_type().to_string()),
@@ -50,16 +51,16 @@ macro_rules! try_error {
     };
 }
 
-const STACK_ERROR: LuciaError = LuciaError::RuntimeError(RuntimeErrorKind::StackError);
-const IMPORT_ERROR: LuciaError = LuciaError::RuntimeError(RuntimeErrorKind::ImportError);
-const UPVALUE_ERROR: LuciaError = LuciaError::RuntimeError(RuntimeErrorKind::UpvalueError);
-const PROGRAM_ERROR: LuciaError = LuciaError::RuntimeError(RuntimeErrorKind::ProgramError);
+const STACK_ERROR: Error = Error::RuntimeError(RuntimeError::StackError);
+const IMPORT_ERROR: Error = Error::RuntimeError(RuntimeError::ImportError);
+const UPVALUE_ERROR: Error = Error::RuntimeError(RuntimeError::UpvalueError);
+const PROGRAM_ERROR: Error = Error::RuntimeError(RuntimeError::ProgramError);
 
 #[derive(Debug, Clone)]
 pub struct Frame {
     pc: usize,
     closure: *mut GCObject,
-    operate_stack: Vec<LuciaValue>,
+    operate_stack: Vec<Value>,
     prev_frame: Option<NonNull<Frame>>,
 }
 
@@ -77,7 +78,7 @@ impl Frame {
         }
     }
 
-    pub fn run(&mut self, lvm: &mut Lvm) -> LResult<LuciaValue> {
+    pub fn run(&mut self, lvm: &mut Lvm) -> Result<Value> {
         macro_rules! call {
             ($lvm:expr, $arg_num:expr) => {{
                 let args = self
@@ -90,8 +91,8 @@ impl Frame {
 
         macro_rules! run_default {
             ($lvm:expr, $block:expr, $arg1:ident, $arg2:ident, $special_name:expr, $operator:expr) => {
-                if $arg1.value_type() == LuciaValueType::Table {
-                    match <&LuciaTable>::try_from($arg1)
+                if $arg1.value_type() == ValueType::Table {
+                    match <&Table>::try_from($arg1)
                         .expect("unexpect error")
                         .get(&$lvm.get_builtin_str($special_name))
                     {
@@ -119,8 +120,8 @@ impl Frame {
                 let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                 run_default!($lvm, {
                     self.operate_stack.push(match (arg1, arg2) {
-                        (LuciaValue::Int(v1), LuciaValue::Int(v2)) => LuciaValue::Int(v1 $op v2),
-                        (LuciaValue::Float(v1), LuciaValue::Float(v2)) => LuciaValue::Float(v1 $op v2),
+                        (Value::Int(v1), Value::Int(v2)) => Value::Int(v1 $op v2),
+                        (Value::Float(v1), Value::Float(v2)) => Value::Float(v1 $op v2),
                         _ => return_type_error!(
                             lvm,
                             unsupported_operand_type!($operator, arg1, arg2)
@@ -135,7 +136,7 @@ impl Frame {
                 let arg2 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                 let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                 run_default!($lvm, {
-                    self.operate_stack.push(LuciaValue::Bool(arg1 $op arg2));
+                    self.operate_stack.push(Value::Bool(arg1 $op arg2));
                 }, arg1, arg2, $special_name, $operator)
             }};
         }
@@ -145,9 +146,9 @@ impl Frame {
                 let arg2 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                 let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                 run_default!($lvm, {
-                    self.operate_stack.push(LuciaValue::Bool(match (arg1, arg2) {
-                        (LuciaValue::Int(v1), LuciaValue::Int(v2)) => v1 $op v2,
-                        (LuciaValue::Float(v1), LuciaValue::Float(v2)) => v1 $op v2,
+                    self.operate_stack.push(Value::Bool(match (arg1, arg2) {
+                        (Value::Int(v1), Value::Int(v2)) => v1 $op v2,
+                        (Value::Float(v1), Value::Float(v2)) => v1 $op v2,
                         _ => return_type_error!(
                             lvm,
                             unsupported_operand_type!($operator, arg1, arg2)
@@ -161,7 +162,7 @@ impl Frame {
             ($lvm:expr, $special_name:expr) => {{
                 let arg2 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                 let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
-                let t = try_error!($lvm, <&mut LuciaTable>::try_from(arg1));
+                let t = try_error!($lvm, <&mut Table>::try_from(arg1));
                 match t.get(&$lvm.get_builtin_str($special_name)) {
                     Some(v) => {
                         self.operate_stack.push(v);
@@ -170,9 +171,7 @@ impl Frame {
                         let return_value = call!(lvm, 2)?;
                         self.operate_stack.push(return_value);
                     }
-                    None => self
-                        .operate_stack
-                        .push(t.get(&arg2).unwrap_or(LuciaValue::Null)),
+                    None => self.operate_stack.push(t.get(&arg2).unwrap_or(Value::Null)),
                 }
             }};
         }
@@ -182,7 +181,7 @@ impl Frame {
                 let arg3 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                 let arg2 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                 let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
-                let t = try_error!($lvm, <&mut LuciaTable>::try_from(arg1));
+                let t = try_error!($lvm, <&mut Table>::try_from(arg1));
                 match t.get(&$lvm.get_builtin_str($special_name)) {
                     Some(v) => {
                         self.operate_stack.push(v);
@@ -234,10 +233,10 @@ impl Frame {
                 }
                 OPCode::LoadGlobal(i) => {
                     let t = &closure.function.global_names[*i];
-                    self.operate_stack
-                        .push(lvm.get_global_variable(t).unwrap_or_else(|| {
-                            lvm.get_builtin_variable(t).unwrap_or(LuciaValue::Null)
-                        }));
+                    self.operate_stack.push(
+                        lvm.get_global_variable(t)
+                            .unwrap_or_else(|| lvm.get_builtin_variable(t).unwrap_or(Value::Null)),
+                    );
                 }
                 OPCode::LoadUpvalue(i) => {
                     let (_, func_count, upvalue_id) = closure.function.upvalue_names[*i];
@@ -260,10 +259,10 @@ impl Frame {
                 OPCode::LoadConst(i) => {
                     let t = lvm.modules[closure.module_id].const_list[*i].clone();
                     let v = match t {
-                        ConstlValue::Null => LuciaValue::Null,
-                        ConstlValue::Bool(v) => LuciaValue::Bool(v),
-                        ConstlValue::Int(v) => LuciaValue::Int(v),
-                        ConstlValue::Float(v) => LuciaValue::Float(v),
+                        ConstlValue::Null => Value::Null,
+                        ConstlValue::Bool(v) => Value::Bool(v),
+                        ConstlValue::Int(v) => Value::Int(v),
+                        ConstlValue::Float(v) => Value::Float(v),
                         ConstlValue::Str(v) => lvm.new_str_value(v),
                         ConstlValue::Func(func_id) => {
                             let f = lvm.modules[closure.module_id].func_list[func_id].clone();
@@ -310,7 +309,7 @@ impl Frame {
                         lvm.modules[closure.module_id].const_list[*i].clone()
                     {
                         if let Some(module) = lvm.libs.get(&v) {
-                            match <&LuciaTable>::try_from(*module) {
+                            match <&Table>::try_from(*module) {
                                 Ok(_) => self.operate_stack.push(*module),
                                 Err(_) => return Err(IMPORT_ERROR),
                             }
@@ -324,7 +323,7 @@ impl Frame {
                             let input_file = fs::read_to_string(path).expect("Read file error!");
                             lvm.modules.push(Program::try_from(&input_file)?);
                             let module = lvm.run_module(lvm.modules.len() - 1)?;
-                            match <&LuciaTable>::try_from(module) {
+                            match <&Table>::try_from(module) {
                                 Ok(_) => self.operate_stack.push(module),
                                 Err(_) => return Err(IMPORT_ERROR),
                             }
@@ -336,9 +335,7 @@ impl Frame {
                 OPCode::ImportFrom(i) => {
                     let module = try_error!(
                         lvm,
-                        <&LuciaTable>::try_from(
-                            *self.operate_stack.last().ok_or_else(|| STACK_ERROR)?,
-                        )
+                        <&Table>::try_from(*self.operate_stack.last().ok_or_else(|| STACK_ERROR)?,)
                     );
                     if let ConstlValue::Str(t) =
                         &lvm.modules[closure.module_id].const_list[*i].clone()
@@ -355,24 +352,22 @@ impl Frame {
                 OPCode::ImportGlob => {
                     let module = try_error!(
                         lvm,
-                        <&LuciaTable>::try_from(
-                            self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?,
-                        )
+                        <&Table>::try_from(self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?,)
                     );
                     for (k, v) in module.clone() {
                         lvm.set_global_variable(try_error!(lvm, String::try_from(k)), v);
                     }
                 }
                 OPCode::BuildTable(i) => {
-                    let mut temp: Vec<LuciaValue> = Vec::new();
+                    let mut temp: Vec<Value> = Vec::new();
                     for _ in 0..(*i * 2) {
                         temp.push(self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?);
                     }
-                    let mut table: LuciaTable = LuciaTable::new();
+                    let mut table: Table = Table::new();
                     for _ in 0..*i {
                         let arg1 = temp.pop().expect("unexpect error");
                         let arg2 = temp.pop().expect("unexpect error");
-                        if let LuciaValue::GCObject(_) = arg1 {
+                        if let Value::GCObject(_) = arg1 {
                             if String::try_from(arg1).is_err() {
                                 return_type_error!(lvm, build_table_error!(arg1));
                             }
@@ -387,7 +382,7 @@ impl Frame {
                 OPCode::SetItem => set_table!(lvm, "__setitem__"),
                 OPCode::Neg => {
                     let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
-                    match <&LuciaTable>::try_from(arg1) {
+                    match <&Table>::try_from(arg1) {
                         Ok(v) => match v.get(&lvm.get_builtin_str("__neg__")) {
                             Some(v) => {
                                 self.operate_stack.push(v);
@@ -401,8 +396,8 @@ impl Frame {
                             ),
                         },
                         Err(_) => self.operate_stack.push(match arg1 {
-                            LuciaValue::Int(v) => LuciaValue::Int(-v),
-                            LuciaValue::Float(v) => LuciaValue::Float(-v),
+                            Value::Int(v) => Value::Int(-v),
+                            Value::Float(v) => Value::Float(-v),
                             _ => return_type_error!(
                                 lvm,
                                 unsupported_operand_type!(code.clone(), arg1)
@@ -413,13 +408,13 @@ impl Frame {
                 OPCode::Not => {
                     let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                     self.operate_stack
-                        .push(LuciaValue::Bool(!try_error!(lvm, bool::try_from(arg1))));
+                        .push(Value::Bool(!try_error!(lvm, bool::try_from(arg1))));
                 }
                 OPCode::Add => {
                     let arg2 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                     let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                     match arg1.value_type() {
-                        LuciaValueType::Str => {
+                        ValueType::Str => {
                             match (String::try_from(arg1), String::try_from(arg2)) {
                                 (Ok(v1), Ok(v2)) => {
                                     self.operate_stack.push(lvm.new_str_value(v1 + &v2))
@@ -430,8 +425,8 @@ impl Frame {
                                 ),
                             };
                         }
-                        LuciaValueType::Table => {
-                            match <&LuciaTable>::try_from(arg1)
+                        ValueType::Table => {
+                            match <&Table>::try_from(arg1)
                                 .expect("unexpect error")
                                 .get(&lvm.get_builtin_str("__add__"))
                             {
@@ -450,12 +445,8 @@ impl Frame {
                         }
                         _ => {
                             self.operate_stack.push(match (arg1, arg2) {
-                                (LuciaValue::Int(v1), LuciaValue::Int(v2)) => {
-                                    LuciaValue::Int(v1 + v2)
-                                }
-                                (LuciaValue::Float(v1), LuciaValue::Float(v2)) => {
-                                    LuciaValue::Float(v1 + v2)
-                                }
+                                (Value::Int(v1), Value::Int(v2)) => Value::Int(v1 + v2),
+                                (Value::Float(v1), Value::Float(v2)) => Value::Float(v1 + v2),
                                 _ => return_type_error!(
                                     lvm,
                                     unsupported_operand_type!(code.clone(), arg1, arg2)
@@ -477,22 +468,21 @@ impl Frame {
                 OPCode::Is => {
                     let arg2 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                     let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
-                    self.operate_stack
-                        .push(LuciaValue::Bool(match (arg1, arg2) {
-                            (LuciaValue::Null, LuciaValue::Null) => true,
-                            (LuciaValue::Bool(v1), LuciaValue::Bool(v2)) => v1 == v2,
-                            (LuciaValue::Int(v1), LuciaValue::Int(v2)) => v1 == v2,
-                            (LuciaValue::Float(v1), LuciaValue::Float(v2)) => v1 == v2,
-                            (LuciaValue::GCObject(v1), LuciaValue::GCObject(v2)) => v1 == v2,
-                            _ => false,
-                        }));
+                    self.operate_stack.push(Value::Bool(match (arg1, arg2) {
+                        (Value::Null, Value::Null) => true,
+                        (Value::Bool(v1), Value::Bool(v2)) => v1 == v2,
+                        (Value::Int(v1), Value::Int(v2)) => v1 == v2,
+                        (Value::Float(v1), Value::Float(v2)) => v1 == v2,
+                        (Value::GCObject(v1), Value::GCObject(v2)) => v1 == v2,
+                        _ => false,
+                    }));
                 }
                 OPCode::For(JumpTarget(i)) => {
                     let return_value = lvm.call(
                         *self.operate_stack.last().ok_or_else(|| STACK_ERROR)?,
                         Vec::new(),
                     )?;
-                    if return_value == LuciaValue::Null {
+                    if return_value == Value::Null {
                         self.pc = *i;
                         continue;
                     } else {
@@ -547,7 +537,7 @@ impl Frame {
                 }
                 OPCode::Return => {
                     if closure.function.kind == FunctionKind::Do {
-                        let mut temp = LuciaTable::new();
+                        let mut temp = Table::new();
                         for i in 0..closure.function.local_names.len() {
                             temp.set(
                                 &lvm.new_str_value(closure.function.local_names[i].clone()),
@@ -561,7 +551,7 @@ impl Frame {
                 }
                 OPCode::Throw => {
                     let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
-                    if let LuciaValue::GCObject(v) = arg1 {
+                    if let Value::GCObject(v) = arg1 {
                         unsafe { (*v).is_error = true }
                     }
                     return Ok(arg1);
@@ -576,9 +566,9 @@ impl Frame {
 #[derive(Debug, Clone)]
 pub struct Lvm {
     pub modules: Vec<Program>,
-    pub global_variables: HashMap<String, LuciaValue>,
-    pub builtin_variables: HashMap<String, LuciaValue>,
-    pub libs: HashMap<String, LuciaValue>,
+    pub global_variables: HashMap<String, Value>,
+    pub builtin_variables: HashMap<String, Value>,
+    pub libs: HashMap<String, Value>,
     pub current_frame: Option<NonNull<Frame>>,
     mem_layout: Layout,
     heap: Vec<*mut GCObject>,
@@ -603,11 +593,11 @@ impl Lvm {
         t
     }
 
-    pub fn run(&mut self) -> LResult<LuciaValue> {
+    pub fn run(&mut self) -> Result<Value> {
         self.run_module(0)
     }
 
-    pub fn run_module(&mut self, module_id: usize) -> LResult<LuciaValue> {
+    pub fn run_module(&mut self, module_id: usize) -> Result<Value> {
         if module_id >= self.modules.len() {
             return Err(PROGRAM_ERROR);
         }
@@ -620,12 +610,8 @@ impl Lvm {
         self.call(callee, Vec::new())
     }
 
-    pub fn call(
-        &mut self,
-        mut callee: LuciaValue,
-        mut args: Vec<LuciaValue>,
-    ) -> LResult<LuciaValue> {
-        if let Ok(t) = <&mut LuciaTable>::try_from(callee) {
+    pub fn call(&mut self, mut callee: Value, mut args: Vec<Value>) -> Result<Value> {
+        if let Ok(t) = <&mut Table>::try_from(callee) {
             args.insert(0, callee);
             callee = match t.get(&self.get_builtin_str("__call__")) {
                 Some(v) => v,
@@ -634,8 +620,8 @@ impl Lvm {
         }
 
         match callee {
-            LuciaValue::ExtFunction(f) => f(args, self),
-            LuciaValue::GCObject(gc_obj) => {
+            Value::ExtFunction(f) => f(args, self),
+            Value::GCObject(gc_obj) => {
                 match unsafe { &mut gc_obj.as_mut().expect("unexpect error").kind } {
                     GCObjectKind::Closure(v) => {
                         let params_num = v.function.params.len();
@@ -651,8 +637,7 @@ impl Lvm {
                             std::cmp::Ordering::Equal => {
                                 v.variables[..params_num].copy_from_slice(&args[..]);
                                 if v.function.variadic.is_some() {
-                                    v.variables[params_num] =
-                                        self.new_table_value(LuciaTable::new());
+                                    v.variables[params_num] = self.new_table_value(Table::new());
                                 }
                             }
                             std::cmp::Ordering::Greater => {
@@ -691,20 +676,20 @@ impl Lvm {
         }
     }
 
-    pub fn set_global_variable(&mut self, key: String, value: LuciaValue) {
+    pub fn set_global_variable(&mut self, key: String, value: Value) {
         self.global_variables.insert(key, value);
     }
 
-    pub fn get_global_variable(&self, key: &str) -> Option<LuciaValue> {
+    pub fn get_global_variable(&self, key: &str) -> Option<Value> {
         self.global_variables.get(key).copied()
     }
 
-    pub fn get_builtin_variable(&self, key: &str) -> Option<LuciaValue> {
+    pub fn get_builtin_variable(&self, key: &str) -> Option<Value> {
         self.builtin_variables.get(key).copied()
     }
 
-    pub fn get_builtin_str(&mut self, key: &str) -> LuciaValue {
-        LuciaValue::GCObject(match self.builtin_str_value.get(key) {
+    pub fn get_builtin_str(&mut self, key: &str) -> Value {
+        Value::GCObject(match self.builtin_str_value.get(key) {
             Some(v) => *v,
             None => {
                 let t = self.new_gc_object(GCObjectKind::Str(key.to_string()));
@@ -729,27 +714,27 @@ impl Lvm {
     }
 
     #[inline]
-    pub fn new_gc_value(&mut self, value: GCObjectKind) -> LuciaValue {
-        LuciaValue::GCObject(self.new_gc_object(value))
+    pub fn new_gc_value(&mut self, value: GCObjectKind) -> Value {
+        Value::GCObject(self.new_gc_object(value))
     }
 
     #[inline]
-    pub fn new_str_value(&mut self, value: String) -> LuciaValue {
+    pub fn new_str_value(&mut self, value: String) -> Value {
         self.new_gc_value(GCObjectKind::Str(value))
     }
 
     #[inline]
-    pub fn new_table_value(&mut self, value: LuciaTable) -> LuciaValue {
+    pub fn new_table_value(&mut self, value: Table) -> Value {
         self.new_gc_value(GCObjectKind::Table(value))
     }
 
     #[inline]
-    pub fn new_closure_value(&mut self, value: Closure) -> LuciaValue {
+    pub fn new_closure_value(&mut self, value: Closure) -> Value {
         self.new_gc_value(GCObjectKind::Closure(value))
     }
 
     #[inline]
-    pub fn new_ext_closure_value(&mut self, value: Box<ExtClosure>) -> LuciaValue {
+    pub fn new_ext_closure_value(&mut self, value: Box<ExtClosure>) -> Value {
         self.new_gc_value(GCObjectKind::ExtClosure(value))
     }
 
@@ -764,7 +749,7 @@ impl Lvm {
                 loop {
                     Self::gc_mark_object(frame.closure);
                     for value in &frame.operate_stack {
-                        if let LuciaValue::GCObject(ptr) = value {
+                        if let Value::GCObject(ptr) = value {
                             Self::gc_mark_object(*ptr);
                         }
                     }
@@ -775,12 +760,12 @@ impl Lvm {
                 }
             }
             for v in self.global_variables.values() {
-                if let LuciaValue::GCObject(ptr) = v {
+                if let Value::GCObject(ptr) = v {
                     Self::gc_mark_object(*ptr);
                 }
             }
             for v in self.builtin_variables.values() {
-                if let LuciaValue::GCObject(ptr) = v {
+                if let Value::GCObject(ptr) = v {
                     Self::gc_mark_object(*ptr);
                 }
             }
@@ -807,7 +792,7 @@ impl Lvm {
             match &(*ptr).kind {
                 GCObjectKind::Table(table) => {
                     for (_, v) in table.clone() {
-                        if let LuciaValue::GCObject(ptr) = v {
+                        if let Value::GCObject(ptr) = v {
                             Self::gc_mark_object(ptr);
                         }
                     }
@@ -817,7 +802,7 @@ impl Lvm {
                         Self::gc_mark_object(ptr.as_ptr());
                     }
                     for v in &closure.variables {
-                        if let LuciaValue::GCObject(ptr) = v {
+                        if let Value::GCObject(ptr) = v {
                             Self::gc_mark_object(*ptr);
                         }
                     }

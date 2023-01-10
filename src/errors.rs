@@ -1,28 +1,29 @@
 use std::fmt::Display;
 use std::num::{ParseFloatError, ParseIntError};
+use std::result;
 
 use thiserror::Error;
 
 use crate::codegen::OPCode;
 use crate::lexer::{Token, TokenKind};
-use crate::objects::{Closure, LuciaValue, LuciaValueType};
+use crate::objects::{Closure, Value, ValueType};
 
-pub type LResult<T> = Result<T, LuciaError>;
+pub type Result<T> = result::Result<T, Error>;
 
 /// Enum representing any lucia error.
 #[derive(Error, Debug, Clone, PartialEq)]
-pub enum LuciaError {
+pub enum Error {
     #[error("syntax error: {0}")]
-    SyntaxError(#[source] SyntaxErrorKind),
+    SyntaxError(#[source] SyntaxError),
     #[error("runtime error: {0}")]
-    RuntimeError(#[source] RuntimeErrorKind),
+    RuntimeError(#[source] RuntimeError),
     #[error("user panic: {0}")]
-    UserPanic(LuciaValue),
+    UserPanic(Value),
 }
 
 /// Kind of SyntaxError.
 #[derive(Error, Debug, Clone, PartialEq)]
-pub enum SyntaxErrorKind {
+pub enum SyntaxError {
     /// lexer error
     #[error("parse int error ({0})")]
     ParseIntError(#[source] ParseIntError),
@@ -67,7 +68,7 @@ pub enum ExpectedToken {
 
 /// Kind of RuntimeError.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
-pub enum RuntimeErrorKind {
+pub enum RuntimeError {
     #[error("stack error")]
     StackError,
     #[error("upvalue error")]
@@ -109,22 +110,19 @@ impl Display for BuiltinError {
 #[derive(Error, Debug, Clone, PartialEq)]
 pub enum TypeErrorKind {
     #[error("convert error (from {from:?} to {to:?})")]
-    ConvertError {
-        from: LuciaValueType,
-        to: LuciaValueType,
-    },
+    ConvertError { from: ValueType, to: ValueType },
     #[error("operator error (unsupported operand type(s) for {operator:?}: {operand})")]
     UnOperatorError {
         operator: OPCode,
-        operand: LuciaValueType,
+        operand: ValueType,
     },
     #[error("operator error (unsupported operand type(s) for {operator:?}: {} and {})", .operand.0, .operand.1)]
     BinOperatorError {
         operator: OPCode,
-        operand: (LuciaValueType, LuciaValueType),
+        operand: (ValueType, ValueType),
     },
     #[error("not callable error ({0} value is not callable)")]
-    NotCallableError(LuciaValueType),
+    NotCallableError(ValueType),
     #[error("call arguments error (required {required} arguments, but {given} was given)")]
     CallArgumentsError {
         value: Option<Box<Closure>>,
@@ -132,7 +130,7 @@ pub enum TypeErrorKind {
         given: usize,
     },
     #[error("build table error ({0} value can't be table key)")]
-    BuildTableError(LuciaValueType),
+    BuildTableError(ValueType),
     #[error("{0}")]
     TypeError(String),
 }
