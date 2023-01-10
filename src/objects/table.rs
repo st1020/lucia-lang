@@ -80,7 +80,7 @@ impl Table {
     }
 
     pub fn raw_get(&self, key: &Value) -> Option<Value> {
-        if let Ok(key) = i64::try_from(*key) {
+        if let Some(key) = key.as_int() {
             if let Ok(key) = usize::try_from(key) {
                 if let Some(v) = self.array.get(key) {
                     return Some(v.1);
@@ -92,23 +92,24 @@ impl Table {
 
     pub fn get(&self, key: &Value) -> Option<Value> {
         self.raw_get(key).or_else(|| {
-            self.base_value
-                .and_then(|v| match <&Table>::try_from(self.raw_get(&v).unwrap()) {
-                    Ok(v) => v.get(key),
-                    Err(_) => None,
-                })
+            self.base_value.and_then(|v| {
+                self.raw_get(&v)
+                    .unwrap()
+                    .as_table()
+                    .and_then(|v| v.get(key))
+            })
         })
     }
 
     pub fn set(&mut self, key: &Value, value: Value) {
-        if let Ok(k) = i64::try_from(*key) {
+        if let Some(k) = key.as_int() {
             if let Ok(k) = usize::try_from(k) {
                 if k == self.array.len() {
                     self.array.push((*key, value));
                     return;
                 }
             }
-        } else if let Ok(k) = String::try_from(*key) {
+        } else if let Some(k) = key.as_str() {
             if k == "__base__" && value != Value::Null {
                 self.base_value = Some(*key);
             }

@@ -18,7 +18,10 @@ use crate::{
 macro_rules! error {
     ($value:expr) => {{
         if let $crate::objects::Value::GCObject(v) = $value {
-            unsafe { (*v).is_error = true }
+            #[allow(unused_unsafe)]
+            unsafe {
+                (*v).is_error = true
+            }
         }
         $value
     }};
@@ -42,11 +45,19 @@ macro_rules! return_type_error {
 }
 
 #[macro_export]
-macro_rules! try_error {
-    ($lvm:expr, $expr:expr) => {
-        match $expr {
-            Ok(val) => val,
-            Err(err) => return_type_error!($lvm, err.clone()),
+macro_rules! try_convert {
+    ($lvm:expr, $expr:expr, $as:tt, $to:tt) => {
+        match $expr.$as() {
+            Some(val) => val,
+            None => {
+                $crate::return_type_error!(
+                    $lvm,
+                    $crate::type_convert_error!(
+                        $expr.value_type(),
+                        $crate::objects::ValueType::$to
+                    )
+                );
+            }
         }
     };
 }
@@ -91,8 +102,9 @@ impl Frame {
 
         macro_rules! run_default {
             ($lvm:expr, $block:expr, $arg1:ident, $arg2:ident, $special_name:expr, $operator:expr) => {
-                if $arg1.value_type() == ValueType::Table {
-                    match <&Table>::try_from($arg1)
+                if $arg1.is_table() {
+                    match $arg1
+                        .as_table()
                         .expect("unexpect error")
                         .get(&$lvm.get_builtin_str($special_name))
                     {
@@ -162,7 +174,7 @@ impl Frame {
             ($lvm:expr, $special_name:expr) => {{
                 let arg2 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                 let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
-                let t = try_error!($lvm, <&mut Table>::try_from(arg1));
+                let t = try_convert!($lvm, arg1, as_table, Table);
                 match t.get(&$lvm.get_builtin_str($special_name)) {
                     Some(v) => {
                         self.operate_stack.push(v);
@@ -180,8 +192,8 @@ impl Frame {
             ($lvm:expr, $special_name:expr) => {{
                 let arg3 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                 let arg2 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
-                let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
-                let t = try_error!($lvm, <&mut Table>::try_from(arg1));
+                let mut arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
+                let t = try_convert!($lvm, arg1, as_table_mut, Table);
                 match t.get(&$lvm.get_builtin_str($special_name)) {
                     Some(v) => {
                         self.operate_stack.push(v);
@@ -309,23 +321,25 @@ impl Frame {
                         lvm.modules[closure.module_id].const_list[*i].clone()
                     {
                         if let Some(module) = lvm.libs.get(&v) {
-                            match <&Table>::try_from(*module) {
-                                Ok(_) => self.operate_stack.push(*module),
-                                Err(_) => return Err(IMPORT_ERROR),
+                            if module.is_table() {
+                                self.operate_stack.push(*module);
+                            } else {
+                                return Err(IMPORT_ERROR);
                             }
                         } else {
                             let mut path = PathBuf::new();
                             if let Some(v) = lvm.get_global_variable("__module_path__") {
-                                path.push(try_error!(lvm, String::try_from(v)));
+                                path.push(try_convert!(lvm, v, as_str, Str));
                             }
                             path.push(v);
                             path.set_extension("lucia");
                             let input_file = fs::read_to_string(path).expect("Read file error!");
                             lvm.modules.push(Program::try_from(&input_file)?);
                             let module = lvm.run_module(lvm.modules.len() - 1)?;
-                            match <&Table>::try_from(module) {
-                                Ok(_) => self.operate_stack.push(module),
-                                Err(_) => return Err(IMPORT_ERROR),
+                            if module.is_table() {
+                                self.operate_stack.push(module)
+                            } else {
+                                return Err(IMPORT_ERROR);
                             }
                         }
                     } else {
@@ -333,9 +347,11 @@ impl Frame {
                     }
                 }
                 OPCode::ImportFrom(i) => {
-                    let module = try_error!(
+                    let module = try_convert!(
                         lvm,
-                        <&Table>::try_from(*self.operate_stack.last().ok_or_else(|| STACK_ERROR)?,)
+                        self.operate_stack.last().ok_or_else(|| STACK_ERROR)?,
+                        as_table,
+                        Table
                     );
                     if let ConstlValue::Str(t) =
                         &lvm.modules[closure.module_id].const_list[*i].clone()
@@ -350,12 +366,10 @@ impl Frame {
                     }
                 }
                 OPCode::ImportGlob => {
-                    let module = try_error!(
-                        lvm,
-                        <&Table>::try_from(self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?,)
-                    );
+                    let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
+                    let module = try_convert!(lvm, arg1, as_table, Table);
                     for (k, v) in module.clone() {
-                        lvm.set_global_variable(try_error!(lvm, String::try_from(k)), v);
+                        lvm.set_global_variable(try_convert!(lvm, k, as_str, Str).to_string(), v);
                     }
                 }
                 OPCode::BuildTable(i) => {
@@ -368,7 +382,7 @@ impl Frame {
                         let arg1 = temp.pop().expect("unexpect error");
                         let arg2 = temp.pop().expect("unexpect error");
                         if let Value::GCObject(_) = arg1 {
-                            if String::try_from(arg1).is_err() {
+                            if !arg1.is_str() {
                                 return_type_error!(lvm, build_table_error!(arg1));
                             }
                         }
@@ -382,8 +396,8 @@ impl Frame {
                 OPCode::SetItem => set_table!(lvm, "__setitem__"),
                 OPCode::Neg => {
                     let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
-                    match <&Table>::try_from(arg1) {
-                        Ok(v) => match v.get(&lvm.get_builtin_str("__neg__")) {
+                    match arg1.as_table() {
+                        Some(v) => match v.get(&lvm.get_builtin_str("__neg__")) {
                             Some(v) => {
                                 self.operate_stack.push(v);
                                 self.operate_stack.push(arg1);
@@ -395,7 +409,7 @@ impl Frame {
                                 unsupported_operand_type!(code.clone(), arg1)
                             ),
                         },
-                        Err(_) => self.operate_stack.push(match arg1 {
+                        None => self.operate_stack.push(match arg1 {
                             Value::Int(v) => Value::Int(-v),
                             Value::Float(v) => Value::Float(-v),
                             _ => return_type_error!(
@@ -408,17 +422,17 @@ impl Frame {
                 OPCode::Not => {
                     let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                     self.operate_stack
-                        .push(Value::Bool(!try_error!(lvm, bool::try_from(arg1))));
+                        .push(Value::Bool(!try_convert!(lvm, arg1, as_bool, Bool)));
                 }
                 OPCode::Add => {
                     let arg2 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                     let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                     match arg1.value_type() {
                         ValueType::Str => {
-                            match (String::try_from(arg1), String::try_from(arg2)) {
-                                (Ok(v1), Ok(v2)) => {
-                                    self.operate_stack.push(lvm.new_str_value(v1 + &v2))
-                                }
+                            match (arg1.as_str(), arg2.as_str()) {
+                                (Some(v1), Some(v2)) => self
+                                    .operate_stack
+                                    .push(lvm.new_str_value(v1.to_string() + v2)),
                                 _ => return_type_error!(
                                     lvm,
                                     unsupported_operand_type!(code.clone(), arg1, arg2)
@@ -426,7 +440,8 @@ impl Frame {
                             };
                         }
                         ValueType::Table => {
-                            match <&Table>::try_from(arg1)
+                            match arg1
+                                .as_table()
                                 .expect("unexpect error")
                                 .get(&lvm.get_builtin_str("__add__"))
                             {
@@ -495,7 +510,7 @@ impl Frame {
                 }
                 OPCode::JumpIfFalse(JumpTarget(i)) => {
                     let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
-                    if let Ok(v) = bool::try_from(arg1) {
+                    if let Some(v) = arg1.as_bool() {
                         if !v {
                             self.pc = *i;
                             continue;
@@ -504,7 +519,7 @@ impl Frame {
                 }
                 OPCode::JumpIfTureOrPop(JumpTarget(i)) => {
                     let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
-                    if let Ok(v) = bool::try_from(arg1) {
+                    if let Some(v) = arg1.as_bool() {
                         if v {
                             self.pc = *i;
                             continue;
@@ -515,7 +530,7 @@ impl Frame {
                 }
                 OPCode::JumpIfFalseOrPop(JumpTarget(i)) => {
                     let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
-                    if let Ok(v) = bool::try_from(arg1) {
+                    if let Some(v) = arg1.as_bool() {
                         if !v {
                             self.pc = *i;
                             continue;
@@ -611,7 +626,7 @@ impl Lvm {
     }
 
     pub fn call(&mut self, mut callee: Value, mut args: Vec<Value>) -> Result<Value> {
-        if let Ok(t) = <&mut Table>::try_from(callee) {
+        if let Some(t) = callee.clone().as_table_mut() {
             args.insert(0, callee);
             callee = match t.get(&self.get_builtin_str("__call__")) {
                 Some(v) => v,

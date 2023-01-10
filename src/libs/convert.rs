@@ -35,7 +35,7 @@ pub fn libs(lvm: &mut Lvm) -> Table {
                     );
                 }
                 Value::GCObject(_) => {
-                    if let Ok(v) = String::try_from(*arg1) {
+                    if let Some(v) = arg1.as_str() {
                         if let Ok(v) = v.parse() {
                             v
                         } else {
@@ -77,7 +77,7 @@ pub fn libs(lvm: &mut Lvm) -> Table {
                     );
                 }
                 Value::GCObject(_) => {
-                    if let Ok(v) = String::try_from(*arg1) {
+                    if let Some(v) = arg1.as_str() {
                         if let Ok(v) = v.parse() {
                             v
                         } else {

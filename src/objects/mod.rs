@@ -1,14 +1,11 @@
 pub mod closure;
 pub mod table;
 
-use std::convert::TryFrom;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
-use std::result;
 
-use crate::errors::{BuiltinError, Result};
+use crate::errors::Result;
 use crate::lvm::Lvm;
-use crate::type_convert_error;
 
 pub use self::closure::Closure;
 pub use self::table::Table;
@@ -17,6 +14,8 @@ pub use self::table::Table;
 const CANONICAL_NAN_BITS: u64 = 0x7ff8000000000000u64;
 const CANONICAL_ZERO_BITS: u64 = 0x0u64;
 
+pub type ExtFunction = fn(Vec<Value>, &mut Lvm) -> Result<Value>;
+
 /// Enum of all lucia values.
 #[derive(Clone, Copy)]
 pub enum Value {
@@ -24,7 +23,7 @@ pub enum Value {
     Bool(bool),
     Int(i64),
     Float(f64),
-    ExtFunction(fn(Vec<Value>, &mut Lvm) -> Result<Value>),
+    ExtFunction(ExtFunction),
     GCObject(*mut GCObject),
 }
 
@@ -114,71 +113,108 @@ impl Display for Value {
     }
 }
 
-macro_rules! impl_from_for_value {
-    ($ty:ty, $kind:tt, $type_name:expr) => {
-        impl From<$ty> for Value {
-            fn from(value: $ty) -> Self {
-                Value::$kind(value)
+macro_rules! impl_value {
+    ((), Null, $is_ident:ident, $as_ident:ident) => {
+        impl Value {
+            pub fn $is_ident(&self) -> bool {
+                self.$as_ident().is_some()
             }
-        }
 
-        impl TryFrom<Value> for $ty {
-            type Error = BuiltinError;
-
-            fn try_from(value: Value) -> result::Result<Self, Self::Error> {
-                match value {
-                    Value::$kind(v) => Ok(v),
-                    _ => Err(type_convert_error!(value.value_type(), $type_name)),
+            pub fn $as_ident(&self) -> Option<()> {
+                match *self {
+                    Value::Null => Some(()),
+                    _ => None,
                 }
             }
         }
     };
-}
 
-impl_from_for_value!(bool, Bool, ValueType::Bool);
-impl_from_for_value!(i64, Int, ValueType::Int);
-impl_from_for_value!(f64, Float, ValueType::Float);
+    (str, Str, $is_ident:ident, $as_ident:ident) => {
+        impl Value {
+            pub fn $is_ident(&self) -> bool {
+                self.$as_ident().is_some()
+            }
 
-impl TryFrom<Value> for String {
-    type Error = BuiltinError;
-
-    fn try_from(value: Value) -> result::Result<Self, Self::Error> {
-        match value {
-            Value::GCObject(v) => unsafe {
-                match &(*v).kind {
-                    GCObjectKind::Str(v) => Ok(v.clone()),
-                    _ => Err(type_convert_error!(value.value_type(), ValueType::Str)),
-                }
-            },
-            _ => Err(type_convert_error!(value.value_type(), ValueType::Str)),
-        }
-    }
-}
-
-macro_rules! impl_try_from_value {
-    ($ty:ty, $kind:tt, $type_name:expr) => {
-        impl TryFrom<Value> for $ty {
-            type Error = BuiltinError;
-
-            fn try_from(value: Value) -> result::Result<Self, Self::Error> {
-                match value {
-                    Value::GCObject(v) => unsafe {
-                        match &mut (*v).kind {
-                            GCObjectKind::$kind(v) => Ok(v),
-                            _ => Err(type_convert_error!(value.value_type(), $type_name)),
+            pub fn $as_ident(&self) -> Option<&str> {
+                if let Value::GCObject(v) = self {
+                    unsafe {
+                        match &(**v).kind {
+                            GCObjectKind::Str(v) => Some(v),
+                            _ => None,
                         }
-                    },
-                    _ => Err(type_convert_error!(value.value_type(), $type_name)),
+                    }
+                } else {
+                    None
+                }
+            }
+        }
+    };
+
+    ($ty:ty, $kind:tt, $is_ident:ident, $as_ident:ident) => {
+        impl Value {
+            pub fn $is_ident(&self) -> bool {
+                self.$as_ident().is_some()
+            }
+
+            pub fn $as_ident(&self) -> Option<$ty> {
+                match *self {
+                    Value::$kind(v) => Some(v),
+                    _ => None,
+                }
+            }
+        }
+    };
+
+    ($ty:ty, $kind:tt, $is_ident:ident, $as_ident:ident, $as_mut_ident:ident) => {
+        impl Value {
+            pub fn $is_ident(&self) -> bool {
+                self.$as_ident().is_some()
+            }
+
+            pub fn $as_ident(&self) -> Option<&$ty> {
+                if let Value::GCObject(v) = self {
+                    unsafe {
+                        match &(**v).kind {
+                            GCObjectKind::$kind(v) => Some(v),
+                            _ => None,
+                        }
+                    }
+                } else {
+                    None
+                }
+            }
+
+            pub fn $as_mut_ident(&mut self) -> Option<&mut $ty> {
+                if let Value::GCObject(v) = self {
+                    unsafe {
+                        match &mut (**v).kind {
+                            GCObjectKind::$kind(v) => Some(v),
+                            _ => None,
+                        }
+                    }
+                } else {
+                    None
                 }
             }
         }
     };
 }
 
-impl_try_from_value!(&Table, Table, ValueType::Table);
-impl_try_from_value!(&Closure, Closure, ValueType::Closure);
-impl_try_from_value!(&mut Table, Table, ValueType::Table);
-impl_try_from_value!(&mut Closure, Closure, ValueType::Closure);
+impl_value!((), Null, is_null, as_null);
+impl_value!(bool, Bool, is_bool, as_bool);
+impl_value!(i64, Int, is_int, as_int);
+impl_value!(f64, Float, is_float, as_float);
+impl_value!(ExtFunction, ExtFunction, is_ext_function, as_ext_function);
+impl_value!(str, Str, is_str, as_str);
+impl_value!(Table, Table, is_table, as_table, as_table_mut);
+impl_value!(Closure, Closure, is_closure, as_closure, as_closure_mut);
+impl_value!(
+    ExtClosure,
+    ExtClosure,
+    is_ext_closure,
+    as_ext_closure,
+    as_ext_closure_mut
+);
 
 impl Value {
     pub fn value_type(&self) -> ValueType {
