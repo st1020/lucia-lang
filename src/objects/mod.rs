@@ -94,7 +94,6 @@ impl Hash for Value {
                 }
             },
         }
-        // core::mem::discriminant(self).hash(state);
     }
 }
 
@@ -105,7 +104,7 @@ impl Display for Value {
             Value::Bool(v) => write!(f, "{}", if *v { "true" } else { "false" }),
             Value::Int(v) => write!(f, "{}", v),
             Value::Float(v) => write!(f, "{}", v),
-            Value::ExtFunction(_) => write!(f, "function: ext_function"),
+            Value::ExtFunction(_) => write!(f, "function(ext_function)"),
             Value::LightUserData(_) => write!(f, "userdata"),
             Value::GCObject(v) => unsafe { write!(f, "{}", **v) },
         }

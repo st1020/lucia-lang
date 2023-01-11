@@ -29,7 +29,7 @@ impl PartialEq for ExtClosure {
 
 impl Display for ExtClosure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "function: ext_closure")
+        write!(f, "function(ext_closure)")
     }
 }
 
