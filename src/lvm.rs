@@ -683,7 +683,7 @@ impl Lvm {
                         self.current_frame = current_frame;
                         return_value
                     }
-                    GCObjectKind::ExtClosure(f) => f(args, self),
+                    GCObjectKind::ExtClosure(c) => (c.func)(args, &mut c.upvalues, self),
                     _ => return_type_error!(self, not_callable_error!(callee)),
                 }
             }
@@ -749,7 +749,7 @@ impl Lvm {
     }
 
     #[inline]
-    pub fn new_ext_closure_value(&mut self, value: Box<ExtClosure>) -> Value {
+    pub fn new_ext_closure_value(&mut self, value: ExtClosure) -> Value {
         self.new_gc_value(GCObjectKind::ExtClosure(value))
     }
 
@@ -805,6 +805,7 @@ impl Lvm {
         unsafe {
             (*ptr).gc_state = false;
             match &(*ptr).kind {
+                GCObjectKind::Str(_) => (),
                 GCObjectKind::Table(table) => {
                     for (_, v) in table.clone() {
                         if let Value::GCObject(ptr) = v {
@@ -822,8 +823,13 @@ impl Lvm {
                         }
                     }
                 }
-                GCObjectKind::Str(_) => (),
-                GCObjectKind::ExtClosure(_) => (),
+                GCObjectKind::ExtClosure(ext_closure) => {
+                    for v in &ext_closure.upvalues {
+                        if let Value::GCObject(ptr) = v {
+                            Self::gc_mark_object(*ptr);
+                        }
+                    }
+                }
             }
         }
     }

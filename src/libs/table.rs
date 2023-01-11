@@ -1,38 +1,49 @@
-use crate::check_arguments_num;
+use std::alloc::{dealloc, Layout};
+
 use crate::lvm::Lvm;
-use crate::objects::{Table, Value};
+use crate::objects::table::{Keys, Values};
+use crate::objects::{ExtClosure, Table, Value};
+use crate::{check_arguments_num, try_convert};
 
 pub fn libs(lvm: &mut Lvm) -> Table {
+    macro_rules! keys_or_values {
+        ($keys_or_values:ident, $ty:ty) => {
+            |args, lvm| {
+                check_arguments_num!(lvm, args, None, 1);
+                let table = try_convert!(lvm, args[0], as_table, Table);
+                Ok(lvm.new_ext_closure_value(ExtClosure {
+                    upvalues: vec![
+                        Value::LightUserData(
+                            Box::into_raw(Box::new(table.$keys_or_values())) as *mut u8
+                        ),
+                        args[0], // prevent table being dealloc during GC
+                    ],
+                    func: |args, upvalues, lvm| {
+                        check_arguments_num!(lvm, args, None, 0);
+                        let iter_userdata = upvalues[0].as_userdata().unwrap() as *mut $ty;
+                        let iter = unsafe { iter_userdata.as_mut().unwrap() };
+                        if let Some(v) = iter.next() {
+                            Ok(*v)
+                        } else {
+                            unsafe {
+                                iter_userdata.drop_in_place();
+                                dealloc(iter_userdata as *mut u8, Layout::new::<$ty>());
+                            }
+                            Ok(Value::Null)
+                        }
+                    },
+                }))
+            }
+        };
+    }
     let mut t = Table::new();
     t.set(
         &lvm.new_str_value("keys".to_string()),
-        Value::ExtFunction(|args, lvm| {
-            check_arguments_num!(lvm, args, None, 1);
-            let table = (*args.first().unwrap()).as_table().unwrap().clone();
-            let mut keys = table.into_keys();
-            Ok(lvm.new_ext_closure_value(Box::new(move |_, _| {
-                Ok(if let Some(v) = keys.next() {
-                    v
-                } else {
-                    Value::Null
-                })
-            })))
-        }),
+        Value::ExtFunction(keys_or_values!(keys, Keys)),
     );
     t.set(
         &lvm.new_str_value("values".to_string()),
-        Value::ExtFunction(|args, lvm| {
-            check_arguments_num!(lvm, args, None, 1);
-            let table = (*args.first().unwrap()).as_table().unwrap().clone();
-            let mut values = table.into_values();
-            Ok(lvm.new_ext_closure_value(Box::new(move |_, _| {
-                Ok(if let Some(v) = values.next() {
-                    v
-                } else {
-                    Value::Null
-                })
-            })))
-        }),
+        Value::ExtFunction(keys_or_values!(values, Values)),
     );
     t.set(
         &lvm.new_str_value("raw_len".to_string()),

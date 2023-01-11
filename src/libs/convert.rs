@@ -14,6 +14,7 @@ pub fn libs(lvm: &mut Lvm) -> Table {
                 Value::Int(v) => *v != 0,
                 Value::Float(v) => *v != 0.0,
                 Value::ExtFunction(_) => true,
+                Value::LightUserData(_) => true,
                 Value::GCObject(_) => true,
             }))
         }),
@@ -32,6 +33,12 @@ pub fn libs(lvm: &mut Lvm) -> Table {
                     return_type_error!(
                         lvm,
                         type_convert_error!(ValueType::ExtFunction, ValueType::Int)
+                    );
+                }
+                Value::LightUserData(_) => {
+                    return_type_error!(
+                        lvm,
+                        type_convert_error!(ValueType::LightUserData, ValueType::Int)
                     );
                 }
                 Value::GCObject(_) => {
@@ -74,6 +81,12 @@ pub fn libs(lvm: &mut Lvm) -> Table {
                     return_type_error!(
                         lvm,
                         type_convert_error!(ValueType::ExtFunction, ValueType::Float)
+                    );
+                }
+                Value::LightUserData(_) => {
+                    return_type_error!(
+                        lvm,
+                        type_convert_error!(ValueType::LightUserData, ValueType::Float)
                     );
                 }
                 Value::GCObject(_) => {
