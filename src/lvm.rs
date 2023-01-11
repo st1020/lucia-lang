@@ -497,7 +497,7 @@ impl Frame {
                         *self.operate_stack.last().ok_or_else(|| STACK_ERROR)?,
                         Vec::new(),
                     )?;
-                    if return_value == Value::Null {
+                    if return_value.is_null() {
                         self.pc = *i;
                         continue;
                     } else {

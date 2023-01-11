@@ -9,7 +9,7 @@ use super::Value;
 pub struct Table {
     pub array: Vec<(Value, Value)>,
     pub mapping: HashMap<Value, Value>,
-    base_value: Option<Value>,
+    pub base: Option<Value>,
 }
 
 impl Table {
@@ -18,7 +18,7 @@ impl Table {
         Table {
             array: Vec::new(),
             mapping: HashMap::new(),
-            base_value: None,
+            base: None,
         }
     }
 
@@ -76,14 +76,14 @@ impl Table {
     pub fn clear(&mut self) {
         self.array.clear();
         self.mapping.clear();
-        self.base_value = None;
+        self.base = None;
     }
 
     pub fn raw_get(&self, key: &Value) -> Option<Value> {
         if let Some(key) = key.as_int() {
             if let Ok(key) = usize::try_from(key) {
-                if let Some(v) = self.array.get(key) {
-                    return Some(v.1);
+                if let Some((_k, v)) = self.array.get(key) {
+                    return Some(*v);
                 }
             }
         }
@@ -92,12 +92,8 @@ impl Table {
 
     pub fn get(&self, key: &Value) -> Option<Value> {
         self.raw_get(key).or_else(|| {
-            self.base_value.and_then(|v| {
-                self.raw_get(&v)
-                    .unwrap()
-                    .as_table()
-                    .and_then(|v| v.get(key))
-            })
+            self.base
+                .and_then(|v| v.as_table().and_then(|v| v.get(key)))
         })
     }
 
@@ -109,12 +105,11 @@ impl Table {
                     return;
                 }
             }
-        } else if let Some(k) = key.as_str() {
-            if k == "__base__" && value != Value::Null {
-                self.base_value = Some(*key);
-            }
+        } else if let Some("__base__") = key.as_str() {
+            self.base = if value.is_null() { None } else { Some(value) };
+            return;
         }
-        if value != Value::Null {
+        if !value.is_null() {
             self.mapping.insert(*key, value);
         } else {
             self.mapping.remove(key);
@@ -130,14 +125,20 @@ impl Default for Table {
 
 impl Display for Table {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{{{}}}",
-            self.iter()
-                .map(|(k, v)| format!("{}: {}", k, v))
-                .collect::<Vec<String>>()
-                .join(", ")
-        )
+        let t = self
+            .iter()
+            .map(|(k, v)| format!("{}: {}", k, v))
+            .collect::<Vec<String>>()
+            .join(", ");
+        if let Some(base) = self.base {
+            if t.is_empty() {
+                write!(f, "{{__base__: {}}}", base)
+            } else {
+                write!(f, "{{{}, __base__: {}}}", t, base)
+            }
+        } else {
+            write!(f, "{{{}}}", t)
+        }
     }
 }
 
@@ -150,7 +151,7 @@ impl From<Vec<Value>> for Table {
         Table {
             array: temp,
             mapping: HashMap::new(),
-            base_value: None,
+            base: None,
         }
     }
 }
