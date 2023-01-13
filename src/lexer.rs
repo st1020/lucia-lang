@@ -174,8 +174,8 @@ pub enum TokenKind {
     And,
     /// "or"
     Or,
-    /// "func"
-    Func,
+    /// "fn"
+    Fn,
     /// "do"
     Do,
     /// "null"
@@ -544,7 +544,7 @@ impl Cursor<'_> {
             "not" => Not,
             "and" => And,
             "or" => Or,
-            "func" => Func,
+            "fn" => Fn,
             "do" => Do,
             "null" => Null,
             "true" => True,

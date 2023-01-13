@@ -9,10 +9,10 @@ fn temp() -> errors::Result<()> {
     l = {
         '__base__': {
             'lll': 1,
-            '__setitem__': func (self, key, value) {
+            '__setitem__': fn (self, key, value) {
                 self.a = key
             },
-            '__getitem__': func (self, key) {
+            '__getitem__': fn (self, key) {
                 return 0
             },
         },
@@ -36,7 +36,7 @@ fn temp() -> errors::Result<()> {
 fn variadic() -> errors::Result<()> {
     let input = "
     import std::io::{println}
-    test = func (a, *b) {
+    test = fn (a, *b) {
         println(a)
         println(b)
     }
@@ -96,7 +96,7 @@ fn add_pref() -> errors::Result<()> {
 fn gcd_pref() -> errors::Result<()> {
     let input = "
     global gcd
-    gcd = func (x, y) {
+    gcd = fn (x, y) {
         if y == 0 {
             return x
         } else {
@@ -127,7 +127,7 @@ fn gcd_pref() -> errors::Result<()> {
 fn for_test() -> errors::Result<()> {
     let input = "
     import std::io::{println}
-    a = func () {
+    a = fn () {
         t = 0
         return || {
             t += 1
@@ -161,10 +161,10 @@ fn do_test() -> errors::Result<()> {
         __base__ = do {
             t = t
             lll = 1
-            __setitem__ = func (self, key, value) {
+            __setitem__ = fn (self, key, value) {
                 self.a = key
             }
-            __getitem__ = func (self, key) {
+            __getitem__ = fn (self, key) {
                 return 0
             }
         }

@@ -581,7 +581,7 @@ impl<'a> Parser<'a> {
             }
             TokenKind::Ident(_) => self.parse_expr_ident(),
             TokenKind::OpenBrace => self.parse_expr_table(),
-            TokenKind::Func | TokenKind::VBar => self.parse_expr_func(),
+            TokenKind::Fn | TokenKind::VBar => self.parse_expr_func(),
             TokenKind::Do => Ok(Box::new(Expr {
                 start: self.token.start,
                 kind: ExprKind::Do({
@@ -664,7 +664,7 @@ impl<'a> Parser<'a> {
             kind: ExprKind::Function {
                 is_closure: {
                     match self.token.kind {
-                        TokenKind::Func => {
+                        TokenKind::Fn => {
                             self.bump();
                             self.expect(TokenKind::OpenParen)?;
                             end_token = TokenKind::CloseParen;
