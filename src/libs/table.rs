@@ -20,7 +20,7 @@ pub fn libs(lvm: &mut Lvm) -> Table {
                     ],
                     func: |args, upvalues, lvm| {
                         check_arguments_num!(lvm, args, None, 0);
-                        let iter_userdata = upvalues[0].as_userdata().unwrap() as *mut $ty;
+                        let iter_userdata = upvalues[0].as_light_userdata().unwrap() as *mut $ty;
                         let iter = unsafe { iter_userdata.as_mut().unwrap() };
                         if let Some(v) = iter.next() {
                             Ok(*v)

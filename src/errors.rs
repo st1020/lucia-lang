@@ -81,7 +81,7 @@ pub enum RuntimeError {
 
 /// Enum representing any lucia lang builtin error.
 /// BuiltinError will be converted to the LuciaTable and handled by lucia lang runtime.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BuiltinError {
     TypeError(TypeErrorKind),
 }
@@ -107,7 +107,7 @@ impl Display for BuiltinError {
 }
 
 /// Kind of TypeError.
-#[derive(Error, Debug, Clone, PartialEq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum TypeErrorKind {
     #[error("convert error (from {from:?} to {to:?})")]
     ConvertError { from: ValueType, to: ValueType },

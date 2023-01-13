@@ -1,6 +1,7 @@
 pub mod closure;
 pub mod ext_closure;
 pub mod table;
+pub mod userdata;
 
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
@@ -11,6 +12,7 @@ use crate::lvm::Lvm;
 pub use self::closure::Closure;
 pub use self::ext_closure::{ExtClosure, ExtClosureFunc};
 pub use self::table::Table;
+pub use self::userdata::UserData;
 
 // canonical raw float bit
 const CANONICAL_NAN_BITS: u64 = 0x7ff8000000000000u64;
@@ -89,6 +91,7 @@ impl Hash for Value {
                 match &(**ptr).kind {
                     GCObjectKind::Str(v) => v.hash(state),
                     GCObjectKind::Table(_) => ptr.hash(state),
+                    GCObjectKind::UserData(_) => ptr.hash(state),
                     GCObjectKind::Closure(_) => ptr.hash(state),
                     GCObjectKind::ExtClosure(_) => ptr.hash(state),
                 }
@@ -203,9 +206,16 @@ impl_value!(bool, Bool, is_bool, as_bool);
 impl_value!(i64, Int, is_int, as_int);
 impl_value!(f64, Float, is_float, as_float);
 impl_value!(ExtFunction, ExtFunction, is_ext_function, as_ext_function);
-impl_value!(*mut u8, LightUserData, is_userdata, as_userdata);
+impl_value!(*mut u8, LightUserData, is_light_userdata, as_light_userdata);
 impl_value!(str, Str, is_str, as_str);
 impl_value!(Table, Table, is_table, as_table, as_table_mut);
+impl_value!(
+    UserData,
+    UserData,
+    is_userdata,
+    as_userdata,
+    as_userdata_mut
+);
 impl_value!(Closure, Closure, is_closure, as_closure, as_closure_mut);
 impl_value!(
     ExtClosure,
@@ -228,6 +238,7 @@ impl Value {
                 Some(v) => match v.kind {
                     GCObjectKind::Str(_) => ValueType::Str,
                     GCObjectKind::Table(_) => ValueType::Table,
+                    GCObjectKind::UserData(_) => ValueType::UserData,
                     GCObjectKind::Closure(_) => ValueType::Closure,
                     GCObjectKind::ExtClosure(_) => ValueType::ExtClosure,
                 },
@@ -256,6 +267,7 @@ pub enum ValueType {
     UnknownGCObject,
     Str,
     Table,
+    UserData,
     Closure,
     ExtClosure,
 }
@@ -275,6 +287,7 @@ impl Display for ValueType {
                 ValueType::UnknownGCObject => "unknown_object",
                 ValueType::Str => "str",
                 ValueType::Table => "table",
+                ValueType::UserData => "userdata",
                 ValueType::Closure => "function",
                 ValueType::ExtClosure => "function",
             }
@@ -313,34 +326,13 @@ impl GCObject {
 }
 
 /// Enum of all collectable objects.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GCObjectKind {
     Str(String),
     Table(Table),
+    UserData(UserData),
     Closure(Closure),
     ExtClosure(ExtClosure),
-}
-
-impl Debug for GCObjectKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Str(arg0) => f.debug_tuple("Str").field(arg0).finish(),
-            Self::Table(arg0) => f.debug_tuple("Table").field(arg0).finish(),
-            Self::Closure(arg0) => f.debug_tuple("Closure").field(arg0).finish(),
-            Self::ExtClosure(_) => f.debug_tuple("ExtClosure").finish(),
-        }
-    }
-}
-
-impl PartialEq for GCObjectKind {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Str(l0), Self::Str(r0)) => l0 == r0,
-            (Self::Table(l0), Self::Table(r0)) => l0 == r0,
-            (Self::Closure(l0), Self::Closure(r0)) => l0 == r0,
-            (Self::ExtClosure(_), Self::ExtClosure(_)) => false,
-            _ => false,
-        }
-    }
 }
 
 impl Display for GCObjectKind {
@@ -350,6 +342,7 @@ impl Display for GCObjectKind {
             GCObjectKind::Table(v) => write!(f, "{}", v),
             GCObjectKind::Closure(v) => write!(f, "{}", v),
             GCObjectKind::ExtClosure(v) => write!(f, "{}", v),
+            GCObjectKind::UserData(v) => write!(f, "{}", v),
         }
     }
 }
