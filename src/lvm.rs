@@ -90,14 +90,14 @@ const PROGRAM_ERROR: Error = Error::RuntimeError(RuntimeError::ProgramError);
 #[derive(Debug, Clone)]
 pub struct Frame {
     pc: usize,
-    closure: *mut GCObject,
+    closure: NonNull<GCObject>,
     operate_stack: Vec<Value>,
     prev_frame: Option<NonNull<Frame>>,
 }
 
 impl Frame {
     pub fn new(
-        closure: *mut GCObject,
+        closure: NonNull<GCObject>,
         prev_frame: Option<NonNull<Frame>>,
         stack_size: usize,
     ) -> Self {
@@ -111,7 +111,7 @@ impl Frame {
 
     pub fn run(&mut self, lvm: &mut Lvm) -> Result<Value> {
         macro_rules! call {
-            ($lvm:expr, $arg_num:expr) => {{
+            ($arg_num:expr) => {{
                 let args = self
                     .operate_stack
                     .split_off(self.operate_stack.len() - $arg_num);
@@ -120,90 +120,89 @@ impl Frame {
             }};
         }
 
-        macro_rules! run_default {
-            ($lvm:expr, $block:expr, $arg1:ident, $arg2:ident, $special_name:expr, $operator:expr) => {
+        macro_rules! return_unsupported_operand_type {
+            ($operator:expr, $arg1:expr, $arg2:expr) => {
+                return_builtin_error!(lvm, unsupported_operand_type!($operator, $arg1, $arg2))
+            };
+
+            ($operator:expr, $arg1:expr) => {
+                return_builtin_error!(lvm, unsupported_operand_type!($operator, $arg1))
+            };
+        }
+
+        macro_rules! call_special_name {
+            ($arg1:ident, $arg2:ident, $special_name:expr, $operator:expr, $block:block) => {
                 if let Some(t) = as_table!($arg1) {
-                    match t.get(&$lvm.get_builtin_str($special_name)) {
+                    match t.get(&lvm.get_builtin_str($special_name)) {
                         Some(v) => {
                             self.operate_stack.push(v);
                             self.operate_stack.push($arg1);
                             self.operate_stack.push($arg2);
-                            let return_value = call!(lvm, 2)?;
+                            let return_value = call!(2)?;
                             self.operate_stack.push(return_value);
                         }
-                        None => return_builtin_error!(
-                            lvm,
-                            unsupported_operand_type!($operator, $arg1, $arg2)
-                        ),
+                        None => return_unsupported_operand_type!($operator, $arg1, $arg2),
                     }
-                } else {
-                    $block
-                }
+                } else $block
             };
         }
 
-        macro_rules! run_bin_op {
-            ($lvm:expr, $op: tt, $special_name:expr, $operator:expr) => {{
+        macro_rules! bin_op {
+            ($op: tt, $special_name:expr, $operator:expr) => {{
                 let arg2 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                 let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
-                run_default!($lvm, {
+                call_special_name!(arg1, arg2, $special_name, $operator, {
                     self.operate_stack.push(match (arg1, arg2) {
                         (Value::Int(v1), Value::Int(v2)) => Value::Int(v1 $op v2),
                         (Value::Float(v1), Value::Float(v2)) => Value::Float(v1 $op v2),
-                        _ => return_builtin_error!(
-                            lvm,
-                            unsupported_operand_type!($operator, arg1, arg2)
-                        ),
+                        _ => return_unsupported_operand_type!($operator, arg1, arg2),
                     });
-                }, arg1, arg2, $special_name, $operator)
+                })
             }};
         }
 
-        macro_rules! run_eq_ne {
-            ($lvm:expr, $op: tt, $special_name:expr, $operator:expr) => {{
+        macro_rules! eq_ne {
+            ($op: tt, $special_name:expr, $operator:expr) => {{
                 let arg2 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                 let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
-                run_default!($lvm, {
+                call_special_name!(arg1, arg2, $special_name, $operator, {
                     self.operate_stack.push(Value::Bool(arg1 $op arg2));
-                }, arg1, arg2, $special_name, $operator)
+                })
             }};
         }
 
-        macro_rules! run_compare {
-            ($lvm:expr, $op: tt, $special_name:expr, $operator:expr) => {{
+        macro_rules! compare {
+            ($op: tt, $special_name:expr, $operator:expr) => {{
                 let arg2 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                 let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
-                run_default!($lvm, {
+                call_special_name!(arg1, arg2, $special_name, $operator, {
                     self.operate_stack.push(Value::Bool(match (arg1, arg2) {
                         (Value::Int(v1), Value::Int(v2)) => v1 $op v2,
                         (Value::Float(v1), Value::Float(v2)) => v1 $op v2,
-                        _ => return_builtin_error!(
-                            lvm,
-                            unsupported_operand_type!($operator, arg1, arg2)
-                        ),
+                        _ => return_unsupported_operand_type!($operator, arg1, arg2),
                     }));
-                }, arg1, arg2, $special_name, $operator)
+                })
             }};
         }
 
         macro_rules! get_table {
-            ($lvm:expr, $special_name:expr) => {{
+            ($special_name:expr) => {{
                 let arg2 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                 let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                 if let Some(t) = as_table!(arg1) {
-                    match t.get(&$lvm.get_builtin_str($special_name)) {
+                    match t.get(&lvm.get_builtin_str($special_name)) {
                         Some(v) => {
                             self.operate_stack.push(v);
                             self.operate_stack.push(arg1);
                             self.operate_stack.push(arg2);
-                            let return_value = call!(lvm, 2)?;
+                            let return_value = call!(2)?;
                             self.operate_stack.push(return_value);
                         }
                         None => self.operate_stack.push(t.get(&arg2).unwrap_or(Value::Null)),
                     }
                 } else {
                     $crate::return_builtin_error!(
-                        $lvm,
+                        lvm,
                         $crate::type_convert_error!(
                             arg1.value_type(),
                             $crate::objects::ValueType::Table
@@ -214,25 +213,25 @@ impl Frame {
         }
 
         macro_rules! set_table {
-            ($lvm:expr, $special_name:expr) => {{
+            ($special_name:expr) => {{
                 let arg3 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                 let arg2 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                 let mut arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                 if let Some(t) = as_table_mut!(arg1) {
-                    match t.get(&$lvm.get_builtin_str($special_name)) {
+                    match t.get(&lvm.get_builtin_str($special_name)) {
                         Some(v) => {
                             self.operate_stack.push(v);
                             self.operate_stack.push(arg1);
                             self.operate_stack.push(arg2);
                             self.operate_stack.push(arg3);
-                            let return_value = call!(lvm, 3)?;
+                            let return_value = call!(3)?;
                             self.operate_stack.push(return_value);
                         }
                         None => t.set(&arg2, arg3),
                     }
                 } else {
                     $crate::return_builtin_error!(
-                        $lvm,
+                        lvm,
                         $crate::type_convert_error!(
                             arg1.value_type(),
                             $crate::objects::ValueType::Table
@@ -243,7 +242,7 @@ impl Frame {
         }
 
         let closure = unsafe {
-            match &mut self.closure.as_mut().unwrap().kind {
+            match &mut self.closure.as_mut().kind {
                 GCObjectKind::Closure(v) => v,
                 _ => panic!("unexpect error"),
             }
@@ -313,7 +312,7 @@ impl Frame {
                         ConstlValue::Func(func_id) => {
                             let f = lvm.modules[closure.module_id].func_list[func_id].clone();
                             let base_closure = if f.kind == FunctionKind::Closure {
-                                NonNull::new(self.closure)
+                                Some(self.closure)
                             } else {
                                 None
                             };
@@ -424,10 +423,10 @@ impl Frame {
                     }
                     self.operate_stack.push(lvm.new_table_value(table));
                 }
-                OPCode::GetAttr => get_table!(lvm, "__getattr__"),
-                OPCode::GetItem => get_table!(lvm, "__getitem__"),
-                OPCode::SetAttr => set_table!(lvm, "__setattr__"),
-                OPCode::SetItem => set_table!(lvm, "__setitem__"),
+                OPCode::GetAttr => get_table!("__getattr__"),
+                OPCode::GetItem => get_table!("__getitem__"),
+                OPCode::SetAttr => set_table!("__setattr__"),
+                OPCode::SetItem => set_table!("__setitem__"),
                 OPCode::Neg => {
                     let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                     if let Some(t) = as_table!(arg1) {
@@ -435,22 +434,16 @@ impl Frame {
                             Some(v) => {
                                 self.operate_stack.push(v);
                                 self.operate_stack.push(arg1);
-                                let return_value = call!(lvm, 1)?;
+                                let return_value = call!(1)?;
                                 self.operate_stack.push(return_value);
                             }
-                            None => return_builtin_error!(
-                                lvm,
-                                unsupported_operand_type!(code.clone(), arg1)
-                            ),
+                            None => return_unsupported_operand_type!(code.clone(), arg1),
                         }
                     } else {
                         self.operate_stack.push(match arg1 {
                             Value::Int(v) => Value::Int(-v),
                             Value::Float(v) => Value::Float(-v),
-                            _ => return_builtin_error!(
-                                lvm,
-                                unsupported_operand_type!(code.clone(), arg1)
-                            ),
+                            _ => return_unsupported_operand_type!(code.clone(), arg1),
                         })
                     }
                 }
@@ -468,10 +461,7 @@ impl Frame {
                                 (Some(v1), Some(v2)) => self
                                     .operate_stack
                                     .push(lvm.new_str_value(v1.to_string() + v2)),
-                                _ => return_builtin_error!(
-                                    lvm,
-                                    unsupported_operand_type!(code.clone(), arg1, arg2)
-                                ),
+                                _ => return_unsupported_operand_type!(code.clone(), arg1, arg2),
                             };
                         }
                         ValueType::Table | ValueType::UserData => {
@@ -483,37 +473,31 @@ impl Frame {
                                     self.operate_stack.push(v);
                                     self.operate_stack.push(arg1);
                                     self.operate_stack.push(arg2);
-                                    let return_value = call!(lvm, 2)?;
+                                    let return_value = call!(2)?;
                                     self.operate_stack.push(return_value);
                                 }
-                                None => return_builtin_error!(
-                                    lvm,
-                                    unsupported_operand_type!(code.clone(), arg1, arg2)
-                                ),
+                                None => return_unsupported_operand_type!(code.clone(), arg1, arg2),
                             }
                         }
                         _ => {
                             self.operate_stack.push(match (arg1, arg2) {
                                 (Value::Int(v1), Value::Int(v2)) => Value::Int(v1 + v2),
                                 (Value::Float(v1), Value::Float(v2)) => Value::Float(v1 + v2),
-                                _ => return_builtin_error!(
-                                    lvm,
-                                    unsupported_operand_type!(code.clone(), arg1, arg2)
-                                ),
+                                _ => return_unsupported_operand_type!(code.clone(), arg1, arg2),
                             });
                         }
                     }
                 }
-                OPCode::Sub => run_bin_op!(lvm,-, "__sub__", code.clone()),
-                OPCode::Mul => run_bin_op!(lvm,*, "__mul__", code.clone()),
-                OPCode::Div => run_bin_op!(lvm,/, "__div__", code.clone()),
-                OPCode::Mod => run_bin_op!(lvm,%, "__mod__", code.clone()),
-                OPCode::Eq => run_eq_ne!(lvm,==, "__eq__", code.clone()),
-                OPCode::Ne => run_eq_ne!(lvm,!=, "__ne__", code.clone()),
-                OPCode::Gt => run_compare!(lvm,>, "__gt__", code.clone()),
-                OPCode::Ge => run_compare!(lvm,>=, "__ge__", code.clone()),
-                OPCode::Lt => run_compare!(lvm,<, "__lt__", code.clone()),
-                OPCode::Le => run_compare!(lvm,<=, "__le__", code.clone()),
+                OPCode::Sub => bin_op!(-, "__sub__", code.clone()),
+                OPCode::Mul => bin_op!(*, "__mul__", code.clone()),
+                OPCode::Div => bin_op!(/, "__div__", code.clone()),
+                OPCode::Mod => bin_op!(%, "__mod__", code.clone()),
+                OPCode::Eq => eq_ne!(==, "__eq__", code.clone()),
+                OPCode::Ne => eq_ne!(!=, "__ne__", code.clone()),
+                OPCode::Gt => compare!(>, "__gt__", code.clone()),
+                OPCode::Ge => compare!(>=, "__ge__", code.clone()),
+                OPCode::Lt => compare!(<, "__lt__", code.clone()),
+                OPCode::Le => compare!(<=, "__le__", code.clone()),
                 OPCode::Is => {
                     let arg2 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
                     let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
@@ -574,11 +558,11 @@ impl Frame {
                     }
                 }
                 OPCode::Call(i) => {
-                    let return_value = call!(lvm, *i)?;
+                    let return_value = call!(*i)?;
                     self.operate_stack.push(return_value);
                 }
                 OPCode::TryCall(i) => {
-                    let return_value = call!(lvm, *i)?;
+                    let return_value = call!(*i)?;
                     if return_value.is_error() {
                         return Ok(return_value);
                     }
@@ -600,10 +584,7 @@ impl Frame {
                 }
                 OPCode::Throw => {
                     let arg1 = self.operate_stack.pop().ok_or_else(|| STACK_ERROR)?;
-                    if let Value::GCObject(v) = arg1 {
-                        unsafe { (*v).is_error = true }
-                    }
-                    return Ok(arg1);
+                    return Ok(error!(arg1));
                 }
                 OPCode::JumpTarget(_) => return Err(PROGRAM_ERROR),
             }
@@ -707,7 +688,7 @@ impl Lvm {
 
             let mut frame = Frame::new(
                 match callee {
-                    Value::GCObject(gc_obj) => gc_obj,
+                    Value::GCObject(gc_obj) => NonNull::new(gc_obj).unwrap(),
                     _ => panic!(),
                 },
                 self.current_frame,
@@ -794,7 +775,7 @@ impl Lvm {
             if let Some(frame) = self.current_frame {
                 let mut frame = frame.as_ref();
                 loop {
-                    Self::gc_mark_object(frame.closure);
+                    Self::gc_mark_object(frame.closure.as_ptr());
                     for value in &frame.operate_stack {
                         if let Value::GCObject(ptr) = value {
                             Self::gc_mark_object(*ptr);

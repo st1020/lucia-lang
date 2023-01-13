@@ -280,9 +280,10 @@ impl<'a> Parser<'a> {
             },
             TokenKind::OpenBrace => *self.parse_stmt_block()?,
             _ => {
+                let ast_node = self.parse_expr(1)?;
                 macro_rules! assign_error {
-                    ($ast_node:ident) => {
-                        match $ast_node.kind {
+                    () => {
+                        match ast_node.kind {
                             ExprKind::Ident(_)
                             | ExprKind::Member {
                                 table: _,
@@ -294,25 +295,24 @@ impl<'a> Parser<'a> {
                     };
                 }
                 macro_rules! assign_op_stmt {
-                    ($ast_node:ident, $bin_op:expr) => {{
-                        assign_error!($ast_node);
+                    ($bin_op:expr) => {{
+                        assign_error!();
                         self.bump();
                         let right = self.parse_expr(1)?;
                         Stmt {
-                            start: $ast_node.start,
+                            start: ast_node.start,
                             end: right.end,
                             kind: StmtKind::AssignOp {
                                 operator: $bin_op,
-                                left: $ast_node,
+                                left: ast_node,
                                 right,
                             },
                         }
                     }};
                 }
-                let ast_node = self.parse_expr(1)?;
                 let temp = match self.token.kind.clone() {
                     TokenKind::Assign => {
-                        assign_error!(ast_node);
+                        assign_error!();
                         self.bump();
                         let right = self.parse_expr(1)?;
                         Stmt {
@@ -324,11 +324,11 @@ impl<'a> Parser<'a> {
                             },
                         }
                     }
-                    TokenKind::AddAssign => assign_op_stmt!(ast_node, BinOp::Add),
-                    TokenKind::SubAssign => assign_op_stmt!(ast_node, BinOp::Sub),
-                    TokenKind::MulAssign => assign_op_stmt!(ast_node, BinOp::Sub),
-                    TokenKind::DivAssign => assign_op_stmt!(ast_node, BinOp::Div),
-                    TokenKind::ModAssign => assign_op_stmt!(ast_node, BinOp::Mod),
+                    TokenKind::AddAssign => assign_op_stmt!(BinOp::Add),
+                    TokenKind::SubAssign => assign_op_stmt!(BinOp::Sub),
+                    TokenKind::MulAssign => assign_op_stmt!(BinOp::Sub),
+                    TokenKind::DivAssign => assign_op_stmt!(BinOp::Div),
+                    TokenKind::ModAssign => assign_op_stmt!(BinOp::Mod),
                     _ => Stmt {
                         start: ast_node.start,
                         end: ast_node.end,
@@ -464,24 +464,24 @@ impl<'a> Parser<'a> {
 
     /// Parse primary expression.
     fn parse_expr_primary(&mut self) -> Result<Box<Expr>> {
+        let start = self.token.start;
+        let mut ast_node = self.parse_expr_atom()?;
         macro_rules! member_expr {
-            ($ast_node:ident, $start:ident, $member_expr_kind:expr) => {
-                $ast_node = Box::new(Expr {
+            ($member_expr_kind:expr) => {
+                ast_node = Box::new(Expr {
                     kind: ExprKind::Member {
-                        table: $ast_node,
+                        table: ast_node,
                         kind: $member_expr_kind,
                         property: {
                             self.bump();
                             self.parse_expr_ident()?
                         },
                     },
-                    $start,
+                    start,
                     end: self.prev_token.end,
                 })
             };
         }
-        let start = self.token.start;
-        let mut ast_node = self.parse_expr_atom()?;
         loop {
             match &self.token.kind {
                 TokenKind::OpenParen => {
@@ -534,10 +534,8 @@ impl<'a> Parser<'a> {
                         end: self.prev_token.end,
                     });
                 }
-                TokenKind::Dot => member_expr!(ast_node, start, MemberKind::Dot),
-                TokenKind::DoubleColon => {
-                    member_expr!(ast_node, start, MemberKind::DoubleColon)
-                }
+                TokenKind::Dot => member_expr!(MemberKind::Dot),
+                TokenKind::DoubleColon => member_expr!(MemberKind::DoubleColon),
                 _ => break,
             }
         }
