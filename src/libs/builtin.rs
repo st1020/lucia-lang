@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::check_arguments_num;
-use crate::errors::Error;
+use crate::errors::{Error, RuntimeError, RuntimeErrorKind};
 use crate::objects::Value;
 
 pub fn builtin_variables() -> HashMap<String, Value> {
@@ -34,7 +34,10 @@ pub fn builtin_variables() -> HashMap<String, Value> {
         "panic".to_string(),
         Value::ExtFunction(|args, lvm| {
             check_arguments_num!(lvm, args, None, 1);
-            Err(Error::UserPanic(*args.first().unwrap()))
+            Err(Error::RuntimeError(RuntimeError {
+                kind: RuntimeErrorKind::UserPanic(*args.first().unwrap()),
+                traceback: lvm.traceback(),
+            }))
         }),
     );
     t

@@ -1,6 +1,6 @@
 use crate::lvm::Lvm;
 use crate::objects::{Table, Value, ValueType};
-use crate::{check_arguments_num, return_builtin_error, type_convert_error};
+use crate::{builtin_error_to_table, check_arguments_num, type_convert_error};
 
 pub fn libs(lvm: &mut Lvm) -> Table {
     let mut t = Table::new();
@@ -30,32 +30,32 @@ pub fn libs(lvm: &mut Lvm) -> Table {
                 Value::Int(v) => *v,
                 Value::Float(v) => *v as i64,
                 Value::ExtFunction(_) => {
-                    return_builtin_error!(
+                    return Ok(builtin_error_to_table!(
                         lvm,
                         type_convert_error!(ValueType::ExtFunction, ValueType::Int)
-                    );
+                    ));
                 }
                 Value::LightUserData(_) => {
-                    return_builtin_error!(
+                    return Ok(builtin_error_to_table!(
                         lvm,
                         type_convert_error!(ValueType::LightUserData, ValueType::Int)
-                    );
+                    ));
                 }
                 Value::GCObject(_) => {
                     if let Some(v) = arg1.as_str() {
                         if let Ok(v) = v.parse() {
                             v
                         } else {
-                            return_builtin_error!(
+                            return Ok(builtin_error_to_table!(
                                 lvm,
                                 type_convert_error!(ValueType::Str, ValueType::Int)
-                            )
+                            ));
                         }
                     } else {
-                        return_builtin_error!(
+                        return Ok(builtin_error_to_table!(
                             lvm,
                             type_convert_error!(arg1.value_type(), ValueType::Int)
-                        )
+                        ));
                     }
                 }
             }))
@@ -78,32 +78,32 @@ pub fn libs(lvm: &mut Lvm) -> Table {
                 Value::Int(v) => *v as f64,
                 Value::Float(v) => *v,
                 Value::ExtFunction(_) => {
-                    return_builtin_error!(
+                    return Ok(builtin_error_to_table!(
                         lvm,
                         type_convert_error!(ValueType::ExtFunction, ValueType::Float)
-                    );
+                    ));
                 }
                 Value::LightUserData(_) => {
-                    return_builtin_error!(
+                    return Ok(builtin_error_to_table!(
                         lvm,
                         type_convert_error!(ValueType::LightUserData, ValueType::Float)
-                    );
+                    ));
                 }
                 Value::GCObject(_) => {
                     if let Some(v) = arg1.as_str() {
                         if let Ok(v) = v.parse() {
                             v
                         } else {
-                            return_builtin_error!(
+                            return Ok(builtin_error_to_table!(
                                 lvm,
                                 type_convert_error!(ValueType::Str, ValueType::Float)
-                            )
+                            ));
                         }
                     } else {
-                        return_builtin_error!(
+                        return Ok(builtin_error_to_table!(
                             lvm,
                             type_convert_error!(arg1.value_type(), ValueType::Float)
-                        )
+                        ));
                     }
                 }
             }))

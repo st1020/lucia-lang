@@ -6,6 +6,7 @@ use thiserror::Error;
 
 use crate::codegen::OPCode;
 use crate::lexer::{Token, TokenKind};
+use crate::lvm::Frame;
 use crate::objects::{Closure, Value, ValueType};
 
 pub type Result<T> = result::Result<T, Error>;
@@ -17,8 +18,6 @@ pub enum Error {
     SyntaxError(#[source] SyntaxError),
     #[error("runtime error: {0}")]
     RuntimeError(#[source] RuntimeError),
-    #[error("user panic: {0}")]
-    UserPanic(Value),
 }
 
 /// Kind of SyntaxError.
@@ -66,36 +65,74 @@ pub enum ExpectedToken {
     Ident,
 }
 
+/// RuntimeError.
+#[derive(Error, Debug, Clone)]
+#[error("{kind}")]
+pub struct RuntimeError {
+    pub kind: RuntimeErrorKind,
+    pub traceback: Vec<Frame>,
+}
+
+impl PartialEq for RuntimeError {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind
+    }
+}
+
 /// Kind of RuntimeError.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
-pub enum RuntimeError {
+pub enum RuntimeErrorKind {
     #[error("stack error")]
     StackError,
-    #[error("upvalue error")]
-    UpvalueError,
-    #[error("program error")]
-    ProgramError,
-    #[error("import error")]
-    ImportError,
+    #[error("program error: {0}")]
+    ProgramError(#[source] ProgramError),
+    #[error("throw error: throw illegal value ({0})")]
+    ThrowError(Value),
+    #[error("user panic: {0}")]
+    UserPanic(Value),
+}
+
+/// Kind of ProgramError.
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
+pub enum ProgramError {
+    #[error("module error: {0}")]
+    ModuleError(usize),
+    #[error("code index error: {0}")]
+    CodeIndexError(usize),
+    #[error("unexpect code: {0:?}")]
+    UnexpectCodeError(OPCode),
+    #[error("local name error: {0}")]
+    LocalNameError(usize),
+    #[error("global name error: {0}")]
+    GlobalNameError(usize),
+    #[error("const error: {0}")]
+    ConstError(usize),
+    #[error("upvalue error: {0}")]
+    UpvalueError(usize),
+    #[error("function list error: {0}")]
+    FuncListError(usize),
 }
 
 /// Enum representing any lucia lang builtin error.
 /// BuiltinError will be converted to the LuciaTable and handled by lucia lang runtime.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum BuiltinError {
     TypeError(TypeErrorKind),
+    ImportError(String),
 }
 
 impl BuiltinError {
     pub fn error_type(&self) -> &'static str {
         match self {
             BuiltinError::TypeError(_) => "type_error",
+            BuiltinError::ImportError(_) => "import_error",
         }
     }
 
     pub fn msg(&self) -> String {
         match self {
             BuiltinError::TypeError(v) => v.to_string(),
+            BuiltinError::ImportError(v) => v.clone(),
         }
     }
 }
@@ -131,8 +168,6 @@ pub enum TypeErrorKind {
     },
     #[error("build table error ({0} value can't be table key)")]
     BuildTableError(ValueType),
-    #[error("{0}")]
-    TypeError(String),
 }
 
 #[macro_export]
