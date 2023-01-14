@@ -2,7 +2,7 @@ use std::str::Chars;
 
 use unicode_xid;
 
-use crate::errors::{Error, Result, SyntaxError};
+use crate::errors::{Result, SyntaxError};
 
 use self::LiteralKind::*;
 use self::TokenKind::*;
@@ -594,17 +594,13 @@ impl Cursor<'_> {
                 }
                 '.' if base == Base::Decimal => {
                     if has_point {
-                        return Literal(Float(Err(Error::SyntaxError(
-                            SyntaxError::NumberFormatError,
-                        ))));
+                        return Literal(Float(Err(SyntaxError::NumberFormatError.into())));
                     }
                     has_point = true;
                 }
                 'e' | 'E' if base == Base::Decimal => {
                     if has_exponent {
-                        return Literal(Float(Err(Error::SyntaxError(
-                            SyntaxError::NumberFormatError,
-                        ))));
+                        return Literal(Float(Err(SyntaxError::NumberFormatError.into())));
                     }
                     has_exponent = true;
                 }
@@ -621,15 +617,11 @@ impl Cursor<'_> {
         if has_point || has_exponent {
             // only support decimal float literal
             if base != Base::Decimal {
-                Literal(Float(Err(Error::SyntaxError(
-                    SyntaxError::NumberFormatError,
-                ))))
+                Literal(Float(Err(SyntaxError::NumberFormatError.into())))
             } else {
                 match value.parse::<f64>() {
                     Ok(v) => Literal(Float(Ok(v))),
-                    Err(e) => Literal(Float(Err(Error::SyntaxError(
-                        SyntaxError::ParseFloatError(e),
-                    )))),
+                    Err(e) => Literal(Float(Err(SyntaxError::ParseFloatError(e).into()))),
                 }
             }
         } else {
@@ -643,7 +635,7 @@ impl Cursor<'_> {
                 },
             ) {
                 Ok(v) => Literal(Int(Ok(v))),
-                Err(e) => Literal(Int(Err(Error::SyntaxError(SyntaxError::ParseIntError(e))))),
+                Err(e) => Literal(Int(Err(SyntaxError::ParseIntError(e).into()))),
             }
         }
     }
@@ -677,9 +669,7 @@ impl Cursor<'_> {
                     _ => value.push(c),
                 }
             } else {
-                return Literal(Str(Err(Error::SyntaxError(
-                    SyntaxError::UnterminatedStringError,
-                ))));
+                return Literal(Str(Err(SyntaxError::UnterminatedStringError.into())));
             }
         }
         Literal(Str(Ok(value)))

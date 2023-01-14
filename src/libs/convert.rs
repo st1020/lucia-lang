@@ -1,6 +1,6 @@
 use crate::lvm::Lvm;
 use crate::objects::{Table, Value, ValueType};
-use crate::{builtin_error_to_table, check_arguments_num, type_convert_error};
+use crate::{check_arguments_num, type_convert_error};
 
 pub fn libs(lvm: &mut Lvm) -> Table {
     let mut t = Table::new();
@@ -24,38 +24,29 @@ pub fn libs(lvm: &mut Lvm) -> Table {
         Value::ExtFunction(|args, lvm| {
             check_arguments_num!(lvm, args, None, 1);
             let arg1 = args.first().unwrap();
+            macro_rules! return_convert_error {
+                () => {
+                    $crate::return_error!(
+                        type_convert_error!(arg1.value_type(), ValueType::Int),
+                        lvm
+                    )
+                };
+            }
             Ok(Value::Int(match arg1 {
                 Value::Null => 0,
                 Value::Bool(v) => i64::from(*v),
                 Value::Int(v) => *v,
                 Value::Float(v) => *v as i64,
-                Value::ExtFunction(_) => {
-                    return Ok(builtin_error_to_table!(
-                        lvm,
-                        type_convert_error!(ValueType::ExtFunction, ValueType::Int)
-                    ));
-                }
-                Value::LightUserData(_) => {
-                    return Ok(builtin_error_to_table!(
-                        lvm,
-                        type_convert_error!(ValueType::LightUserData, ValueType::Int)
-                    ));
-                }
+                Value::ExtFunction(_) => return_convert_error!(),
+                Value::LightUserData(_) => return_convert_error!(),
                 Value::GCObject(_) => {
                     if let Some(v) = arg1.as_str() {
-                        if let Ok(v) = v.parse() {
-                            v
-                        } else {
-                            return Ok(builtin_error_to_table!(
-                                lvm,
-                                type_convert_error!(ValueType::Str, ValueType::Int)
-                            ));
+                        match v.parse() {
+                            Ok(v) => v,
+                            Err(_) => return_convert_error!(),
                         }
                     } else {
-                        return Ok(builtin_error_to_table!(
-                            lvm,
-                            type_convert_error!(arg1.value_type(), ValueType::Int)
-                        ));
+                        return_convert_error!();
                     }
                 }
             }))
@@ -66,44 +57,29 @@ pub fn libs(lvm: &mut Lvm) -> Table {
         Value::ExtFunction(|args, lvm| {
             check_arguments_num!(lvm, args, None, 1);
             let arg1 = args.first().unwrap();
+            macro_rules! return_convert_error {
+                () => {
+                    $crate::return_error!(
+                        type_convert_error!(arg1.value_type(), ValueType::Float),
+                        lvm
+                    )
+                };
+            }
             Ok(Value::Float(match arg1 {
                 Value::Null => 0.0,
-                Value::Bool(v) => {
-                    if *v {
-                        1.0
-                    } else {
-                        0.0
-                    }
-                }
+                Value::Bool(v) => f64::from(u8::from(*v)),
                 Value::Int(v) => *v as f64,
                 Value::Float(v) => *v,
-                Value::ExtFunction(_) => {
-                    return Ok(builtin_error_to_table!(
-                        lvm,
-                        type_convert_error!(ValueType::ExtFunction, ValueType::Float)
-                    ));
-                }
-                Value::LightUserData(_) => {
-                    return Ok(builtin_error_to_table!(
-                        lvm,
-                        type_convert_error!(ValueType::LightUserData, ValueType::Float)
-                    ));
-                }
+                Value::ExtFunction(_) => return_convert_error!(),
+                Value::LightUserData(_) => return_convert_error!(),
                 Value::GCObject(_) => {
                     if let Some(v) = arg1.as_str() {
-                        if let Ok(v) = v.parse() {
-                            v
-                        } else {
-                            return Ok(builtin_error_to_table!(
-                                lvm,
-                                type_convert_error!(ValueType::Str, ValueType::Float)
-                            ));
+                        match v.parse() {
+                            Ok(v) => v,
+                            Err(_) => return_convert_error!(),
                         }
                     } else {
-                        return Ok(builtin_error_to_table!(
-                            lvm,
-                            type_convert_error!(arg1.value_type(), ValueType::Float)
-                        ));
+                        return_convert_error!();
                     }
                 }
             }))

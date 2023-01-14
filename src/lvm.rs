@@ -6,12 +6,12 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::codegen::{ConstlValue, FunctionKind, JumpTarget, OPCode, Program};
-use crate::errors::{BuiltinError, Error, ProgramError, Result, RuntimeError, RuntimeErrorKind};
+use crate::errors::{
+    BuiltinError, Error, ProgramError, Result, RuntimeError, RuntimeErrorKind, TracebackFrame,
+};
 use crate::libs;
 use crate::objects::*;
-use crate::{
-    build_table_error, call_arguments_error, not_callable_error, unsupported_operand_type,
-};
+use crate::{build_table_error, call_arguments_error, not_callable_error, operator_error};
 
 #[macro_export]
 macro_rules! error {
@@ -27,19 +27,10 @@ macro_rules! error {
 }
 
 #[macro_export]
-macro_rules! builtin_error_to_table {
-    ($lvm:expr, $value:expr) => {{
-        let mut error_table = $crate::objects::Table::new();
-        error_table.set(
-            &$lvm.get_builtin_str("type"),
-            $lvm.new_str_value($value.error_type().to_string()),
-        );
-        error_table.set(
-            &$lvm.get_builtin_str("msg"),
-            $lvm.new_str_value($value.msg()),
-        );
-        $lvm.new_table_value(error_table)
-    }};
+macro_rules! return_error {
+    ($value:expr, $lvm:expr) => {
+        return Ok($value.into_table_value($lvm))
+    };
 }
 
 #[macro_export]
@@ -47,15 +38,10 @@ macro_rules! try_convert {
     ($lvm:expr, $expr:expr, $as:tt, $to:tt) => {
         match $expr.$as() {
             Some(val) => val,
-            None => {
-                return Ok($crate::builtin_error_to_table!(
-                    $lvm,
-                    $crate::type_convert_error!(
-                        $expr.value_type(),
-                        $crate::objects::ValueType::$to
-                    )
-                ));
-            }
+            None => $crate::return_error!(
+                $crate::type_convert_error!($expr.value_type(), $crate::objects::ValueType::$to),
+                $lvm
+            ),
         }
     };
 }
@@ -163,19 +149,9 @@ impl Frame {
             };
         }
 
-        macro_rules! return_unsupported_operand_type {
-            ($operator:expr, $arg1:expr, $arg2:expr) => {
-                return Ok(builtin_error_to_table!(
-                    lvm,
-                    unsupported_operand_type!($operator, $arg1, $arg2)
-                ))
-            };
-
-            ($operator:expr, $arg1:expr) => {
-                return Ok(builtin_error_to_table!(
-                    lvm,
-                    unsupported_operand_type!($operator, $arg1)
-                ))
+        macro_rules! return_error {
+            ($value:expr) => {
+                $crate::return_error!($value, lvm)
             };
         }
 
@@ -190,7 +166,7 @@ impl Frame {
                             let return_value = call!(2)?;
                             self.operate_stack.push(return_value);
                         }
-                        None => return_unsupported_operand_type!($operator, $arg1, $arg2),
+                        None => return_error!(operator_error!($operator, $arg1, $arg2)),
                     }
                 } else $block
             };
@@ -204,7 +180,7 @@ impl Frame {
                     self.operate_stack.push(match (arg1, arg2) {
                         (Value::Int(v1), Value::Int(v2)) => Value::Int(v1 $op v2),
                         (Value::Float(v1), Value::Float(v2)) => Value::Float(v1 $op v2),
-                        _ => return_unsupported_operand_type!($operator, arg1, arg2),
+                        _ => return_error!(operator_error!($operator, arg1, arg2)),
                     });
                 })
             }};
@@ -228,7 +204,7 @@ impl Frame {
                     self.operate_stack.push(Value::Bool(match (arg1, arg2) {
                         (Value::Int(v1), Value::Int(v2)) => v1 $op v2,
                         (Value::Float(v1), Value::Float(v2)) => v1 $op v2,
-                        _ => return_unsupported_operand_type!($operator, arg1, arg2),
+                        _ => return_error!(operator_error!($operator, arg1, arg2)),
                     }));
                 })
             }};
@@ -250,12 +226,9 @@ impl Frame {
                         None => self.operate_stack.push(t.get(&arg2).unwrap_or(Value::Null)),
                     }
                 } else {
-                    return Ok($crate::builtin_error_to_table!(
-                        lvm,
-                        $crate::type_convert_error!(
-                            arg1.value_type(),
-                            $crate::objects::ValueType::Table
-                        )
+                    return_error!($crate::type_convert_error!(
+                        arg1.value_type(),
+                        $crate::objects::ValueType::Table
                     ));
                 }
             }};
@@ -279,12 +252,9 @@ impl Frame {
                         None => t.set(&arg2, arg3),
                     }
                 } else {
-                    return Ok($crate::builtin_error_to_table!(
-                        lvm,
-                        $crate::type_convert_error!(
-                            arg1.value_type(),
-                            $crate::objects::ValueType::Table
-                        )
+                    return_error!($crate::type_convert_error!(
+                        arg1.value_type(),
+                        $crate::objects::ValueType::Table
                     ));
                 }
             }};
@@ -466,13 +436,11 @@ impl Frame {
                                         lvm.modules.push(Program::try_from(&input_file)?);
                                         lvm.run_module(lvm.modules.len() - 1)?
                                     }
-                                    Err(_) => builtin_error_to_table!(
-                                        lvm,
-                                        BuiltinError::ImportError(format!(
-                                            "can not read file: {}",
-                                            path.to_str().unwrap_or("unknown")
-                                        ))
-                                    ),
+                                    Err(_) => BuiltinError::ImportError(format!(
+                                        "can not read file: {}",
+                                        path.to_str().unwrap_or("unknown")
+                                    ))
+                                    .into_table_value(lvm),
                                 });
                         }
                     } else {
@@ -513,10 +481,7 @@ impl Frame {
                         for i in temp.chunks(2) {
                             if let Value::GCObject(_) = i[0] {
                                 if !i[0].is_str() {
-                                    return Ok(builtin_error_to_table!(
-                                        lvm,
-                                        build_table_error!(i[0])
-                                    ));
+                                    return_error!(build_table_error!(i[0]));
                                 }
                             }
                             table.set(&i[0], i[1]);
@@ -540,13 +505,13 @@ impl Frame {
                                 let return_value = call!(1)?;
                                 self.operate_stack.push(return_value);
                             }
-                            None => return_unsupported_operand_type!(code.clone(), arg1),
+                            None => return_error!(operator_error!(code.clone(), arg1)),
                         }
                     } else {
                         self.operate_stack.push(match arg1 {
                             Value::Int(v) => Value::Int(-v),
                             Value::Float(v) => Value::Float(-v),
-                            _ => return_unsupported_operand_type!(code.clone(), arg1),
+                            _ => return_error!(operator_error!(code.clone(), arg1)),
                         })
                     }
                 }
@@ -564,7 +529,7 @@ impl Frame {
                                 (Some(v1), Some(v2)) => self
                                     .operate_stack
                                     .push(lvm.new_str_value(v1.to_string() + v2)),
-                                _ => return_unsupported_operand_type!(code.clone(), arg1, arg2),
+                                _ => return_error!(operator_error!(code.clone(), arg1, arg2)),
                             };
                         }
                         ValueType::Table | ValueType::UserData => {
@@ -579,14 +544,14 @@ impl Frame {
                                     let return_value = call!(2)?;
                                     self.operate_stack.push(return_value);
                                 }
-                                None => return_unsupported_operand_type!(code.clone(), arg1, arg2),
+                                None => return_error!(operator_error!(code.clone(), arg1, arg2)),
                             }
                         }
                         _ => {
                             self.operate_stack.push(match (arg1, arg2) {
                                 (Value::Int(v1), Value::Int(v2)) => Value::Int(v1 + v2),
                                 (Value::Float(v1), Value::Float(v2)) => Value::Float(v1 + v2),
-                                _ => return_unsupported_operand_type!(code.clone(), arg1, arg2),
+                                _ => return_error!(operator_error!(code.clone(), arg1, arg2)),
                             });
                         }
                     }
@@ -605,12 +570,8 @@ impl Frame {
                     let arg2 = try_stack!(self.operate_stack.pop());
                     let arg1 = try_stack!(self.operate_stack.pop());
                     self.operate_stack.push(Value::Bool(match (arg1, arg2) {
-                        (Value::Null, Value::Null) => true,
-                        (Value::Bool(v1), Value::Bool(v2)) => v1 == v2,
-                        (Value::Int(v1), Value::Int(v2)) => v1 == v2,
-                        (Value::Float(v1), Value::Float(v2)) => v1 == v2,
                         (Value::GCObject(v1), Value::GCObject(v2)) => v1 == v2,
-                        _ => false,
+                        _ => arg1 == arg2,
                     }));
                 }
                 OPCode::For(JumpTarget(i)) => {
@@ -759,11 +720,17 @@ impl Lvm {
     }
 
     pub fn call(&mut self, mut callee: Value, mut args: Vec<Value>) -> Result<Value> {
+        macro_rules! return_error {
+            ($value:expr) => {
+                return Ok($value.into_table_value(self))
+            };
+        }
+
         if let Some(t) = as_table!(callee) {
             args.insert(0, callee);
             callee = match t.get(&self.get_builtin_str("__call__")) {
                 Some(v) => v,
-                None => return Ok(builtin_error_to_table!(self, not_callable_error!(callee))),
+                None => return_error!(not_callable_error!(callee)),
             };
         }
 
@@ -775,10 +742,11 @@ impl Lvm {
             let params_num = v.function.params.len();
             match args.len().cmp(&params_num) {
                 Ordering::Less => {
-                    return Ok(builtin_error_to_table!(
-                        self,
-                        call_arguments_error!(Some(Box::new(v.clone())), params_num, args.len())
-                    ))
+                    return_error!(call_arguments_error!(
+                        Some(Box::new(v.clone())),
+                        params_num,
+                        args.len()
+                    ));
                 }
                 Ordering::Equal => {
                     v.variables[..params_num].copy_from_slice(&args[..]);
@@ -788,13 +756,10 @@ impl Lvm {
                 }
                 Ordering::Greater => {
                     if v.function.variadic.is_none() {
-                        return Ok(builtin_error_to_table!(
-                            self,
-                            call_arguments_error!(
-                                Some(Box::new(v.clone())),
-                                params_num,
-                                args.len()
-                            )
+                        return_error!(call_arguments_error!(
+                            Some(Box::new(v.clone())),
+                            params_num,
+                            args.len()
                         ));
                     } else {
                         let t = args.split_off(params_num);
@@ -820,7 +785,7 @@ impl Lvm {
             self.current_frame = current_frame;
             return_value
         } else {
-            Ok(builtin_error_to_table!(self, not_callable_error!(callee)))
+            return_error!(not_callable_error!(callee));
         }
     }
 
@@ -886,14 +851,22 @@ impl Lvm {
         self.new_gc_value(GCObjectKind::ExtClosure(value))
     }
 
-    pub fn traceback(&self) -> Vec<Frame> {
+    pub fn traceback(&self) -> Vec<TracebackFrame> {
         let mut traceback_frames = Vec::new();
         let mut frame = self.current_frame;
         while let Some(f) = frame {
-            unsafe {
-                traceback_frames.push(f.as_ref().clone());
-                frame = f.as_ref().prev_frame;
-            }
+            let f = unsafe { f.as_ref() };
+            traceback_frames.push(TracebackFrame {
+                pc: f.pc,
+                operate_stack: f.operate_stack.clone(),
+                closure: unsafe {
+                    match &f.closure.as_ref().kind {
+                        GCObjectKind::Closure(v) => v.clone(),
+                        _ => panic!("unexpect error"),
+                    }
+                },
+            });
+            frame = f.prev_frame;
         }
         traceback_frames
     }

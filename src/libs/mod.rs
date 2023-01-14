@@ -12,10 +12,10 @@ use crate::objects::Value;
 macro_rules! check_arguments_num {
     ($lvm:expr, $args:expr, $value:expr, $require:expr) => {
         if $args.len() != $require {
-            return Ok($crate::builtin_error_to_table!(
-                $lvm,
-                $crate::call_arguments_error!($value, $require, $args.len())
-            ));
+            $crate::return_error!(
+                $crate::call_arguments_error!($value, $require, $args.len()),
+                $lvm
+            );
         }
     };
 }

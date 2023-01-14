@@ -6,8 +6,8 @@ use thiserror::Error;
 
 use crate::codegen::OPCode;
 use crate::lexer::{Token, TokenKind};
-use crate::lvm::Frame;
-use crate::objects::{Closure, Value, ValueType};
+use crate::lvm::Lvm;
+use crate::objects::{Closure, Table, Value, ValueType};
 
 pub type Result<T> = result::Result<T, Error>;
 
@@ -15,9 +15,9 @@ pub type Result<T> = result::Result<T, Error>;
 #[derive(Error, Debug, Clone, PartialEq)]
 pub enum Error {
     #[error("syntax error: {0}")]
-    SyntaxError(#[source] SyntaxError),
+    SyntaxError(#[from] SyntaxError),
     #[error("runtime error: {0}")]
-    RuntimeError(#[source] RuntimeError),
+    RuntimeError(#[from] RuntimeError),
 }
 
 /// Kind of SyntaxError.
@@ -25,9 +25,9 @@ pub enum Error {
 pub enum SyntaxError {
     /// lexer error
     #[error("parse int error ({0})")]
-    ParseIntError(#[source] ParseIntError),
+    ParseIntError(#[from] ParseIntError),
     #[error("parse float error  ({0})")]
-    ParseFloatError(#[source] ParseFloatError),
+    ParseFloatError(#[from] ParseFloatError),
     #[error("number format error")]
     NumberFormatError,
     #[error("unterminated string error")]
@@ -55,6 +55,8 @@ pub enum SyntaxError {
     GlobalOutsideFunction,
     #[error("return outside function")]
     ReturnOutsideFunction,
+    #[error("throw outside function")]
+    ThrowOutsideFunction,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -70,7 +72,7 @@ pub enum ExpectedToken {
 #[error("{kind}")]
 pub struct RuntimeError {
     pub kind: RuntimeErrorKind,
-    pub traceback: Vec<Frame>,
+    pub traceback: Vec<TracebackFrame>,
 }
 
 impl PartialEq for RuntimeError {
@@ -79,13 +81,20 @@ impl PartialEq for RuntimeError {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct TracebackFrame {
+    pub pc: usize,
+    pub operate_stack: Vec<Value>,
+    pub closure: Closure,
+}
+
 /// Kind of RuntimeError.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum RuntimeErrorKind {
     #[error("stack error")]
     StackError,
     #[error("program error: {0}")]
-    ProgramError(#[source] ProgramError),
+    ProgramError(#[from] ProgramError),
     #[error("throw error: throw illegal value ({0})")]
     ThrowError(Value),
     #[error("user panic: {0}")]
@@ -99,7 +108,7 @@ pub enum ProgramError {
     ModuleError(usize),
     #[error("code index error: {0}")]
     CodeIndexError(usize),
-    #[error("unexpect code: {0:?}")]
+    #[error("unexpect code: {0}")]
     UnexpectCodeError(OPCode),
     #[error("local name error: {0}")]
     LocalNameError(usize),
@@ -117,7 +126,7 @@ pub enum ProgramError {
 /// BuiltinError will be converted to the LuciaTable and handled by lucia lang runtime.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum BuiltinError {
-    TypeError(TypeErrorKind),
+    TypeError(#[from] TypeError),
     ImportError(String),
 }
 
@@ -135,6 +144,23 @@ impl BuiltinError {
             BuiltinError::ImportError(v) => v.clone(),
         }
     }
+
+    #[inline]
+    pub fn into_table(&self, lvm: &mut Lvm) -> Table {
+        let mut error_table = Table::new();
+        error_table.set(
+            &lvm.get_builtin_str("type"),
+            lvm.new_str_value(self.error_type().to_string()),
+        );
+        error_table.set(&lvm.get_builtin_str("msg"), lvm.new_str_value(self.msg()));
+        error_table
+    }
+
+    #[inline]
+    pub fn into_table_value(&self, lvm: &mut Lvm) -> Value {
+        let t = self.into_table(lvm);
+        lvm.new_table_value(t)
+    }
 }
 
 impl Display for BuiltinError {
@@ -145,15 +171,15 @@ impl Display for BuiltinError {
 
 /// Kind of TypeError.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
-pub enum TypeErrorKind {
-    #[error("convert error (from {from:?} to {to:?})")]
+pub enum TypeError {
+    #[error("convert error (from {from} to {to})")]
     ConvertError { from: ValueType, to: ValueType },
-    #[error("operator error (unsupported operand type(s) for {operator:?}: {operand})")]
+    #[error("operator error (unsupported operand type(s) for {operator}: {operand})")]
     UnOperatorError {
         operator: OPCode,
         operand: ValueType,
     },
-    #[error("operator error (unsupported operand type(s) for {operator:?}: {} and {})", .operand.0, .operand.1)]
+    #[error("operator error (unsupported operand type(s) for {operator}: {} and {})", .operand.0, .operand.1)]
     BinOperatorError {
         operator: OPCode,
         operand: (ValueType, ValueType),
@@ -171,15 +197,16 @@ pub enum TypeErrorKind {
 }
 
 #[macro_export]
-macro_rules! unsupported_operand_type {
+macro_rules! operator_error {
     ($operator:expr, $arg1:expr) => {
-        $crate::errors::BuiltinError::TypeError($crate::errors::TypeErrorKind::UnOperatorError {
+        $crate::errors::BuiltinError::TypeError($crate::errors::TypeError::UnOperatorError {
             operator: $operator,
             operand: $arg1.value_type(),
         })
     };
+
     ($operator:expr, $arg1:expr, $arg2:expr) => {
-        $crate::errors::BuiltinError::TypeError($crate::errors::TypeErrorKind::BinOperatorError {
+        $crate::errors::BuiltinError::TypeError($crate::errors::TypeError::BinOperatorError {
             operator: $operator,
             operand: ($arg1.value_type(), $arg2.value_type()),
         })
@@ -189,7 +216,7 @@ macro_rules! unsupported_operand_type {
 #[macro_export]
 macro_rules! type_convert_error {
     ($from:expr, $to:expr) => {
-        $crate::errors::BuiltinError::TypeError($crate::errors::TypeErrorKind::ConvertError {
+        $crate::errors::BuiltinError::TypeError($crate::errors::TypeError::ConvertError {
             from: $from,
             to: $to,
         })
@@ -199,7 +226,7 @@ macro_rules! type_convert_error {
 #[macro_export]
 macro_rules! not_callable_error {
     ($value:expr) => {
-        $crate::errors::BuiltinError::TypeError($crate::errors::TypeErrorKind::NotCallableError(
+        $crate::errors::BuiltinError::TypeError($crate::errors::TypeError::NotCallableError(
             $value.value_type(),
         ))
     };
@@ -208,7 +235,7 @@ macro_rules! not_callable_error {
 #[macro_export]
 macro_rules! call_arguments_error {
     ($value:expr, $require:expr, $give:expr) => {
-        $crate::errors::BuiltinError::TypeError($crate::errors::TypeErrorKind::CallArgumentsError {
+        $crate::errors::BuiltinError::TypeError($crate::errors::TypeError::CallArgumentsError {
             value: $value,
             required: $require,
             given: $give,
@@ -219,15 +246,8 @@ macro_rules! call_arguments_error {
 #[macro_export]
 macro_rules! build_table_error {
     ($value:expr) => {
-        $crate::errors::BuiltinError::TypeError($crate::errors::TypeErrorKind::BuildTableError(
+        $crate::errors::BuiltinError::TypeError($crate::errors::TypeError::BuildTableError(
             $value.value_type(),
         ))
-    };
-}
-
-#[macro_export]
-macro_rules! type_error {
-    ($value:expr) => {
-        $crate::errors::BuiltinError::TypeError($crate::errors::TypeErrorKind::TypeError($value))
     };
 }

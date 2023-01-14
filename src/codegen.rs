@@ -1,4 +1,5 @@
 use std::convert::TryFrom;
+use std::fmt::Display;
 
 use crate::ast::*;
 use crate::errors::{Error, Result, SyntaxError};
@@ -138,6 +139,12 @@ pub enum OPCode {
     JumpTarget(JumpTarget),
 }
 
+impl Display for OPCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 impl TryFrom<BinOp> for OPCode {
     type Error = Error;
 
@@ -155,7 +162,7 @@ impl TryFrom<BinOp> for OPCode {
             BinOp::Ge => OPCode::Ge,
             BinOp::Gt => OPCode::Gt,
             BinOp::Is => OPCode::Is,
-            _ => return Err(Error::SyntaxError(SyntaxError::IllegalAst)),
+            _ => return Err(SyntaxError::IllegalAst.into()),
         })
     }
 }
@@ -654,7 +661,7 @@ impl FunctionBuilder {
                                     context.add_const(ConstlValue::Str(ident.name)),
                                 ));
                             }
-                            _ => return Err(Error::SyntaxError(SyntaxError::IllegalAst)),
+                            _ => return Err(SyntaxError::IllegalAst.into()),
                         }
                         code_list.push(OPCode::GetAttr);
                     }
@@ -681,7 +688,7 @@ impl FunctionBuilder {
                                         context.add_const(ConstlValue::Str(ident.name)),
                                     ));
                                 }
-                                _ => return Err(Error::SyntaxError(SyntaxError::IllegalAst)),
+                                _ => return Err(SyntaxError::IllegalAst.into()),
                             }
                             code_list.push(OPCode::GetAttr);
                             code_list.push(OPCode::Rot);
@@ -797,32 +804,32 @@ impl FunctionBuilder {
             StmtKind::Break => {
                 code_list.push(OPCode::Jump(match self.break_stack.last() {
                     Some(v) => *v,
-                    None => return Err(Error::SyntaxError(SyntaxError::BreakOutsideLoop)),
+                    None => return Err(SyntaxError::BreakOutsideLoop.into()),
                 }));
             }
             StmtKind::Continue => {
                 code_list.push(OPCode::Jump(match self.continue_stack.last() {
                     Some(v) => *v,
-                    None => return Err(Error::SyntaxError(SyntaxError::ContinueOutsideLoop)),
+                    None => return Err(SyntaxError::ContinueOutsideLoop.into()),
                 }));
             }
             StmtKind::Return { argument } => {
                 if self.kind == FunctionKind::Do {
-                    return Err(Error::SyntaxError(SyntaxError::ReturnOutsideFunction));
+                    return Err(SyntaxError::ReturnOutsideFunction.into());
                 }
                 code_list.append(&mut self.gen_expr(*argument, context)?);
                 code_list.push(OPCode::Return);
             }
             StmtKind::Throw { argument } => {
                 if self.kind == FunctionKind::Do {
-                    return Err(Error::SyntaxError(SyntaxError::ReturnOutsideFunction));
+                    return Err(SyntaxError::ThrowOutsideFunction.into());
                 }
                 code_list.append(&mut self.gen_expr(*argument, context)?);
                 code_list.push(OPCode::Throw);
             }
             StmtKind::Global { arguments } => {
                 if self.kind == FunctionKind::Do {
-                    return Err(Error::SyntaxError(SyntaxError::GlobalOutsideFunction));
+                    return Err(SyntaxError::GlobalOutsideFunction.into());
                 }
                 for arg in arguments {
                     self.global_names.push((arg.name, true));
@@ -873,7 +880,7 @@ impl FunctionBuilder {
                         MemberKind::Dot | MemberKind::DoubleColon => OPCode::SetAttr,
                     });
                 }
-                _ => return Err(Error::SyntaxError(SyntaxError::IllegalAst)),
+                _ => return Err(SyntaxError::IllegalAst.into()),
             },
             StmtKind::AssignOp {
                 operator,
@@ -894,7 +901,7 @@ impl FunctionBuilder {
                     code_list.append(&mut self.gen_expr(*left, context)?);
                     let temp = match code_list.pop() {
                         Some(v) => v,
-                        None => return Err(Error::SyntaxError(SyntaxError::IllegalAst)),
+                        None => return Err(SyntaxError::IllegalAst.into()),
                     };
                     code_list.push(OPCode::DupTwo);
                     code_list.push(temp);
@@ -905,7 +912,7 @@ impl FunctionBuilder {
                         MemberKind::Dot | MemberKind::DoubleColon => OPCode::SetAttr,
                     });
                 }
-                _ => return Err(Error::SyntaxError(SyntaxError::IllegalAst)),
+                _ => return Err(SyntaxError::IllegalAst.into()),
             },
             StmtKind::Block(block) => {
                 for stmt in block.body {
