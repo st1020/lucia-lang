@@ -64,6 +64,7 @@ macro_rules! try_set {
     };
 }
 
+#[macro_export]
 macro_rules! as_table {
     ($val:expr) => {
         $val.as_table()
@@ -71,6 +72,7 @@ macro_rules! as_table {
     };
 }
 
+#[macro_export]
 macro_rules! as_table_mut {
     ($val:expr) => {
         match $val.as_table_mut() {
