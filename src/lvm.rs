@@ -909,23 +909,11 @@ impl Lvm {
             let mut new_heap = Vec::new();
             for ptr in self.heap.clone() {
                 if (*ptr).gc_state {
-                    #[allow(unused_must_use)]
-                    match &(*ptr).kind {
-                        GCObjectKind::Table(t) => {
-                            if let Some(t) = t.get(&self.get_builtin_str("__gc__")) {
-                                self.call(t, vec![Value::GCObject(ptr)]);
-                            }
-                        }
-                        GCObjectKind::UserData(t) => {
-                            if let Some(t) = t.table.get(&self.get_builtin_str("__gc__")) {
-                                self.call(t, vec![Value::GCObject(ptr)]);
-                            }
-                        }
-                        _ => {
-                            ptr.drop_in_place();
-                            dealloc(ptr as *mut u8, self.mem_layout);
-                        }
+                    if let GCObjectKind::UserData(t) = &mut (*ptr).kind {
+                        (t.drop_func)(t);
                     }
+                    ptr.drop_in_place();
+                    dealloc(ptr as *mut u8, self.mem_layout);
                 } else {
                     new_heap.push(ptr);
                 }
