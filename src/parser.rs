@@ -107,8 +107,16 @@ impl<'a> Parser<'a> {
                 start: self.token.start,
                 kind: StmtKind::For {
                     left: {
-                        self.bump();
-                        self.parse_ident()?
+                        let mut temp = Vec::new();
+                        while self.token.kind != TokenKind::In {
+                            self.bump();
+                            temp.push(*self.parse_ident()?);
+                            match self.token.kind {
+                                TokenKind::In => break,
+                                _ => self.expect(TokenKind::Comma)?,
+                            }
+                        }
+                        temp
                     },
                     right: {
                         self.expect(TokenKind::In)?;
@@ -280,10 +288,9 @@ impl<'a> Parser<'a> {
             },
             TokenKind::OpenBrace => *self.parse_stmt_block()?,
             _ => {
-                let ast_node = self.parse_expr(1)?;
                 macro_rules! assign_error {
-                    () => {
-                        match ast_node.kind {
+                    ($ast_node:expr) => {
+                        match $ast_node.kind {
                             ExprKind::Ident(_)
                             | ExprKind::Member {
                                 table: _,
@@ -295,40 +302,65 @@ impl<'a> Parser<'a> {
                     };
                 }
                 macro_rules! assign_op_stmt {
-                    ($bin_op:expr) => {{
-                        assign_error!();
+                    ($ast_node:expr, $bin_op:expr) => {{
+                        assign_error!($ast_node);
                         self.bump();
                         let right = self.parse_expr(1)?;
                         Stmt {
-                            start: ast_node.start,
+                            start: $ast_node.start,
                             end: right.end,
                             kind: StmtKind::AssignOp {
                                 operator: $bin_op,
-                                left: ast_node,
+                                left: $ast_node,
                                 right,
                             },
                         }
                     }};
                 }
+                let ast_node = self.parse_expr(1)?;
                 let temp = match self.token.kind.clone() {
+                    TokenKind::Comma => {
+                        assign_error!(ast_node);
+                        let start = ast_node.start;
+                        let mut left = vec![*ast_node];
+                        loop {
+                            match self.token.kind {
+                                TokenKind::Comma => {
+                                    self.bump();
+                                    let ast_node = self.parse_expr(1)?;
+                                    assign_error!(ast_node);
+                                    left.push(*ast_node);
+                                }
+                                TokenKind::Assign => break,
+                                _ => self.expect(TokenKind::Assign)?,
+                            }
+                        }
+                        self.bump();
+                        let right = self.parse_expr(1)?;
+                        Stmt {
+                            start,
+                            end: right.end,
+                            kind: StmtKind::Assign { left, right },
+                        }
+                    }
                     TokenKind::Assign => {
-                        assign_error!();
+                        assign_error!(ast_node);
                         self.bump();
                         let right = self.parse_expr(1)?;
                         Stmt {
                             start: ast_node.start,
                             end: right.end,
                             kind: StmtKind::Assign {
-                                left: ast_node,
+                                left: vec![*ast_node],
                                 right,
                             },
                         }
                     }
-                    TokenKind::AddAssign => assign_op_stmt!(BinOp::Add),
-                    TokenKind::SubAssign => assign_op_stmt!(BinOp::Sub),
-                    TokenKind::MulAssign => assign_op_stmt!(BinOp::Sub),
-                    TokenKind::DivAssign => assign_op_stmt!(BinOp::Div),
-                    TokenKind::ModAssign => assign_op_stmt!(BinOp::Mod),
+                    TokenKind::AddAssign => assign_op_stmt!(ast_node, BinOp::Add),
+                    TokenKind::SubAssign => assign_op_stmt!(ast_node, BinOp::Sub),
+                    TokenKind::MulAssign => assign_op_stmt!(ast_node, BinOp::Sub),
+                    TokenKind::DivAssign => assign_op_stmt!(ast_node, BinOp::Div),
+                    TokenKind::ModAssign => assign_op_stmt!(ast_node, BinOp::Mod),
                     _ => Stmt {
                         start: ast_node.start,
                         end: ast_node.end,

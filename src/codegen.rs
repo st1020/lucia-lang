@@ -792,7 +792,19 @@ impl FunctionBuilder {
                 code_list.append(&mut self.gen_expr(*right, context)?);
                 code_list.push(OPCode::JumpTarget(continue_label));
                 code_list.push(OPCode::For(break_label));
-                code_list.push(OPCode::StoreLocal(self.add_local_name(&left.name)));
+                if left.len() == 1 {
+                    code_list.push(OPCode::StoreLocal(self.add_local_name(&left[0].name)));
+                } else {
+                    for (i, l) in left.iter().enumerate() {
+                        code_list.push(OPCode::Dup);
+                        code_list.push(OPCode::LoadConst(
+                            context.add_const(ConstlValue::Int(i.try_into().unwrap())),
+                        ));
+                        code_list.push(OPCode::GetItem);
+                        code_list.push(OPCode::StoreLocal(self.add_local_name(&l.name)));
+                    }
+                    code_list.push(OPCode::Pop);
+                }
                 code_list.append(&mut self.gen_stmt(Stmt::from(*body), context)?);
                 code_list.push(OPCode::Jump(continue_label));
                 code_list.push(OPCode::JumpTarget(break_label));
@@ -862,26 +874,62 @@ impl FunctionBuilder {
                     }
                 }
             }
-            StmtKind::Assign { left, right } => match left.kind.clone() {
-                ExprKind::Ident(ident) => {
-                    code_list.append(&mut self.gen_expr(*right, context)?);
-                    code_list.push(self.get_store(&ident.name, context));
+            StmtKind::Assign { left, right } => {
+                if left.len() == 1 {
+                    match left[0].kind.clone() {
+                        ExprKind::Ident(ident) => {
+                            code_list.append(&mut self.gen_expr(*right, context)?);
+                            code_list.push(self.get_store(&ident.name, context));
+                        }
+                        ExprKind::Member {
+                            table: _,
+                            property: _,
+                            kind,
+                        } => {
+                            code_list.append(&mut self.gen_expr(left[0].clone(), context)?);
+                            code_list.pop();
+                            code_list.append(&mut self.gen_expr(*right, context)?);
+                            code_list.push(match kind {
+                                MemberKind::Bracket => OPCode::SetItem,
+                                MemberKind::Dot | MemberKind::DoubleColon => OPCode::SetAttr,
+                            });
+                        }
+                        _ => return Err(SyntaxError::IllegalAst.into()),
+                    }
+                } else {
+                    let right_expr = self.gen_expr(*right, context)?;
+                    for (i, l) in left.iter().enumerate() {
+                        match &l.kind {
+                            ExprKind::Ident(ident) => {
+                                code_list.append(&mut right_expr.clone());
+                                code_list.push(OPCode::LoadConst(
+                                    context.add_const(ConstlValue::Int(i.try_into().unwrap())),
+                                ));
+                                code_list.push(OPCode::GetItem);
+                                code_list.push(self.get_store(&ident.name, context));
+                            }
+                            ExprKind::Member {
+                                table: _,
+                                property: _,
+                                kind,
+                            } => {
+                                code_list.append(&mut self.gen_expr(left[0].clone(), context)?);
+                                code_list.pop();
+                                code_list.append(&mut right_expr.clone());
+                                code_list.push(OPCode::LoadConst(
+                                    context.add_const(ConstlValue::Int(i.try_into().unwrap())),
+                                ));
+                                code_list.push(OPCode::GetItem);
+                                code_list.push(match kind {
+                                    MemberKind::Bracket => OPCode::SetItem,
+                                    MemberKind::Dot | MemberKind::DoubleColon => OPCode::SetAttr,
+                                });
+                            }
+                            _ => return Err(SyntaxError::IllegalAst.into()),
+                        }
+                    }
                 }
-                ExprKind::Member {
-                    table: _,
-                    property: _,
-                    kind,
-                } => {
-                    code_list.append(&mut self.gen_expr(*left, context)?);
-                    code_list.pop();
-                    code_list.append(&mut self.gen_expr(*right, context)?);
-                    code_list.push(match kind {
-                        MemberKind::Bracket => OPCode::SetItem,
-                        MemberKind::Dot | MemberKind::DoubleColon => OPCode::SetAttr,
-                    });
-                }
-                _ => return Err(SyntaxError::IllegalAst.into()),
-            },
+            }
             StmtKind::AssignOp {
                 operator,
                 left,

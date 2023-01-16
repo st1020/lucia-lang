@@ -47,7 +47,7 @@ pub enum StmtKind {
         body: Box<Block>,
     },
     For {
-        left: Box<Ident>,
+        left: Vec<Ident>,
         right: Box<Expr>,
         body: Box<Block>,
     },
@@ -67,7 +67,7 @@ pub enum StmtKind {
         kind: ImportKind,
     },
     Assign {
-        left: Box<Expr>,
+        left: Vec<Expr>,
         right: Box<Expr>,
     },
     AssignOp {
