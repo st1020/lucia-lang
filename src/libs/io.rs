@@ -8,17 +8,35 @@ pub fn libs(lvm: &mut Lvm) -> Table {
     let mut t = Table::new();
     t.set(
         &lvm.new_str_value("print".to_string()),
-        Value::ExtFunction(|args, lvm| {
-            check_arguments_num!(lvm, args, None, 1);
-            print!("{}", args.first().unwrap());
+        Value::ExtFunction(|args, _| {
+            match args.len() {
+                0 => (),
+                1 => print!("{}", args.first().unwrap()),
+                _ => print!(
+                    "{}",
+                    args.iter()
+                        .map(|x| x.to_string())
+                        .collect::<Vec<String>>()
+                        .join(" ")
+                ),
+            }
             Ok(Value::Null)
         }),
     );
     t.set(
         &lvm.new_str_value("println".to_string()),
-        Value::ExtFunction(|args, lvm| {
-            check_arguments_num!(lvm, args, None, 1);
-            println!("{}", args.first().unwrap());
+        Value::ExtFunction(|args, _| {
+            match args.len() {
+                0 => println!(),
+                1 => println!("{}", args.first().unwrap()),
+                _ => println!(
+                    "{}",
+                    args.iter()
+                        .map(|x| x.to_string())
+                        .collect::<Vec<String>>()
+                        .join(" ")
+                ),
+            }
             Ok(Value::Null)
         }),
     );
