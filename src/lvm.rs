@@ -853,6 +853,11 @@ impl Lvm {
     }
 
     #[inline]
+    pub fn new_userdata_value(&mut self, value: UserData) -> Value {
+        self.new_gc_value(GCObjectKind::UserData(value))
+    }
+
+    #[inline]
     pub fn new_closure_value(&mut self, value: Closure) -> Value {
         self.new_gc_value(GCObjectKind::Closure(value))
     }

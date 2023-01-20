@@ -2,7 +2,7 @@ use std::alloc::{dealloc, Layout};
 
 use crate::lvm::Lvm;
 use crate::objects::table::{Keys, Values};
-use crate::objects::{ExtClosure, Table, Value};
+use crate::objects::{Table, UserData, Value};
 use crate::{check_arguments_num, try_convert};
 
 pub fn libs(lvm: &mut Lvm) -> Table {
@@ -11,28 +11,25 @@ pub fn libs(lvm: &mut Lvm) -> Table {
             |args, lvm| {
                 check_arguments_num!(lvm, args, None, Eq(1));
                 let table = try_convert!(lvm, args[0], as_table, Table);
-                Ok(lvm.new_ext_closure_value(ExtClosure {
-                    upvalues: vec![
-                        Value::LightUserData(
-                            Box::into_raw(Box::new(table.$keys_or_values())) as *mut u8
-                        ),
-                        args[0], // prevent table being dealloc during GC
-                    ],
-                    func: |args, upvalues, lvm| {
-                        check_arguments_num!(lvm, args, None, Eq(0));
-                        let iter_userdata = upvalues[0].as_light_userdata().unwrap() as *mut $ty;
-                        let iter = unsafe { iter_userdata.as_mut().unwrap() };
-                        if let Some(v) = iter.next() {
-                            Ok(*v)
-                        } else {
-                            unsafe {
-                                iter_userdata.drop_in_place();
-                                dealloc(iter_userdata as *mut u8, Layout::new::<$ty>());
-                            }
-                            Ok(Value::Null)
-                        }
+                let mut userdata_table = Table::new();
+                userdata_table.set(&lvm.get_builtin_str("_marker"), args[0]);
+                userdata_table.set(
+                    &lvm.get_builtin_str("__call__"),
+                    Value::ExtFunction(|mut args, lvm| {
+                        check_arguments_num!(lvm, args, None, Eq(1));
+                        let t = try_convert!(lvm, args[0], as_userdata_mut, UserData);
+                        let iter = unsafe { (t.ptr as *mut $ty).as_mut().unwrap() };
+                        Ok(*iter.next().unwrap_or(&Value::Null))
+                    }),
+                );
+                Ok(lvm.new_userdata_value(UserData::new(
+                    Box::into_raw(Box::new(table.$keys_or_values())) as *mut u8,
+                    userdata_table,
+                    |userdata| unsafe {
+                        userdata.ptr.drop_in_place();
+                        dealloc(userdata.ptr as *mut u8, Layout::new::<$ty>());
                     },
-                }))
+                )))
             }
         };
     }
