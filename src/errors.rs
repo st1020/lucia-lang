@@ -1,5 +1,6 @@
 use std::fmt::Display;
 use std::num::{ParseFloatError, ParseIntError};
+use std::ops::{Bound, Range, RangeBounds, RangeFrom, RangeInclusive};
 use std::result;
 
 use thiserror::Error;
@@ -189,11 +190,57 @@ pub enum TypeError {
     #[error("call arguments error (required {required} arguments, but {given} was given)")]
     CallArgumentsError {
         value: Option<Box<Closure>>,
-        required: usize,
+        required: CallArgumentsErrorKind,
         given: usize,
     },
     #[error("build table error ({0} value can't be table key)")]
     BuildTableError(ValueType),
+}
+
+/// Kind of CallArgumentsError.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CallArgumentsErrorKind {
+    Eq(usize),
+    Range(Range<usize>),
+    RangeFrom(RangeFrom<usize>),
+    RangeInclusive(RangeInclusive<usize>),
+}
+
+impl RangeBounds<usize> for CallArgumentsErrorKind {
+    fn start_bound(&self) -> Bound<&usize> {
+        match self {
+            CallArgumentsErrorKind::Eq(v) => Bound::Included(v),
+            CallArgumentsErrorKind::Range(v) => v.start_bound(),
+            CallArgumentsErrorKind::RangeFrom(v) => v.start_bound(),
+            CallArgumentsErrorKind::RangeInclusive(v) => v.end_bound(),
+        }
+    }
+
+    fn end_bound(&self) -> Bound<&usize> {
+        match self {
+            CallArgumentsErrorKind::Eq(v) => Bound::Included(v),
+            CallArgumentsErrorKind::Range(v) => v.end_bound(),
+            CallArgumentsErrorKind::RangeFrom(v) => v.end_bound(),
+            CallArgumentsErrorKind::RangeInclusive(v) => v.end_bound(),
+        }
+    }
+}
+
+impl CallArgumentsErrorKind {
+    pub fn contains(&self, item: &usize) -> bool {
+        <Self as RangeBounds<usize>>::contains(self, item)
+    }
+}
+
+impl Display for CallArgumentsErrorKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CallArgumentsErrorKind::Eq(v) => write!(f, "{}", v),
+            CallArgumentsErrorKind::Range(v) => write!(f, "[{}, {})", v.start, v.end),
+            CallArgumentsErrorKind::RangeFrom(v) => write!(f, "at least {}", v.start),
+            CallArgumentsErrorKind::RangeInclusive(v) => write!(f, "[{}, {}]", v.start(), v.end()),
+        }
+    }
 }
 
 #[macro_export]
@@ -234,10 +281,10 @@ macro_rules! not_callable_error {
 
 #[macro_export]
 macro_rules! call_arguments_error {
-    ($value:expr, $require:expr, $give:expr) => {
+    ($value:expr, $require_ident:ident($require_value:expr), $give:expr) => {
         $crate::errors::BuiltinError::TypeError($crate::errors::TypeError::CallArgumentsError {
             value: $value,
-            required: $require,
+            required: $crate::errors::CallArgumentsErrorKind::$require_ident($require_value),
             given: $give,
         })
     };

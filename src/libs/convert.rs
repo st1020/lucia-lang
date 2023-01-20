@@ -7,7 +7,7 @@ pub fn libs(lvm: &mut Lvm) -> Table {
     t.set(
         &lvm.new_str_value("bool".to_string()),
         Value::ExtFunction(|args, lvm| {
-            check_arguments_num!(lvm, args, None, 1);
+            check_arguments_num!(lvm, args, None, Eq(1));
             Ok(Value::Bool(match args.first().unwrap() {
                 Value::Null => false,
                 Value::Bool(v) => *v,
@@ -22,7 +22,7 @@ pub fn libs(lvm: &mut Lvm) -> Table {
     t.set(
         &lvm.new_str_value("int".to_string()),
         Value::ExtFunction(|args, lvm| {
-            check_arguments_num!(lvm, args, None, 1);
+            check_arguments_num!(lvm, args, None, Eq(1));
             let arg1 = args.first().unwrap();
             macro_rules! return_convert_error {
                 () => {
@@ -55,7 +55,7 @@ pub fn libs(lvm: &mut Lvm) -> Table {
     t.set(
         &lvm.new_str_value("float".to_string()),
         Value::ExtFunction(|args, lvm| {
-            check_arguments_num!(lvm, args, None, 1);
+            check_arguments_num!(lvm, args, None, Eq(1));
             let arg1 = args.first().unwrap();
             macro_rules! return_convert_error {
                 () => {
@@ -88,7 +88,7 @@ pub fn libs(lvm: &mut Lvm) -> Table {
     t.set(
         &lvm.new_str_value("str".to_string()),
         Value::ExtFunction(|args, lvm| {
-            check_arguments_num!(lvm, args, None, 1);
+            check_arguments_num!(lvm, args, None, Eq(1));
             Ok(lvm.new_str_value(args.first().unwrap().to_string()))
         }),
     );

@@ -10,10 +10,17 @@ use crate::objects::Value;
 
 #[macro_export]
 macro_rules! check_arguments_num {
-    ($lvm:expr, $args:expr, $value:expr, $require:expr) => {
-        if $args.len() != $require {
+    ($lvm:expr, $args:expr, $value:expr, $require_ident:ident($require_value:expr)) => {
+        let required = $crate::errors::CallArgumentsErrorKind::$require_ident($require_value);
+        if !required.contains(&$args.len()) {
             $crate::return_error!(
-                $crate::call_arguments_error!($value, $require, $args.len()),
+                $crate::errors::BuiltinError::TypeError(
+                    $crate::errors::TypeError::CallArgumentsError {
+                        value: $value,
+                        required,
+                        given: $args.len(),
+                    }
+                ),
                 $lvm
             );
         }

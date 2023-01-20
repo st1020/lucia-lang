@@ -744,11 +744,19 @@ impl Lvm {
             let params_num = v.function.params.len();
             match args.len().cmp(&params_num) {
                 Ordering::Less => {
-                    return_error!(call_arguments_error!(
-                        Some(Box::new(v.clone())),
-                        params_num,
-                        args.len()
-                    ));
+                    if v.function.variadic.is_none() {
+                        return_error!(call_arguments_error!(
+                            Some(Box::new(v.clone())),
+                            Eq(params_num),
+                            args.len()
+                        ));
+                    } else {
+                        return_error!(call_arguments_error!(
+                            Some(Box::new(v.clone())),
+                            RangeFrom(params_num..),
+                            args.len()
+                        ));
+                    }
                 }
                 Ordering::Equal => {
                     v.variables[..params_num].copy_from_slice(&args[..]);
@@ -760,7 +768,7 @@ impl Lvm {
                     if v.function.variadic.is_none() {
                         return_error!(call_arguments_error!(
                             Some(Box::new(v.clone())),
-                            params_num,
+                            Eq(params_num),
                             args.len()
                         ));
                     } else {
