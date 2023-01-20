@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::errors::{Error, RuntimeError, RuntimeErrorKind};
 use crate::objects::{Value, ValueType};
-use crate::{as_table, check_arguments_num, return_error, type_convert_error};
+use crate::{as_table, check_arguments_num, error, return_error, type_convert_error};
 
 pub fn builtin_variables() -> HashMap<String, Value> {
     let mut t = HashMap::new();
@@ -38,6 +38,22 @@ pub fn builtin_variables() -> HashMap<String, Value> {
                 kind: RuntimeErrorKind::UserPanic(*args.first().unwrap()),
                 traceback: lvm.traceback(),
             }))
+        }),
+    );
+    t.insert(
+        "assert".to_string(),
+        Value::ExtFunction(|args, lvm| {
+            check_arguments_num!(lvm, args, None, RangeInclusive(1..=2));
+            let value = args[0];
+            if value.is_error() || !(bool::from(value)) {
+                if args.len() == 2 {
+                    Ok(error!(args[1]))
+                } else {
+                    Ok(error!(lvm.new_str_value("assertion_error".to_string())))
+                }
+            } else {
+                Ok(value)
+            }
         }),
     );
     t.insert(

@@ -16,13 +16,14 @@ use crate::{build_table_error, call_arguments_error, not_callable_error, operato
 #[macro_export]
 macro_rules! error {
     ($value:expr) => {{
-        if let $crate::objects::Value::GCObject(v) = $value {
+        let t = $value;
+        if let $crate::objects::Value::GCObject(v) = t {
             #[allow(unused_unsafe)]
             unsafe {
                 (*v).is_error = true
             }
         }
-        $value
+        t
     }};
 }
 
