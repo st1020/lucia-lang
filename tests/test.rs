@@ -50,7 +50,6 @@ fn variadic() -> errors::Result<()> {
 fn import() -> errors::Result<()> {
     let input = "
     import std::io::{input, println}
-    import std::convert::{bool, int}
     println(bool(int(input())))
     ";
     lvm::Lvm::from(codegen::Program::try_from(input)?).run()?;
@@ -60,9 +59,7 @@ fn import() -> errors::Result<()> {
 #[test]
 fn for_table() -> errors::Result<()> {
     let input = "
-    import std::io::{input, println}
-    import std::convert::{bool, int}
-    // println(bool(int(input())))
+    import std::io::{println}
     import std::table::{keys}
     t = {1: 0, 2: 0}
     for i in keys(t) {

@@ -60,5 +60,59 @@ pub fn builtin_variables() -> HashMap<String, Value> {
             }
         }),
     );
+    t.insert(
+        "bool".to_string(),
+        Value::ExtFunction(|args, lvm| {
+            check_arguments_num!(lvm, args, None, Eq(1));
+            if let Some(v) = as_table!(args[0]) {
+                if let Some(t) = v.get(&lvm.get_builtin_str("__bool__")) {
+                    return lvm.call(t, vec![args[0]]);
+                }
+            }
+            Ok(Value::Bool(args[0].into()))
+        }),
+    );
+    t.insert(
+        "int".to_string(),
+        Value::ExtFunction(|args, lvm| {
+            check_arguments_num!(lvm, args, None, Eq(1));
+            if let Some(v) = as_table!(args[0]) {
+                if let Some(t) = v.get(&lvm.get_builtin_str("__int__")) {
+                    return lvm.call(t, vec![args[0]]);
+                }
+            }
+            Ok(match args[0].try_into() {
+                Ok(v) => Value::Int(v),
+                Err(v) => v.into_table_value(lvm),
+            })
+        }),
+    );
+    t.insert(
+        "float".to_string(),
+        Value::ExtFunction(|args, lvm| {
+            check_arguments_num!(lvm, args, None, Eq(1));
+            if let Some(v) = as_table!(args[0]) {
+                if let Some(t) = v.get(&lvm.get_builtin_str("__float__")) {
+                    return lvm.call(t, vec![args[0]]);
+                }
+            }
+            Ok(match args[0].try_into() {
+                Ok(v) => Value::Float(v),
+                Err(v) => v.into_table_value(lvm),
+            })
+        }),
+    );
+    t.insert(
+        "str".to_string(),
+        Value::ExtFunction(|args, lvm| {
+            check_arguments_num!(lvm, args, None, Eq(1));
+            if let Some(v) = as_table!(args[0]) {
+                if let Some(t) = v.get(&lvm.get_builtin_str("__str__")) {
+                    return lvm.call(t, vec![args[0]]);
+                }
+            }
+            Ok(lvm.new_str_value(args[0].into()))
+        }),
+    );
     t
 }

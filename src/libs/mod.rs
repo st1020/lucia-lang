@@ -1,5 +1,4 @@
 pub mod builtin;
-pub mod convert;
 pub mod io;
 pub mod table;
 
@@ -35,7 +34,6 @@ pub fn std_libs(lvm: &mut Lvm) -> HashMap<String, Value> {
             std_libs.insert(String::from($name), lvm.new_table_value(t));
         };
     }
-    add_std_module!("std::convert", convert::libs);
     add_std_module!("std::io", io::libs);
     add_std_module!("std::table", table::libs);
     std_libs

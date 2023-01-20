@@ -6,8 +6,9 @@ pub mod userdata;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
-use crate::errors::Result;
+use crate::errors::{BuiltinError, Result};
 use crate::lvm::Lvm;
+use crate::type_convert_error;
 
 pub use self::closure::Closure;
 pub use self::ext_closure::{ExtClosure, ExtClosureFunc};
@@ -224,6 +225,83 @@ impl_value!(
     as_ext_closure,
     as_ext_closure_mut
 );
+
+impl From<Value> for String {
+    fn from(value: Value) -> Self {
+        value.to_string()
+    }
+}
+
+impl From<Value> for bool {
+    fn from(value: Value) -> Self {
+        match value {
+            Value::Null => false,
+            Value::Bool(v) => v,
+            Value::Int(v) => v != 0,
+            Value::Float(v) => v != 0.0,
+            Value::ExtFunction(_) => true,
+            Value::LightUserData(_) => true,
+            Value::GCObject(_) => true,
+        }
+    }
+}
+
+impl TryFrom<Value> for i64 {
+    type Error = BuiltinError;
+
+    fn try_from(value: Value) -> std::result::Result<Self, Self::Error> {
+        match value {
+            Value::Null => Ok(0),
+            Value::Bool(v) => Ok(i64::from(v)),
+            Value::Int(v) => Ok(v),
+            Value::Float(v) => Ok(v as i64),
+            Value::ExtFunction(_) => {
+                Err(type_convert_error!(ValueType::ExtFunction, ValueType::Int))
+            }
+            Value::LightUserData(_) => Err(type_convert_error!(
+                ValueType::LightUserData,
+                ValueType::Int
+            )),
+            Value::GCObject(_) => {
+                if let Some(v) = value.as_str() {
+                    v.parse()
+                        .map_err(|_| type_convert_error!(ValueType::Str, ValueType::Int))
+                } else {
+                    Err(type_convert_error!(value.value_type(), ValueType::Int))
+                }
+            }
+        }
+    }
+}
+
+impl TryFrom<Value> for f64 {
+    type Error = BuiltinError;
+
+    fn try_from(value: Value) -> std::result::Result<Self, Self::Error> {
+        match value {
+            Value::Null => Ok(0.0),
+            Value::Bool(v) => Ok(if v { 1.0 } else { 0.0 }),
+            Value::Int(v) => Ok(v as f64),
+            Value::Float(v) => Ok(v),
+            Value::ExtFunction(_) => Err(type_convert_error!(
+                ValueType::ExtFunction,
+                ValueType::Float
+            )),
+            Value::LightUserData(_) => Err(type_convert_error!(
+                ValueType::LightUserData,
+                ValueType::Float
+            )),
+            Value::GCObject(_) => {
+                if let Some(v) = value.as_str() {
+                    v.parse()
+                        .map_err(|_| type_convert_error!(ValueType::Str, ValueType::Float))
+                } else {
+                    Err(type_convert_error!(value.value_type(), ValueType::Float))
+                }
+            }
+        }
+    }
+}
 
 impl Value {
     pub fn value_type(&self) -> ValueType {
