@@ -212,7 +212,7 @@ impl RangeBounds<usize> for CallArgumentsErrorKind {
             CallArgumentsErrorKind::Eq(v) => Bound::Included(v),
             CallArgumentsErrorKind::Range(v) => v.start_bound(),
             CallArgumentsErrorKind::RangeFrom(v) => v.start_bound(),
-            CallArgumentsErrorKind::RangeInclusive(v) => v.end_bound(),
+            CallArgumentsErrorKind::RangeInclusive(v) => v.start_bound(),
         }
     }
 
