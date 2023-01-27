@@ -2,7 +2,7 @@ use std::str::Chars;
 
 use unicode_xid;
 
-use crate::errors::{Result, SyntaxError};
+use crate::errors::{EscapeError, Result, SyntaxError};
 
 use self::LiteralKind::*;
 use self::TokenKind::*;
@@ -390,6 +390,12 @@ impl Cursor<'_> {
                 Whitespace
             }
 
+            // Raw identifier, raw string literal or identifier.
+            'r' => match self.first() {
+                c @ ('"' | '\'') => self.string(c, true),
+                _ => self.ident_or_reserved_word('r'),
+            },
+
             // Identifier (this should be checked after other variant that can
             // start as identifier).
             c if is_id_start(c) => self.ident_or_reserved_word(c),
@@ -398,7 +404,7 @@ impl Cursor<'_> {
             c @ '0'..='9' => self.number(c),
 
             // String literal.
-            c @ ('"' | '\'') => self.string(c),
+            c @ ('"' | '\'') => self.string(c, false),
 
             // Two-char tokens.
             ':' if self.first() == ':' => {
@@ -640,38 +646,122 @@ impl Cursor<'_> {
         }
     }
 
-    fn string(&mut self, quoted: char) -> TokenKind {
+    fn string(&mut self, quoted: char, is_raw: bool) -> TokenKind {
+        if is_raw {
+            debug_assert!(self.prev() == 'r');
+            self.bump();
+        }
         debug_assert!(self.prev() == '"' || self.prev() == '\'');
         let mut value = String::new();
         loop {
             if let Some(c) = self.bump() {
-                if c == quoted {
-                    break;
-                }
-                match c {
-                    '\\' => {
-                        let c = match self.first() {
-                            '"' => '"',
-                            'n' => '\n',
-                            'r' => '\r',
-                            't' => '\t',
-                            '\\' => '\\',
-                            '\'' => '\'',
-                            '0' => '\0',
-                            c => {
-                                value.push('\\');
-                                c
-                            }
-                        };
-                        value.push(c);
-                        self.bump();
-                    }
-                    _ => value.push(c),
+                let t = match c {
+                    _ if c == quoted => break,
+                    '\\' if !is_raw => match self.first() {
+                        '\n' => {
+                            self.bump();
+                            continue;
+                        }
+                        _ => self.scan_escape(),
+                    },
+                    '\r' => Err(EscapeError::BareCarriageReturn),
+                    _ => Ok(c),
+                };
+                match t {
+                    Ok(c) => value.push(c),
+                    Err(e) => return Literal(Str(Err(SyntaxError::EscapeError(e).into()))),
                 }
             } else {
                 return Literal(Str(Err(SyntaxError::UnterminatedStringError.into())));
             }
         }
         Literal(Str(Ok(value)))
+    }
+
+    pub fn scan_escape(&mut self) -> std::result::Result<char, EscapeError> {
+        debug_assert!(self.prev() == '\\');
+        // Previous character was '\\', unescape what follows.
+        let res = match self.bump().unwrap_or(EOF_CHAR) {
+            '"' => '"',
+            'n' => '\n',
+            'r' => '\r',
+            't' => '\t',
+            '\\' => '\\',
+            '\'' => '\'',
+            '0' => '\0',
+
+            'x' => {
+                // Parse hexadecimal character code.
+
+                let hi = self.bump().ok_or(EscapeError::TooShortHexEscape)?;
+                let hi = hi.to_digit(16).ok_or(EscapeError::InvalidCharInHexEscape)?;
+
+                let lo = self.bump().ok_or(EscapeError::TooShortHexEscape)?;
+                let lo = lo.to_digit(16).ok_or(EscapeError::InvalidCharInHexEscape)?;
+
+                let value = hi * 16 + lo;
+
+                // Verify that it is within ASCII range.
+                if !(value <= 0x7F) {
+                    return Err(EscapeError::OutOfRangeHexEscape);
+                }
+                let value = value as u8;
+
+                value as char
+            }
+
+            'u' => {
+                // We've parsed '\u', now we have to parse '{..}'.
+
+                if self.bump() != Some('{') {
+                    return Err(EscapeError::NoBraceInUnicodeEscape);
+                }
+
+                // First character must be a hexadecimal digit.
+                let mut n_digits = 1;
+                let mut value: u32 = match self.bump().ok_or(EscapeError::UnclosedUnicodeEscape)? {
+                    '_' => return Err(EscapeError::LeadingUnderscoreUnicodeEscape),
+                    '}' => return Err(EscapeError::EmptyUnicodeEscape),
+                    c => c
+                        .to_digit(16)
+                        .ok_or(EscapeError::InvalidCharInUnicodeEscape)?,
+                };
+
+                // First character is valid, now parse the rest of the number
+                // and closing brace.
+                loop {
+                    match self.bump() {
+                        None => return Err(EscapeError::UnclosedUnicodeEscape),
+                        Some('_') => continue,
+                        Some('}') => {
+                            if n_digits > 6 {
+                                return Err(EscapeError::OverlongUnicodeEscape);
+                            }
+
+                            break std::char::from_u32(value).ok_or_else(|| {
+                                if value > 0x10FFFF {
+                                    EscapeError::OutOfRangeUnicodeEscape
+                                } else {
+                                    EscapeError::LoneSurrogateUnicodeEscape
+                                }
+                            })?;
+                        }
+                        Some(c) => {
+                            let digit: u32 = c
+                                .to_digit(16)
+                                .ok_or(EscapeError::InvalidCharInUnicodeEscape)?;
+                            n_digits += 1;
+                            if n_digits > 6 {
+                                // Stop updating value since we're sure that it's incorrect already.
+                                continue;
+                            }
+                            value = value * 16 + digit;
+                        }
+                    };
+                }
+            }
+            _ => return Err(EscapeError::InvalidEscape),
+        };
+        Ok(res)
     }
 }

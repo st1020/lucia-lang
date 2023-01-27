@@ -24,17 +24,19 @@ pub enum Error {
 /// Kind of SyntaxError.
 #[derive(Error, Debug, Clone, PartialEq)]
 pub enum SyntaxError {
-    /// lexer error
+    // lexer error
     #[error("parse int error ({0})")]
     ParseIntError(#[from] ParseIntError),
-    #[error("parse float error  ({0})")]
+    #[error("parse float error ({0})")]
     ParseFloatError(#[from] ParseFloatError),
     #[error("number format error")]
     NumberFormatError,
     #[error("unterminated string error")]
     UnterminatedStringError,
+    #[error("escape error ({0})")]
+    EscapeError(#[from] EscapeError),
 
-    /// parser error
+    // parser error
     #[error("unexpect token (expected {expected:?}, found {token:?})")]
     UnexpectToken {
         token: Box<Token>,
@@ -45,7 +47,7 @@ pub enum SyntaxError {
     #[error("parse assign statement error")]
     ParseAssignStmtError,
 
-    /// codegen error
+    // codegen error
     #[error("illegal ast")]
     IllegalAst,
     #[error("break outside loop")]
@@ -66,6 +68,45 @@ pub enum ExpectedToken {
     AtomExpr,
     FuncExpr,
     Ident,
+}
+
+/// Errors and warnings that can occur during string unescaping.
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
+pub enum EscapeError {
+    /// Invalid escape character (e.g. '\z').
+    InvalidEscape,
+    /// Raw '\r' encountered.
+    BareCarriageReturn,
+
+    /// Numeric character escape is too short (e.g. '\x1').
+    TooShortHexEscape,
+    /// Invalid character in numeric escape (e.g. '\xz')
+    InvalidCharInHexEscape,
+    /// Character code in numeric escape is non-ascii (e.g. '\xFF').
+    OutOfRangeHexEscape,
+
+    /// '\u' not followed by '{'.
+    NoBraceInUnicodeEscape,
+    /// Non-hexadecimal value in '\u{..}'.
+    InvalidCharInUnicodeEscape,
+    /// '\u{}'
+    EmptyUnicodeEscape,
+    /// No closing brace in '\u{..}', e.g. '\u{12'.
+    UnclosedUnicodeEscape,
+    /// '\u{_12}'
+    LeadingUnderscoreUnicodeEscape,
+    /// More than 6 characters in '\u{..}', e.g. '\u{10FFFF_FF}'
+    OverlongUnicodeEscape,
+    /// Invalid in-bound unicode character code, e.g. '\u{DFFF}'.
+    LoneSurrogateUnicodeEscape,
+    /// Out of bounds unicode character code, e.g. '\u{FFFFFF}'.
+    OutOfRangeUnicodeEscape,
+}
+
+impl Display for EscapeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 /// RuntimeError.
