@@ -130,5 +130,17 @@ pub fn builtin_variables() -> HashMap<String, Value> {
             Ok(lvm.new_str_value(args[0].into()))
         }),
     );
+    t.insert(
+        "repr".to_string(),
+        Value::ExtFunction(|args, lvm| {
+            check_arguments_num!(lvm, args, None, Eq(1));
+            if let Some(v) = as_table!(args[0]) {
+                if let Some(t) = v.get(&lvm.get_builtin_str("__repr__")) {
+                    return lvm.call(t, vec![args[0]]);
+                }
+            }
+            Ok(lvm.new_str_value(args[0].repr()))
+        }),
+    );
     t
 }

@@ -572,10 +572,7 @@ impl Frame {
                 OPCode::Is => {
                     let arg2 = try_stack!(self.operate_stack.pop());
                     let arg1 = try_stack!(self.operate_stack.pop());
-                    self.operate_stack.push(Value::Bool(match (arg1, arg2) {
-                        (Value::GCObject(v1), Value::GCObject(v2)) => v1 == v2,
-                        _ => arg1 == arg2,
-                    }));
+                    self.operate_stack.push(Value::Bool(arg1.is(&arg2)));
                 }
                 OPCode::For(JumpTarget(i)) => {
                     let return_value =

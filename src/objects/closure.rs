@@ -1,7 +1,7 @@
 use core::ptr::NonNull;
 use std::fmt::Display;
 
-use crate::codegen::Function;
+use crate::codegen::{Function, FunctionKind};
 
 use super::{GCObject, Value};
 
@@ -24,7 +24,11 @@ impl Eq for Closure {}
 
 impl Display for Closure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "function(closure)")
+        match self.function.kind {
+            FunctionKind::Funciton => write!(f, "<function>"),
+            FunctionKind::Closure => write!(f, "<function(closure)>"),
+            FunctionKind::Do => write!(f, "<function(do)>"),
+        }
     }
 }
 

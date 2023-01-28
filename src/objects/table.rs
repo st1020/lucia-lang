@@ -115,6 +115,35 @@ impl Table {
             self.mapping.remove(key);
         }
     }
+
+    pub(crate) fn repr_table(&self, t: &Value) -> String {
+        let temp = self
+            .iter()
+            .map(|(k, v)| {
+                format!(
+                    "{}: {}",
+                    k.repr(),
+                    if v.is(t) {
+                        "<table>".to_string()
+                    } else if let Some(v_t) = v.as_table() {
+                        v_t.repr_table(t)
+                    } else {
+                        v.repr()
+                    },
+                )
+            })
+            .collect::<Vec<String>>()
+            .join(", ");
+        if let Some(base) = self.base {
+            if temp.is_empty() {
+                format!("{{\"__base__\": {}}}", base.repr())
+            } else {
+                format!("{{{}, \"__base__\": {}}}", temp, base.repr())
+            }
+        } else {
+            format!("{{{}}}", temp)
+        }
+    }
 }
 
 impl Default for Table {
@@ -125,20 +154,7 @@ impl Default for Table {
 
 impl Display for Table {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let t = self
-            .iter()
-            .map(|(k, v)| format!("{}: {}", k, v))
-            .collect::<Vec<String>>()
-            .join(", ");
-        if let Some(base) = self.base {
-            if t.is_empty() {
-                write!(f, "{{__base__: {}}}", base)
-            } else {
-                write!(f, "{{{}, __base__: {}}}", t, base)
-            }
-        } else {
-            write!(f, "{{{}}}", t)
-        }
+        write!(f, "<table>")
     }
 }
 

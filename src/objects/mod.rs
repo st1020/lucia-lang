@@ -42,9 +42,7 @@ impl Debug for Value {
             Self::Float(arg0) => f.debug_tuple("Float").field(arg0).finish(),
             Self::ExtFunction(_) => f.debug_tuple("ExtFunction").finish(),
             Self::LightUserData(_) => f.debug_tuple("LightUserData").finish(),
-            Self::GCObject(arg0) => unsafe {
-                f.debug_tuple("GCObject").field(&(**arg0).kind).finish()
-            },
+            Self::GCObject(arg0) => unsafe { write!(f, "{:?}", (**arg0).kind) },
         }
     }
 }
@@ -108,8 +106,8 @@ impl Display for Value {
             Value::Bool(v) => write!(f, "{}", if *v { "true" } else { "false" }),
             Value::Int(v) => write!(f, "{}", v),
             Value::Float(v) => write!(f, "{}", v),
-            Value::ExtFunction(_) => write!(f, "function(ext_function)"),
-            Value::LightUserData(_) => write!(f, "userdata"),
+            Value::ExtFunction(_) => write!(f, "<function(ext_function)>"),
+            Value::LightUserData(_) => write!(f, "<userdata>"),
             Value::GCObject(v) => unsafe { write!(f, "{}", **v) },
         }
     }
@@ -329,6 +327,23 @@ impl Value {
         match self {
             Value::GCObject(v) => unsafe { (**v).is_error },
             _ => false,
+        }
+    }
+
+    pub fn is(&self, other: &Value) -> bool {
+        match (self, other) {
+            (Value::GCObject(v1), Value::GCObject(v2)) => v1 == v2,
+            _ => self == other,
+        }
+    }
+
+    pub fn repr(&self) -> String {
+        if let Some(s) = self.as_str() {
+            format!("\"{}\"", s.escape_debug())
+        } else if let Some(t) = self.as_table() {
+            t.repr_table(self)
+        } else {
+            self.to_string()
         }
     }
 }

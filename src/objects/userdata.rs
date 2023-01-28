@@ -28,7 +28,7 @@ impl Eq for UserData {}
 
 impl Display for UserData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "userdata")
+        write!(f, "<userdata>")
     }
 }
 
