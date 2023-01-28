@@ -702,7 +702,7 @@ impl Cursor<'_> {
                 let value = hi * 16 + lo;
 
                 // Verify that it is within ASCII range.
-                if !(value <= 0x7F) {
+                if value > 0x7F {
                     return Err(EscapeError::OutOfRangeHexEscape);
                 }
                 let value = value as u8;
@@ -738,7 +738,7 @@ impl Cursor<'_> {
                                 return Err(EscapeError::OverlongUnicodeEscape);
                             }
 
-                            break std::char::from_u32(value).ok_or_else(|| {
+                            break std::char::from_u32(value).ok_or({
                                 if value > 0x10FFFF {
                                     EscapeError::OutOfRangeUnicodeEscape
                                 } else {
