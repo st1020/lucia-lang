@@ -33,6 +33,22 @@ fn temp() -> errors::Result<()> {
 }
 
 #[test]
+fn tail_call() -> errors::Result<()> {
+    let input = "
+    global f
+    f = fn (n, total) {
+        if n == 1 {
+            return total
+        }
+        return f(n - 1, n + total)
+    }
+    return f(1_000_000, 1)
+    ";
+    lvm::Lvm::from(codegen::Program::try_from(input)?).run()?;
+    Ok(())
+}
+
+#[test]
 fn variadic() -> errors::Result<()> {
     let input = "
     import std::io::{println}
