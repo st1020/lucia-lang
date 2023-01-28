@@ -263,7 +263,7 @@ impl Frame {
             }};
         }
 
-        let closure = unsafe {
+        let mut closure = unsafe {
             match &mut self.closure.as_mut().kind {
                 GCObjectKind::Closure(v) => v,
                 _ => panic!("unexpect error"),
@@ -652,6 +652,44 @@ impl Frame {
                         return Err(throw_error!(arg1));
                     }
                 }
+                OPCode::ReturnCall(i) => {
+                    let mut args = self.operate_stack.split_off(self.operate_stack.len() - i);
+                    let mut callee = try_stack!(self.operate_stack.pop());
+
+                    if let Some(t) = as_table!(callee) {
+                        args.insert(0, callee);
+                        callee = match t.get(&lvm.get_builtin_str("__call__")) {
+                            Some(v) => v,
+                            None => return_error!(not_callable_error!(callee)),
+                        };
+                    }
+
+                    if let Some(f) = callee.as_ext_function() {
+                        return f(args, lvm);
+                    } else if let Some(c) = callee.as_ext_closure_mut() {
+                        return (c.func)(args, &mut c.upvalues, lvm);
+                    } else if let Some(v) = callee.clone().as_closure_mut() {
+                        if let Err(e) = set_closure_args(lvm, v, args) {
+                            return_error!(e);
+                        }
+
+                        self.closure = match callee {
+                            Value::GCObject(gc_obj) => NonNull::new(gc_obj).unwrap(),
+                            _ => panic!("unexpect error"),
+                        };
+                        closure = unsafe {
+                            match &mut self.closure.as_mut().kind {
+                                GCObjectKind::Closure(v) => v,
+                                _ => panic!("unexpect error"),
+                            }
+                        };
+                        self.operate_stack = Vec::with_capacity(v.function.stack_size);
+                        self.pc = 0;
+                        continue;
+                    } else {
+                        return_error!(not_callable_error!(callee));
+                    }
+                }
                 OPCode::JumpTarget(_) => {
                     return Err(program_error!(ProgramError::UnexpectCodeError(
                         code.clone()
@@ -719,6 +757,7 @@ impl Lvm {
         self.call(callee, Vec::new())
     }
 
+    #[inline]
     pub fn call(&mut self, mut callee: Value, mut args: Vec<Value>) -> Result<Value> {
         macro_rules! return_error {
             ($value:expr) => {
@@ -739,42 +778,8 @@ impl Lvm {
         } else if let Some(c) = callee.as_ext_closure_mut() {
             (c.func)(args, &mut c.upvalues, self)
         } else if let Some(v) = callee.clone().as_closure_mut() {
-            let params_num = v.function.params.len();
-            match args.len().cmp(&params_num) {
-                Ordering::Less => {
-                    if v.function.variadic.is_none() {
-                        return_error!(call_arguments_error!(
-                            Some(Box::new(v.clone())),
-                            Eq(params_num),
-                            args.len()
-                        ));
-                    } else {
-                        return_error!(call_arguments_error!(
-                            Some(Box::new(v.clone())),
-                            RangeFrom(params_num..),
-                            args.len()
-                        ));
-                    }
-                }
-                Ordering::Equal => {
-                    v.variables[..params_num].copy_from_slice(&args[..]);
-                    if v.function.variadic.is_some() {
-                        v.variables[params_num] = self.new_table_value(Table::new());
-                    }
-                }
-                Ordering::Greater => {
-                    if v.function.variadic.is_none() {
-                        return_error!(call_arguments_error!(
-                            Some(Box::new(v.clone())),
-                            Eq(params_num),
-                            args.len()
-                        ));
-                    } else {
-                        let t = args.split_off(params_num);
-                        v.variables[..params_num].copy_from_slice(&args[..]);
-                        v.variables[params_num] = self.new_table_value(t.into());
-                    }
-                }
+            if let Err(e) = set_closure_args(self, v, args) {
+                return_error!(e);
             }
 
             let current_frame = self.current_frame;
@@ -988,4 +993,49 @@ impl From<Program> for Lvm {
         lvm.modules.push(program);
         lvm
     }
+}
+
+fn set_closure_args(
+    lvm: &mut Lvm,
+    v: &mut Closure,
+    mut args: Vec<Value>,
+) -> std::result::Result<(), BuiltinError> {
+    let params_num = v.function.params.len();
+    match args.len().cmp(&params_num) {
+        Ordering::Less => {
+            if v.function.variadic.is_none() {
+                return Err(call_arguments_error!(
+                    Some(Box::new(v.clone())),
+                    Eq(params_num),
+                    args.len()
+                ));
+            } else {
+                return Err(call_arguments_error!(
+                    Some(Box::new(v.clone())),
+                    RangeFrom(params_num..),
+                    args.len()
+                ));
+            }
+        }
+        Ordering::Equal => {
+            v.variables[..params_num].copy_from_slice(&args[..]);
+            if v.function.variadic.is_some() {
+                v.variables[params_num] = lvm.new_table_value(Table::new());
+            }
+        }
+        Ordering::Greater => {
+            if v.function.variadic.is_none() {
+                return Err(call_arguments_error!(
+                    Some(Box::new(v.clone())),
+                    Eq(params_num),
+                    args.len()
+                ));
+            } else {
+                let t = args.split_off(params_num);
+                v.variables[..params_num].copy_from_slice(&args[..]);
+                v.variables[params_num] = lvm.new_table_value(t.into());
+            }
+        }
+    }
+    Ok(())
 }

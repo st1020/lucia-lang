@@ -134,6 +134,8 @@ pub enum OPCode {
     Return,
     /// Returns with TOS as a error.
     Throw,
+    /// Same as "Call(usize); Return;", this is for tail call optimization.
+    ReturnCall(usize),
 
     /// A jump target, only used during code generation.
     JumpTarget(JumpTarget),
@@ -281,6 +283,7 @@ fn get_stack_size(code: &Vec<OPCode>, mut offset: usize, init_size: usize) -> us
             OPCode::Call(i) => t = t - i + 1,
             OPCode::TryCall(i) => t = t - i + 1,
             OPCode::Return | OPCode::Throw => break,
+            OPCode::ReturnCall(i) => t = t - i + 1,
             OPCode::JumpTarget(_) => panic!(),
         }
         if t > stack_size {
@@ -829,8 +832,22 @@ impl FunctionBuilder {
                 if self.kind == FunctionKind::Do {
                     return Err(SyntaxError::ReturnOutsideFunction.into());
                 }
-                code_list.append(&mut self.gen_expr(*argument, context)?);
-                code_list.push(OPCode::Return);
+                if let ExprKind::Call {
+                    callee: _,
+                    arguments: _,
+                    propagating_error,
+                } = argument.kind.clone()
+                {
+                    code_list.append(&mut self.gen_expr(*argument, context)?);
+                    if propagating_error {
+                        code_list.push(OPCode::Return);
+                    } else if let OPCode::Call(i) = code_list.pop().unwrap() {
+                        code_list.push(OPCode::ReturnCall(i));
+                    }
+                } else {
+                    code_list.append(&mut self.gen_expr(*argument, context)?);
+                    code_list.push(OPCode::Return);
+                }
             }
             StmtKind::Throw { argument } => {
                 if self.kind == FunctionKind::Do {
