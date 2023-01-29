@@ -607,13 +607,7 @@ impl FunctionBuilder {
             }
             ExprKind::Table { properties } => {
                 let temp = properties.len();
-                for TableProperty {
-                    key,
-                    value,
-                    start: _,
-                    end: _,
-                } in properties
-                {
+                for TableProperty { key, value, .. } in properties {
                     code_list.append(&mut self.gen_expr(*key, context)?);
                     code_list.append(&mut self.gen_expr(*value, context)?);
                 }
@@ -748,6 +742,31 @@ impl FunctionBuilder {
 
     fn gen_stmt(&mut self, ast_node: Stmt, context: &mut Context) -> Result<Vec<OPCode>> {
         let mut code_list = Vec::new();
+        macro_rules! gen_expr_member_without_get {
+            ($table:expr, $property:expr, $kind:expr, $safe:expr) => {{
+                if $safe {
+                    return Err(SyntaxError::IllegalAst.into());
+                }
+                code_list.append(&mut self.gen_expr(*$table, context)?);
+                match $kind {
+                    MemberKind::Bracket => {
+                        code_list.append(&mut self.gen_expr(*$property, context)?);
+                        OPCode::GetItem
+                    }
+                    MemberKind::Dot | MemberKind::DoubleColon => {
+                        match $property.kind {
+                            ExprKind::Ident(ident) => {
+                                code_list.push(OPCode::LoadConst(
+                                    context.add_const(ConstlValue::Str(ident.name)),
+                                ));
+                            }
+                            _ => return Err(SyntaxError::IllegalAst.into()),
+                        }
+                        OPCode::GetAttr
+                    }
+                }
+            }};
+        }
         match ast_node.kind {
             StmtKind::If {
                 test,
@@ -860,9 +879,7 @@ impl FunctionBuilder {
                     return Err(SyntaxError::ReturnOutsideFunction.into());
                 }
                 if let ExprKind::Call {
-                    callee: _,
-                    arguments: _,
-                    propagating_error,
+                    propagating_error, ..
                 } = argument.kind.clone()
                 {
                     code_list.append(&mut self.gen_expr(*argument, context)?);
@@ -927,16 +944,12 @@ impl FunctionBuilder {
                             code_list.push(self.get_store(&ident.name, context));
                         }
                         ExprKind::Member {
-                            table: _,
-                            property: _,
+                            table,
+                            property,
                             kind,
                             safe,
                         } => {
-                            if safe {
-                                return Err(SyntaxError::IllegalAst.into());
-                            }
-                            code_list.append(&mut self.gen_expr(left[0].clone(), context)?);
-                            code_list.pop();
+                            gen_expr_member_without_get!(table, property, kind, safe);
                             code_list.append(&mut self.gen_expr(*right, context)?);
                             code_list.push(match kind {
                                 MemberKind::Bracket => OPCode::SetItem,
@@ -958,16 +971,17 @@ impl FunctionBuilder {
                                 code_list.push(self.get_store(&ident.name, context));
                             }
                             ExprKind::Member {
-                                table: _,
-                                property: _,
+                                table,
+                                property,
                                 kind,
                                 safe,
                             } => {
-                                if *safe {
-                                    return Err(SyntaxError::IllegalAst.into());
-                                }
-                                code_list.append(&mut self.gen_expr(left[0].clone(), context)?);
-                                code_list.pop();
+                                gen_expr_member_without_get!(
+                                    table.clone(),
+                                    property.clone(),
+                                    *kind,
+                                    *safe
+                                );
                                 code_list.append(&mut right_expr.clone());
                                 code_list.push(OPCode::LoadConst(
                                     context.add_const(ConstlValue::Int(i.try_into().unwrap())),
@@ -995,19 +1009,12 @@ impl FunctionBuilder {
                     code_list.push(self.get_store(&ident.name, context));
                 }
                 ExprKind::Member {
-                    table: _,
-                    property: _,
+                    table,
+                    property,
                     kind,
                     safe,
                 } => {
-                    if safe {
-                        return Err(SyntaxError::IllegalAst.into());
-                    }
-                    code_list.append(&mut self.gen_expr(*left, context)?);
-                    let temp = match code_list.pop() {
-                        Some(v) => v,
-                        None => return Err(SyntaxError::IllegalAst.into()),
-                    };
+                    let temp = gen_expr_member_without_get!(table, property, kind, safe);
                     code_list.push(OPCode::DupTwo);
                     code_list.push(temp);
                     code_list.append(&mut self.gen_expr(*right, context)?);
