@@ -1,7 +1,7 @@
 use std::convert::TryFrom;
 
 use crate::errors::Error;
-use crate::lexer::{LiteralKind, Location};
+use crate::token::{LiteralKind, Location};
 
 /// A statement.
 #[derive(Debug, Clone)]

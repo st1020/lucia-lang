@@ -2,16 +2,18 @@ use std::str::Chars;
 
 use unicode_xid;
 
-use crate::errors::{EscapeError, Result, SyntaxError};
-
-use self::LiteralKind::*;
-use self::TokenKind::*;
+use crate::errors::{EscapeError, SyntaxError};
+use crate::token::{
+    LiteralKind::*,
+    Location, Token,
+    TokenKind::{self, *},
+};
 
 /// Peekable iterator over a char sequence.
 ///
 /// Next characters can be peeked via `first` method,
 /// and position can be shifted forward via `bump` method.
-pub(crate) struct Cursor<'a> {
+struct Cursor<'a> {
     initial_len: usize,
     /// Iterator over chars. Slightly faster than a &str.
     chars: Chars<'a>,
@@ -21,10 +23,10 @@ pub(crate) struct Cursor<'a> {
     prev: char,
 }
 
-pub(crate) const EOF_CHAR: char = '\0';
+const EOF_CHAR: char = '\0';
 
 impl<'a> Cursor<'a> {
-    pub(crate) fn new(input: &'a str) -> Cursor<'a> {
+    fn new(input: &'a str) -> Cursor<'a> {
         Cursor {
             initial_len: input.len(),
             chars: input.chars(),
@@ -37,7 +39,7 @@ impl<'a> Cursor<'a> {
 
     /// Returns the last eaten symbol (or `'\0'` in release builds).
     /// (For debug assertions only.)
-    pub(crate) fn prev(&self) -> char {
+    fn prev(&self) -> char {
         #[cfg(debug_assertions)]
         {
             self.prev
@@ -53,18 +55,18 @@ impl<'a> Cursor<'a> {
     /// If requested position doesn't exist, `EOF_CHAR` is returned.
     /// However, getting `EOF_CHAR` doesn't always mean actual end of file,
     /// it should be checked with `is_eof` method.
-    pub(crate) fn first(&self) -> char {
+    fn first(&self) -> char {
         // `.next()` optimizes better than `.nth(0)`
         self.chars.clone().next().unwrap_or(EOF_CHAR)
     }
 
     /// Checks if there is nothing more to consume.
-    pub(crate) fn is_eof(&self) -> bool {
+    fn is_eof(&self) -> bool {
         self.chars.as_str().is_empty()
     }
 
     /// Moves to the next character.
-    pub(crate) fn bump(&mut self) -> Option<char> {
+    fn bump(&mut self) -> Option<char> {
         let c = self.chars.next()?;
 
         if c == '\n' {
@@ -82,7 +84,7 @@ impl<'a> Cursor<'a> {
     }
 
     /// Gets current location
-    pub(crate) fn location(&self) -> Location {
+    fn location(&self) -> Location {
         Location {
             lineno: self.lineno,
             column: self.column,
@@ -91,210 +93,16 @@ impl<'a> Cursor<'a> {
     }
 
     /// Eats symbols while predicate returns true or until the end of file is reached.
-    pub(crate) fn eat_while(&mut self, mut predicate: impl FnMut(char) -> bool) {
+    fn eat_while(&mut self, mut predicate: impl FnMut(char) -> bool) {
         while predicate(self.first()) && !self.is_eof() {
             self.bump();
         }
     }
 }
 
-/// Location of token in the code.
-#[derive(Clone, Debug, Copy, PartialEq, Eq)]
-pub struct Location {
-    pub lineno: u32,
-    pub column: u32,
-    pub offset: u32,
-}
-
-/// Parsed token.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Token {
-    pub kind: TokenKind,
-    pub start: Location,
-    pub end: Location,
-}
-
-impl Token {
-    pub fn new(kind: TokenKind, start: Location, end: Location) -> Self {
-        Token { kind, start, end }
-    }
-
-    pub fn dummy() -> Self {
-        Token {
-            kind: Unknown,
-            start: Location {
-                lineno: 1,
-                column: 1,
-                offset: 0,
-            },
-            end: Location {
-                lineno: 1,
-                column: 1,
-                offset: 0,
-            },
-        }
-    }
-}
-
-/// Enum representing common lexeme types.
-#[derive(Clone, Debug, PartialEq)]
-pub enum TokenKind {
-    // Multi-char tokens:
-    /// "if"
-    If,
-    /// "else"
-    Else,
-    /// "lopp"
-    Loop,
-    /// "while"
-    While,
-    /// "for"
-    For,
-    /// "in"
-    In,
-    /// "break"
-    Break,
-    /// "continue"
-    Continue,
-    /// "return"
-    Return,
-    /// "throw"
-    Throw,
-    /// "global"
-    Global,
-    /// "import"
-    Import,
-    /// "as"
-    As,
-    /// "is"
-    Is,
-    /// "not"
-    Not,
-    /// "and"
-    And,
-    /// "or"
-    Or,
-    /// "fn"
-    Fn,
-    /// "do"
-    Do,
-    /// "null"
-    Null,
-    /// "true"
-    True,
-    /// "false"
-    False,
-
-    // Two-char tokens:
-    /// "::"
-    DoubleColon,
-    /// "=="
-    Eq,
-    /// "!="
-    NotEq,
-    /// "<="
-    LtEq,
-    /// ">="
-    GtEq,
-    /// "+="
-    AddAssign,
-    /// "-="
-    SubAssign,
-    /// "*="
-    MulAssign,
-    /// "/="
-    DivAssign,
-    /// "%="
-    ModAssign,
-
-    // One-char tokens:
-    /// ","
-    Comma,
-    /// "."
-    Dot,
-    /// "("
-    OpenParen,
-    /// ")"
-    CloseParen,
-    /// "{"
-    OpenBrace,
-    /// "}"
-    CloseBrace,
-    /// "["
-    OpenBracket,
-    /// "]"
-    CloseBracket,
-    /// "@"
-    At,
-    /// "#"
-    Pound,
-    /// "~"
-    Tilde,
-    /// "?"
-    Question,
-    /// ":"
-    Colon,
-    /// "$"
-    Dollar,
-    /// "="
-    Assign,
-    /// "!"
-    Bang,
-    /// "<"
-    Lt,
-    /// ">"
-    Gt,
-    /// "&"
-    Ampersand,
-    /// "|"
-    VBar,
-    /// "+"
-    Add,
-    /// "-"
-    Sub,
-    /// "*"
-    Mul,
-    /// "/"
-    Div,
-    /// "%"
-    Mod,
-    /// "^"
-    Caret,
-
-    // other
-    /// End of line (`\n`)
-    EOL,
-    /// "// comment"
-    LineComment,
-    /// `/* block comment */`
-    ///
-    /// Block comments can be recursive, so the sequence like `/* /* */`
-    /// will not be considered terminated and will result in a parsing error.
-    BlockComment,
-    /// Any whitespace characters sequence.
-    Whitespace,
-    /// Ident
-    Ident(String),
-    /// "12", "1.0e-40", ""123"". See `LiteralKind` for more details.
-    Literal(LiteralKind),
-    /// Unknown token, not expected by the lexer, e.g. "№"
-    Unknown,
-}
-
-/// Enum representing literal types, included wrong literal like unterminated string.
-#[derive(Clone, Debug, PartialEq)]
-pub enum LiteralKind {
-    /// "12", "0o100", "0b110"
-    Int(Result<i64>),
-    /// "12.34", "0b100.100"
-    Float(Result<f64>),
-    /// ""abc"", ""abc"
-    Str(Result<String>),
-}
-
 /// Base of numeric literal encoding according to its prefix.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Base {
+enum Base {
     /// Literal starts with "0b".
     Binary,
     /// Literal starts with "0o".
@@ -678,7 +486,7 @@ impl Cursor<'_> {
         Literal(Str(Ok(value)))
     }
 
-    pub fn scan_escape(&mut self) -> std::result::Result<char, EscapeError> {
+    fn scan_escape(&mut self) -> std::result::Result<char, EscapeError> {
         debug_assert!(self.prev() == '\\');
         // Previous character was '\\', unescape what follows.
         let res = match self.bump().unwrap_or(EOF_CHAR) {

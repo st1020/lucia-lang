@@ -1,6 +1,6 @@
 use crate::ast::*;
 use crate::errors::{Error, ExpectedToken, Result, SyntaxError};
-use crate::lexer::{Token, TokenKind};
+use crate::token::{Token, TokenKind};
 
 /// The parser. Turns token iter into AST.
 pub struct Parser<'a> {
