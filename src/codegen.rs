@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::convert::TryFrom;
 use std::fmt::Display;
 
@@ -119,8 +120,10 @@ pub enum OPCode {
     For(JumpTarget),
     /// Sets the bytecode counter to target.
     Jump(JumpTarget),
+    /// If TOS is null, sets the bytecode counter to target.
+    JumpIfNull(JumpTarget),
     /// If TOS is false, sets the bytecode counter to target. TOS is popped.
-    JumpIfFalse(JumpTarget),
+    JumpPopIfFalse(JumpTarget),
     /// If TOS is true, sets the bytecode counter to target and leaves TOS on the stack. Otherwise, TOS is popped.
     JumpIfTureOrPop(JumpTarget),
     /// If TOS is false, sets the bytecode counter to target and leaves TOS on the stack. Otherwise, TOS is popped.
@@ -211,7 +214,10 @@ pub fn gen_code(ast_root: Box<Block>) -> Result<Program> {
             func.code_list[i] = match &func.code_list[i] {
                 OPCode::For(JumpTarget(v)) => OPCode::For(JumpTarget(temp[*v])),
                 OPCode::Jump(JumpTarget(v)) => OPCode::Jump(JumpTarget(temp[*v])),
-                OPCode::JumpIfFalse(JumpTarget(v)) => OPCode::JumpIfFalse(JumpTarget(temp[*v])),
+                OPCode::JumpIfNull(JumpTarget(v)) => OPCode::JumpIfNull(JumpTarget(temp[*v])),
+                OPCode::JumpPopIfFalse(JumpTarget(v)) => {
+                    OPCode::JumpPopIfFalse(JumpTarget(temp[*v]))
+                }
                 OPCode::JumpIfTureOrPop(JumpTarget(v)) => {
                     OPCode::JumpIfTureOrPop(JumpTarget(temp[*v]))
                 }
@@ -267,17 +273,15 @@ fn get_stack_size(code: &Vec<OPCode>, mut offset: usize, init_size: usize) -> us
             | OPCode::Is => t -= 1,
             OPCode::For(_) => t += 1,
             OPCode::Jump(JumpTarget(_)) => (),
-            OPCode::JumpIfFalse(JumpTarget(i)) => {
-                let temp = get_stack_size(code, i + 1, t);
-                if temp > stack_size {
-                    stack_size = temp;
-                }
+            OPCode::JumpIfNull(JumpTarget(i)) => {
+                stack_size = max(stack_size, get_stack_size(code, i, t));
+            }
+            OPCode::JumpPopIfFalse(JumpTarget(i)) => {
+                t -= 1;
+                stack_size = max(stack_size, get_stack_size(code, i, t));
             }
             OPCode::JumpIfTureOrPop(JumpTarget(i)) | OPCode::JumpIfFalseOrPop(JumpTarget(i)) => {
-                let temp = get_stack_size(code, i + 1, t);
-                if temp > stack_size {
-                    stack_size = temp;
-                }
+                stack_size = max(stack_size, get_stack_size(code, i, t));
                 t -= 1;
             }
             OPCode::Call(i) => t = t - i + 1,
@@ -286,9 +290,7 @@ fn get_stack_size(code: &Vec<OPCode>, mut offset: usize, init_size: usize) -> us
             OPCode::ReturnCall(i) => t = t - i + 1,
             OPCode::JumpTarget(_) => panic!(),
         }
-        if t > stack_size {
-            stack_size = t;
-        }
+        stack_size = max(stack_size, t);
         offset += 1;
     }
     stack_size
@@ -650,8 +652,13 @@ impl FunctionBuilder {
                 table,
                 property,
                 kind,
+                safe,
             } => {
                 code_list.append(&mut self.gen_expr(*table, context)?);
+                let safe_label = context.get_jump_target();
+                if safe {
+                    code_list.push(OPCode::JumpIfNull(safe_label));
+                }
                 match kind {
                     MemberKind::Bracket => {
                         code_list.append(&mut self.gen_expr(*property, context)?);
@@ -669,41 +676,60 @@ impl FunctionBuilder {
                         code_list.push(OPCode::GetAttr);
                     }
                 }
+                code_list.push(OPCode::JumpTarget(safe_label));
             }
             ExprKind::Call {
                 callee,
                 arguments,
                 propagating_error,
             } => {
-                let temp: usize;
+                let mut temp: usize = arguments.len();
+                let safe_label = context.get_jump_target();
                 match callee.kind.clone() {
                     ExprKind::Member {
                         table,
                         property,
                         kind,
+                        safe,
                     } => {
-                        if kind == MemberKind::Dot {
-                            code_list.append(&mut self.gen_expr(*table, context)?);
-                            code_list.push(OPCode::Dup);
-                            match property.kind {
-                                ExprKind::Ident(ident) => {
-                                    code_list.push(OPCode::LoadConst(
-                                        context.add_const(ConstlValue::Str(ident.name)),
-                                    ));
-                                }
-                                _ => return Err(SyntaxError::IllegalAst.into()),
+                        code_list.append(&mut self.gen_expr(*table, context)?);
+                        if safe {
+                            code_list.push(OPCode::JumpIfNull(safe_label));
+                        }
+                        match kind {
+                            MemberKind::Bracket => {
+                                code_list.append(&mut self.gen_expr(*property, context)?);
+                                code_list.push(OPCode::GetItem);
                             }
-                            code_list.push(OPCode::GetAttr);
-                            code_list.push(OPCode::Rot);
-                            temp = arguments.len() + 1;
-                        } else {
-                            code_list.append(&mut self.gen_expr(*callee, context)?);
-                            temp = arguments.len();
+                            MemberKind::Dot => {
+                                code_list.push(OPCode::Dup);
+                                match property.kind {
+                                    ExprKind::Ident(ident) => {
+                                        code_list.push(OPCode::LoadConst(
+                                            context.add_const(ConstlValue::Str(ident.name)),
+                                        ));
+                                    }
+                                    _ => return Err(SyntaxError::IllegalAst.into()),
+                                }
+                                code_list.push(OPCode::GetAttr);
+                                code_list.push(OPCode::Rot);
+                                temp += 1;
+                            }
+                            MemberKind::DoubleColon => {
+                                match property.kind {
+                                    ExprKind::Ident(ident) => {
+                                        code_list.push(OPCode::LoadConst(
+                                            context.add_const(ConstlValue::Str(ident.name)),
+                                        ));
+                                    }
+                                    _ => return Err(SyntaxError::IllegalAst.into()),
+                                }
+                                code_list.push(OPCode::GetAttr);
+                            }
                         }
                     }
                     _ => {
                         code_list.append(&mut self.gen_expr(*callee, context)?);
-                        temp = arguments.len();
                     }
                 }
                 for arg in arguments {
@@ -714,6 +740,7 @@ impl FunctionBuilder {
                 } else {
                     OPCode::Call(temp)
                 });
+                code_list.push(OPCode::JumpTarget(safe_label));
             }
         }
         Ok(code_list)
@@ -742,7 +769,7 @@ impl FunctionBuilder {
                     let false_label = context.get_jump_target();
                     let end_label = context.get_jump_target();
                     code_list.append(&mut self.gen_expr(*test, context)?);
-                    code_list.push(OPCode::JumpIfFalse(false_label));
+                    code_list.push(OPCode::JumpPopIfFalse(false_label));
                     code_list.append(&mut self.gen_stmt(Stmt::from(*consequent), context)?);
                     code_list.push(OPCode::Jump(end_label));
                     code_list.push(OPCode::JumpTarget(false_label));
@@ -751,7 +778,7 @@ impl FunctionBuilder {
                 } else {
                     let end_label = context.get_jump_target();
                     code_list.append(&mut self.gen_expr(*test, context)?);
-                    code_list.push(OPCode::JumpIfFalse(end_label));
+                    code_list.push(OPCode::JumpPopIfFalse(end_label));
                     code_list.append(&mut self.gen_stmt(Stmt::from(*consequent), context)?);
                     code_list.push(OPCode::JumpTarget(end_label));
                 }
@@ -778,7 +805,7 @@ impl FunctionBuilder {
 
                 code_list.push(OPCode::JumpTarget(continue_label));
                 code_list.append(&mut self.gen_expr(*test, context)?);
-                code_list.push(OPCode::JumpIfFalse(break_label));
+                code_list.push(OPCode::JumpPopIfFalse(break_label));
                 code_list.append(&mut self.gen_stmt(Stmt::from(*body), context)?);
                 code_list.push(OPCode::Jump(continue_label));
                 code_list.push(OPCode::JumpTarget(break_label));
@@ -841,8 +868,9 @@ impl FunctionBuilder {
                     code_list.append(&mut self.gen_expr(*argument, context)?);
                     if propagating_error {
                         code_list.push(OPCode::Return);
-                    } else if let OPCode::Call(i) = code_list.pop().unwrap() {
-                        code_list.push(OPCode::ReturnCall(i));
+                    } else if let OPCode::Call(i) = code_list[code_list.len() - 2] {
+                        let t = code_list.len();
+                        code_list[t - 2] = OPCode::ReturnCall(i);
                     }
                 } else {
                     code_list.append(&mut self.gen_expr(*argument, context)?);
@@ -902,7 +930,11 @@ impl FunctionBuilder {
                             table: _,
                             property: _,
                             kind,
+                            safe,
                         } => {
+                            if safe {
+                                return Err(SyntaxError::IllegalAst.into());
+                            }
                             code_list.append(&mut self.gen_expr(left[0].clone(), context)?);
                             code_list.pop();
                             code_list.append(&mut self.gen_expr(*right, context)?);
@@ -929,7 +961,11 @@ impl FunctionBuilder {
                                 table: _,
                                 property: _,
                                 kind,
+                                safe,
                             } => {
+                                if *safe {
+                                    return Err(SyntaxError::IllegalAst.into());
+                                }
                                 code_list.append(&mut self.gen_expr(left[0].clone(), context)?);
                                 code_list.pop();
                                 code_list.append(&mut right_expr.clone());
@@ -962,7 +998,11 @@ impl FunctionBuilder {
                     table: _,
                     property: _,
                     kind,
+                    safe,
                 } => {
+                    if safe {
+                        return Err(SyntaxError::IllegalAst.into());
+                    }
                     code_list.append(&mut self.gen_expr(*left, context)?);
                     let temp = match code_list.pop() {
                         Some(v) => v,

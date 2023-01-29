@@ -274,7 +274,7 @@ impl Frame {
                 (closure.function.code_list)[self.pc],
                 program_error!(ProgramError::CodeIndexError(self.pc))
             );
-            println!("{} {} {:?}", self.pc, code, self.operate_stack);
+            // println!("{} {} {:?}", self.pc, code, self.operate_stack);
             match code {
                 OPCode::Pop => {
                     try_stack!(self.operate_stack.pop());
@@ -589,7 +589,14 @@ impl Frame {
                     self.pc = *i;
                     continue;
                 }
-                OPCode::JumpIfFalse(JumpTarget(i)) => {
+                OPCode::JumpIfNull(JumpTarget(i)) => {
+                    let arg1 = try_stack!(self.operate_stack.last());
+                    if arg1.is_null() {
+                        self.pc = *i;
+                        continue;
+                    }
+                }
+                OPCode::JumpPopIfFalse(JumpTarget(i)) => {
                     let arg1 = try_stack!(self.operate_stack.pop());
                     if let Some(v) = arg1.as_bool() {
                         if !v {

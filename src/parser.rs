@@ -288,22 +288,27 @@ impl<'a> Parser<'a> {
             },
             TokenKind::OpenBrace => *self.parse_stmt_block()?,
             _ => {
-                macro_rules! assign_error {
+                macro_rules! check_assign_left {
                     ($ast_node:expr) => {
                         match $ast_node.kind {
-                            ExprKind::Ident(_)
-                            | ExprKind::Member {
+                            ExprKind::Ident(_) => (),
+                            ExprKind::Member {
                                 table: _,
                                 property: _,
                                 kind: _,
-                            } => (),
-                            _ => return Err(Error::SyntaxError(SyntaxError::ParseAssignStmtError)),
+                                safe,
+                            } => {
+                                if safe {
+                                    return Err(SyntaxError::ParseAssignStmtError.into());
+                                }
+                            }
+                            _ => return Err(SyntaxError::ParseAssignStmtError.into()),
                         }
                     };
                 }
                 macro_rules! assign_op_stmt {
                     ($ast_node:expr, $bin_op:expr) => {{
-                        assign_error!($ast_node);
+                        check_assign_left!($ast_node);
                         self.bump();
                         let right = self.parse_expr(1)?;
                         Stmt {
@@ -320,7 +325,7 @@ impl<'a> Parser<'a> {
                 let ast_node = self.parse_expr(1)?;
                 let temp = match self.token.kind.clone() {
                     TokenKind::Comma => {
-                        assign_error!(ast_node);
+                        check_assign_left!(ast_node);
                         let start = ast_node.start;
                         let mut left = vec![*ast_node];
                         loop {
@@ -328,7 +333,7 @@ impl<'a> Parser<'a> {
                                 TokenKind::Comma => {
                                     self.bump();
                                     let ast_node = self.parse_expr(1)?;
-                                    assign_error!(ast_node);
+                                    check_assign_left!(ast_node);
                                     left.push(*ast_node);
                                 }
                                 TokenKind::Assign => break,
@@ -344,7 +349,7 @@ impl<'a> Parser<'a> {
                         }
                     }
                     TokenKind::Assign => {
-                        assign_error!(ast_node);
+                        check_assign_left!(ast_node);
                         self.bump();
                         let right = self.parse_expr(1)?;
                         Stmt {
@@ -498,18 +503,40 @@ impl<'a> Parser<'a> {
     fn parse_expr_primary(&mut self) -> Result<Box<Expr>> {
         let start = self.token.start;
         let mut ast_node = self.parse_expr_atom()?;
-        macro_rules! member_expr {
-            ($member_expr_kind:expr) => {
+        macro_rules! member_attr_expr {
+            ($member_expr_kind:expr, $safe:expr) => {
                 ast_node = Box::new(Expr {
                     kind: ExprKind::Member {
                         table: ast_node,
                         kind: $member_expr_kind,
+                        safe: $safe,
                         property: {
                             self.bump();
                             self.parse_expr_ident()?
                         },
                     },
                     start,
+                    end: self.prev_token.end,
+                })
+            };
+        }
+        macro_rules! member_item_expr {
+            ($safe:expr) => {
+                ast_node = Box::new(Expr {
+                    kind: ExprKind::Member {
+                        table: ast_node,
+                        kind: MemberKind::Bracket,
+                        safe: $safe,
+                        property: {
+                            self.bump();
+                            self.parse_expr(1)?
+                        },
+                    },
+                    start: {
+                        self.expect(TokenKind::CloseBracket)?;
+                        self.bump();
+                        start
+                    },
                     end: self.prev_token.end,
                 })
             };
@@ -548,26 +575,23 @@ impl<'a> Parser<'a> {
                         end: self.prev_token.end,
                     });
                 }
-                TokenKind::OpenBracket => {
-                    ast_node = Box::new(Expr {
-                        kind: ExprKind::Member {
-                            table: ast_node,
-                            kind: MemberKind::Bracket,
-                            property: {
-                                self.bump();
-                                self.parse_expr(1)?
-                            },
-                        },
-                        start: {
-                            self.expect(TokenKind::CloseBracket)?;
-                            self.bump();
-                            start
-                        },
-                        end: self.prev_token.end,
-                    });
+                TokenKind::OpenBracket => member_item_expr!(false),
+                TokenKind::Dot => member_attr_expr!(MemberKind::Dot, false),
+                TokenKind::DoubleColon => member_attr_expr!(MemberKind::DoubleColon, false),
+                TokenKind::Question => {
+                    self.bump();
+                    match self.token.kind {
+                        TokenKind::OpenBracket => member_item_expr!(false),
+                        TokenKind::Dot => member_attr_expr!(MemberKind::Dot, true),
+                        TokenKind::DoubleColon => member_attr_expr!(MemberKind::DoubleColon, true),
+                        _ => {
+                            return Err(Error::SyntaxError(SyntaxError::UnexpectToken {
+                                token: Box::new(self.token.clone()),
+                                expected: ExpectedToken::MemberExpr,
+                            }))
+                        }
+                    }
                 }
-                TokenKind::Dot => member_expr!(MemberKind::Dot),
-                TokenKind::DoubleColon => member_expr!(MemberKind::DoubleColon),
                 _ => break,
             }
         }

@@ -65,6 +65,7 @@ pub enum SyntaxError {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExpectedToken {
     TokenKind(Box<TokenKind>),
+    MemberExpr,
     AtomExpr,
     FuncExpr,
     Ident,

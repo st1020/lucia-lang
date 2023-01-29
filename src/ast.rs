@@ -123,6 +123,7 @@ pub enum ExprKind {
         table: Box<Expr>,
         property: Box<Expr>,
         kind: MemberKind,
+        safe: bool,
     },
     Call {
         callee: Box<Expr>,
