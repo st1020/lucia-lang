@@ -1,7 +1,4 @@
-use std::convert::TryFrom;
-
-use crate::errors::Error;
-use crate::token::{LiteralKind, Location};
+use crate::token::Location;
 
 /// A statement.
 #[derive(Debug, Clone)]
@@ -173,18 +170,6 @@ pub enum LitKind {
     Float(f64),
     /// ""abc"", ""abc"
     Str(String),
-}
-
-impl TryFrom<LiteralKind> for LitKind {
-    type Error = Error;
-
-    fn try_from(value: LiteralKind) -> Result<Self, Self::Error> {
-        Ok(match value {
-            LiteralKind::Int(v) => LitKind::Int(v?),
-            LiteralKind::Float(v) => LitKind::Float(v?),
-            LiteralKind::Str(v) => LitKind::Str(v?),
-        })
-    }
 }
 
 /// An ident.

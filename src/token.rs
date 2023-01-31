@@ -1,9 +1,7 @@
 use crate::errors::Result;
 
-use self::TokenKind::*;
-
 /// Location of token in the code.
-#[derive(Clone, Debug, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Location {
     pub lineno: u32,
     pub column: u32,
@@ -181,7 +179,7 @@ impl Token {
 
     pub fn dummy() -> Self {
         Token {
-            kind: Unknown,
+            kind: TokenKind::Unknown,
             start: Location {
                 lineno: 1,
                 column: 1,
@@ -194,4 +192,12 @@ impl Token {
             },
         }
     }
+}
+
+/// Type of Token. Cocommon Token, Idnet or Literal.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TokenType {
+    Token(TokenKind),
+    Ident,
+    Literal,
 }

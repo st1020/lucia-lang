@@ -8,7 +8,7 @@ use thiserror::Error;
 use crate::codegen::OPCode;
 use crate::lvm::Lvm;
 use crate::objects::{Closure, Table, Value, ValueType};
-use crate::token::{Token, TokenKind};
+use crate::token::{Token, TokenType};
 
 pub type Result<T> = result::Result<T, Error>;
 
@@ -38,9 +38,9 @@ pub enum SyntaxError {
 
     // parser error
     #[error("unexpect token (expected {expected:?}, found {token:?})")]
-    UnexpectToken {
+    NewUnexpectToken {
         token: Box<Token>,
-        expected: ExpectedToken,
+        expected: Vec<TokenType>,
     },
     #[error("unexpect EOF")]
     UnexpectEOF,
@@ -60,15 +60,6 @@ pub enum SyntaxError {
     ReturnOutsideFunction,
     #[error("throw outside function")]
     ThrowOutsideFunction,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ExpectedToken {
-    TokenKind(Box<TokenKind>),
-    MemberExpr,
-    AtomExpr,
-    FuncExpr,
-    Ident,
 }
 
 /// Errors and warnings that can occur during string unescaping.
