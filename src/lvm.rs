@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
-use crate::codegen::{ConstlValue, FunctionKind, JumpTarget, OPCode, Program};
+use crate::codegen::{ConstlValue, FunctionKind, JumpTarget, OpCode, Program};
 use crate::errors::{
     BuiltinError, Error, ProgramError, Result, RuntimeError, RuntimeErrorKind, TracebackFrame,
 };
@@ -240,19 +240,19 @@ impl Frame {
         macro_rules! set_table {
             ($special_name:expr) => {{
                 let arg3 = try_stack!(self.operate_stack.pop());
-                let arg2 = try_stack!(self.operate_stack.pop());
-                let mut arg1 = try_stack!(self.operate_stack.pop());
-                if let Some(t) = as_table_mut!(arg1) {
+                let mut arg2 = try_stack!(self.operate_stack.pop());
+                let arg1 = try_stack!(self.operate_stack.pop());
+                if let Some(t) = as_table_mut!(arg2) {
                     match t.get(&lvm.get_builtin_str($special_name)) {
                         Some(v) => {
                             self.operate_stack.push(v);
-                            self.operate_stack.push(arg1);
                             self.operate_stack.push(arg2);
                             self.operate_stack.push(arg3);
+                            self.operate_stack.push(arg1);
                             let return_value = call!(3)?;
                             self.operate_stack.push(return_value);
                         }
-                        None => t.set(&arg2, arg3),
+                        None => t.set(&arg3, arg1),
                     }
                 } else {
                     return_error!($crate::type_convert_error!(
@@ -276,32 +276,42 @@ impl Frame {
             );
             // println!("{} {} {:?}", self.pc, code, self.operate_stack);
             match code {
-                OPCode::Pop => {
+                OpCode::Pop => {
                     try_stack!(self.operate_stack.pop());
                 }
-                OPCode::Dup => {
+                OpCode::Dup => {
                     self.operate_stack
                         .push(*try_stack!(self.operate_stack.last()));
                 }
-                OPCode::DupTwo => {
+                OpCode::DupTwo => {
                     let a = try_stack!(self.operate_stack.pop());
                     let b = try_stack!(self.operate_stack.pop());
                     self.operate_stack.push(b);
                     self.operate_stack.push(a);
+                    self.operate_stack.push(b);
+                    self.operate_stack.push(a);
                 }
-                OPCode::Rot => {
+                OpCode::RotTwo => {
                     let a = try_stack!(self.operate_stack.pop());
                     let b = try_stack!(self.operate_stack.pop());
                     self.operate_stack.push(a);
                     self.operate_stack.push(b);
                 }
-                OPCode::LoadLocal(i) => {
+                OpCode::RotThree => {
+                    let a = try_stack!(self.operate_stack.pop());
+                    let b = try_stack!(self.operate_stack.pop());
+                    let c = try_stack!(self.operate_stack.pop());
+                    self.operate_stack.push(a);
+                    self.operate_stack.push(c);
+                    self.operate_stack.push(b);
+                }
+                OpCode::LoadLocal(i) => {
                     self.operate_stack.push(*try_get!(
                         (closure.variables)[*i],
                         program_error!(ProgramError::LocalNameError(*i))
                     ));
                 }
-                OPCode::LoadGlobal(i) => {
+                OpCode::LoadGlobal(i) => {
                     let t = try_get!(
                         (closure.function.global_names)[*i],
                         program_error!(ProgramError::GlobalNameError(*i))
@@ -311,7 +321,7 @@ impl Frame {
                             .unwrap_or_else(|| lvm.get_builtin_variable(t).unwrap_or(Value::Null)),
                     );
                 }
-                OPCode::LoadUpvalue(i) => {
+                OpCode::LoadUpvalue(i) => {
                     let (_, func_count, upvalue_id) = try_get!(
                         (closure.function.upvalue_names)[*i],
                         program_error!(ProgramError::UpvalueError(*i))
@@ -341,7 +351,7 @@ impl Frame {
                         _ => return Err(program_error!(ProgramError::UpvalueError(*i))),
                     };
                 }
-                OPCode::LoadConst(i) => {
+                OpCode::LoadConst(i) => {
                     let module = try_get!(
                         (lvm.modules)[closure.module_id],
                         program_error!(ProgramError::ModuleError(closure.module_id))
@@ -373,13 +383,13 @@ impl Frame {
                     };
                     self.operate_stack.push(v);
                 }
-                OPCode::StoreLocal(i) => {
+                OpCode::StoreLocal(i) => {
                     try_set!(
                         (closure.variables)[*i] = try_stack!(self.operate_stack.pop()),
                         program_error!(ProgramError::LocalNameError(*i))
                     );
                 }
-                OPCode::StoreGlobal(i) => {
+                OpCode::StoreGlobal(i) => {
                     lvm.set_global_variable(
                         try_get!(
                             (closure.function.global_names)[*i],
@@ -389,7 +399,7 @@ impl Frame {
                         try_stack!(self.operate_stack.pop()),
                     );
                 }
-                OPCode::StoreUpvalue(i) => {
+                OpCode::StoreUpvalue(i) => {
                     let (_, func_count, upvalue_id) = try_get!(
                         (closure.function.upvalue_names)[*i],
                         program_error!(ProgramError::UpvalueError(*i))
@@ -418,7 +428,7 @@ impl Frame {
                         _ => return Err(program_error!(ProgramError::UpvalueError(*i))),
                     };
                 }
-                OPCode::Import(i) => {
+                OpCode::Import(i) => {
                     if let ConstlValue::Str(v) = try_get!(
                         (lvm.modules[closure.module_id].const_list)[*i],
                         program_error!(ProgramError::ConstError(*i))
@@ -451,7 +461,7 @@ impl Frame {
                         return Err(program_error!(ProgramError::ConstError(*i)));
                     }
                 }
-                OPCode::ImportFrom(i) => {
+                OpCode::ImportFrom(i) => {
                     let module =
                         try_convert!(lvm, try_stack!(self.operate_stack.last()), as_table, Table);
                     if let ConstlValue::Str(t) = &try_get!(
@@ -469,14 +479,14 @@ impl Frame {
                         return Err(program_error!(ProgramError::ConstError(*i)));
                     }
                 }
-                OPCode::ImportGlob => {
+                OpCode::ImportGlob => {
                     let arg1 = try_stack!(self.operate_stack.pop());
                     let module = try_convert!(lvm, arg1, as_table, Table);
                     for (k, v) in module.clone() {
                         lvm.set_global_variable(try_convert!(lvm, k, as_str, Str).to_string(), v);
                     }
                 }
-                OPCode::BuildTable(i) => {
+                OpCode::BuildTable(i) => {
                     if self.operate_stack.len() >= *i * 2 {
                         let temp = self
                             .operate_stack
@@ -495,11 +505,11 @@ impl Frame {
                         return Err(stack_error!());
                     }
                 }
-                OPCode::GetAttr => get_table!("__getattr__"),
-                OPCode::GetItem => get_table!("__getitem__"),
-                OPCode::SetAttr => set_table!("__setattr__"),
-                OPCode::SetItem => set_table!("__setitem__"),
-                OPCode::Neg => {
+                OpCode::GetAttr => get_table!("__getattr__"),
+                OpCode::GetItem => get_table!("__getitem__"),
+                OpCode::SetAttr => set_table!("__setattr__"),
+                OpCode::SetItem => set_table!("__setitem__"),
+                OpCode::Neg => {
                     let arg1 = try_stack!(self.operate_stack.pop());
                     if let Some(t) = as_table!(arg1) {
                         match t.get(&lvm.get_builtin_str("__neg__")) {
@@ -519,12 +529,12 @@ impl Frame {
                         })
                     }
                 }
-                OPCode::Not => {
+                OpCode::Not => {
                     let arg1 = try_stack!(self.operate_stack.pop());
                     self.operate_stack
                         .push(Value::Bool(!try_convert!(lvm, arg1, as_bool, Bool)));
                 }
-                OPCode::Add => {
+                OpCode::Add => {
                     let arg2 = try_stack!(self.operate_stack.pop());
                     let arg1 = try_stack!(self.operate_stack.pop());
                     match arg1.value_type() {
@@ -560,22 +570,22 @@ impl Frame {
                         }
                     }
                 }
-                OPCode::Sub => bin_op!(-, "__sub__", code.clone()),
-                OPCode::Mul => bin_op!(*, "__mul__", code.clone()),
-                OPCode::Div => bin_op!(/, "__div__", code.clone()),
-                OPCode::Mod => bin_op!(%, "__mod__", code.clone()),
-                OPCode::Eq => eq_ne!(==, "__eq__", code.clone()),
-                OPCode::Ne => eq_ne!(!=, "__ne__", code.clone()),
-                OPCode::Gt => compare!(>, "__gt__", code.clone()),
-                OPCode::Ge => compare!(>=, "__ge__", code.clone()),
-                OPCode::Lt => compare!(<, "__lt__", code.clone()),
-                OPCode::Le => compare!(<=, "__le__", code.clone()),
-                OPCode::Is => {
+                OpCode::Sub => bin_op!(-, "__sub__", code.clone()),
+                OpCode::Mul => bin_op!(*, "__mul__", code.clone()),
+                OpCode::Div => bin_op!(/, "__div__", code.clone()),
+                OpCode::Mod => bin_op!(%, "__mod__", code.clone()),
+                OpCode::Eq => eq_ne!(==, "__eq__", code.clone()),
+                OpCode::Ne => eq_ne!(!=, "__ne__", code.clone()),
+                OpCode::Gt => compare!(>, "__gt__", code.clone()),
+                OpCode::Ge => compare!(>=, "__ge__", code.clone()),
+                OpCode::Lt => compare!(<, "__lt__", code.clone()),
+                OpCode::Le => compare!(<=, "__le__", code.clone()),
+                OpCode::Is => {
                     let arg2 = try_stack!(self.operate_stack.pop());
                     let arg1 = try_stack!(self.operate_stack.pop());
                     self.operate_stack.push(Value::Bool(arg1.is(&arg2)));
                 }
-                OPCode::For(JumpTarget(i)) => {
+                OpCode::For(JumpTarget(i)) => {
                     let return_value =
                         lvm.call(*try_stack!(self.operate_stack.last()), Vec::new())?;
                     if return_value.is_null() {
@@ -585,18 +595,18 @@ impl Frame {
                         self.operate_stack.push(return_value);
                     }
                 }
-                OPCode::Jump(JumpTarget(i)) => {
+                OpCode::Jump(JumpTarget(i)) => {
                     self.pc = *i;
                     continue;
                 }
-                OPCode::JumpIfNull(JumpTarget(i)) => {
+                OpCode::JumpIfNull(JumpTarget(i)) => {
                     let arg1 = try_stack!(self.operate_stack.last());
                     if arg1.is_null() {
                         self.pc = *i;
                         continue;
                     }
                 }
-                OPCode::JumpPopIfFalse(JumpTarget(i)) => {
+                OpCode::JumpPopIfFalse(JumpTarget(i)) => {
                     let arg1 = try_stack!(self.operate_stack.pop());
                     if let Some(v) = arg1.as_bool() {
                         if !v {
@@ -605,7 +615,7 @@ impl Frame {
                         }
                     }
                 }
-                OPCode::JumpIfTureOrPop(JumpTarget(i)) => {
+                OpCode::JumpIfTureOrPop(JumpTarget(i)) => {
                     let arg1 = try_stack!(self.operate_stack.last());
                     if let Some(v) = arg1.as_bool() {
                         if v {
@@ -616,7 +626,7 @@ impl Frame {
                         }
                     }
                 }
-                OPCode::JumpIfFalseOrPop(JumpTarget(i)) => {
+                OpCode::JumpIfFalseOrPop(JumpTarget(i)) => {
                     let arg1 = try_stack!(self.operate_stack.last());
                     if let Some(v) = arg1.as_bool() {
                         if !v {
@@ -627,18 +637,18 @@ impl Frame {
                         }
                     }
                 }
-                OPCode::Call(i) => {
+                OpCode::Call(i) => {
                     let return_value = call!(*i)?;
                     self.operate_stack.push(return_value);
                 }
-                OPCode::TryCall(i) => {
+                OpCode::TryCall(i) => {
                     let return_value = call!(*i)?;
                     if return_value.is_error() {
                         return Ok(return_value);
                     }
                     self.operate_stack.push(return_value);
                 }
-                OPCode::Return => {
+                OpCode::Return => {
                     if closure.function.kind == FunctionKind::Do {
                         let mut temp = Table::new();
                         for i in 0..closure.function.local_names.len() {
@@ -652,7 +662,7 @@ impl Frame {
                         return Ok(try_stack!(self.operate_stack.pop()));
                     }
                 }
-                OPCode::Throw => {
+                OpCode::Throw => {
                     let arg1 = try_stack!(self.operate_stack.pop());
                     if arg1.is_str() || arg1.is_table() || arg1.is_userdata() {
                         return Ok(error!(arg1));
@@ -660,7 +670,7 @@ impl Frame {
                         return Err(throw_error!(arg1));
                     }
                 }
-                OPCode::ReturnCall(i) => {
+                OpCode::ReturnCall(i) => {
                     let mut args = self.operate_stack.split_off(self.operate_stack.len() - i);
                     let mut callee = try_stack!(self.operate_stack.pop());
 
@@ -698,7 +708,7 @@ impl Frame {
                         return_error!(not_callable_error!(callee));
                     }
                 }
-                OPCode::JumpTarget(_) => {
+                OpCode::JumpTarget(_) => {
                     return Err(program_error!(ProgramError::UnexpectCodeError(
                         code.clone()
                     )))

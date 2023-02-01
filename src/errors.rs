@@ -5,7 +5,7 @@ use std::result;
 
 use thiserror::Error;
 
-use crate::codegen::OPCode;
+use crate::codegen::OpCode;
 use crate::lvm::Lvm;
 use crate::objects::{Closure, Table, Value, ValueType};
 use crate::token::{Token, TokenType};
@@ -146,7 +146,7 @@ pub enum ProgramError {
     #[error("code index error: {0}")]
     CodeIndexError(usize),
     #[error("unexpect code: {0}")]
-    UnexpectCodeError(OPCode),
+    UnexpectCodeError(OpCode),
     #[error("local name error: {0}")]
     LocalNameError(usize),
     #[error("global name error: {0}")]
@@ -213,12 +213,12 @@ pub enum TypeError {
     ConvertError { from: ValueType, to: ValueType },
     #[error("operator error (unsupported operand type(s) for {operator}: {operand})")]
     UnOperatorError {
-        operator: OPCode,
+        operator: OpCode,
         operand: ValueType,
     },
     #[error("operator error (unsupported operand type(s) for {operator}: {} and {})", .operand.0, .operand.1)]
     BinOperatorError {
-        operator: OPCode,
+        operator: OpCode,
         operand: (ValueType, ValueType),
     },
     #[error("not callable error ({0} value is not callable)")]
