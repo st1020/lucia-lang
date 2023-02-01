@@ -76,6 +76,10 @@ pub enum StmtKind {
         left: Vec<Expr>,
         right: Box<Expr>,
     },
+    AssignMulti {
+        left: Vec<Expr>,
+        right: Vec<Expr>,
+    },
     Block(Box<Block>),
     Expr(Box<Expr>),
 }

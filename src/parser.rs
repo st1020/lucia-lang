@@ -281,10 +281,29 @@ impl<'a> Parser<'a> {
                     }
                 }
                 let right = self.parse_expr(1)?;
-                Stmt {
-                    start,
-                    end: right.end,
-                    kind: StmtKind::AssignUnpack { left, right },
+                if self.check_noexpect(&TokenKind::Comma) {
+                    let mut right = vec![*right];
+                    loop {
+                        if self.eat(&TokenKind::Comma) {
+                            right.push(*self.parse_expr(1)?);
+                        } else {
+                            break;
+                        }
+                    }
+                    if left.len() != right.len() {
+                        return Err(SyntaxError::ParseAssignStmtError.into());
+                    }
+                    Stmt {
+                        start,
+                        end: self.prev_token.end,
+                        kind: StmtKind::AssignMulti { left, right },
+                    }
+                } else {
+                    Stmt {
+                        start,
+                        end: right.end,
+                        kind: StmtKind::AssignUnpack { left, right },
+                    }
                 }
             } else if self.eat(&TokenKind::Assign) {
                 check_assign_left!(ast_node);

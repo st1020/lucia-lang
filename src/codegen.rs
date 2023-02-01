@@ -1019,6 +1019,34 @@ impl FunctionBuilder {
                     }
                 }
             }
+            StmtKind::AssignMulti { left, right } => {
+                if left.len() != right.len() {
+                    return Err(SyntaxError::IllegalAst.into());
+                }
+                for right in right {
+                    code_list.append(&mut self.gen_expr(right, context)?);
+                }
+                for left in left.iter().rev() {
+                    match left.kind.clone() {
+                        ExprKind::Ident(ident) => {
+                            code_list.push(self.get_store(&ident.name, context));
+                        }
+                        ExprKind::Member {
+                            table,
+                            property,
+                            kind,
+                            safe,
+                        } => {
+                            gen_expr_member_without_get!(table, property, kind, safe);
+                            code_list.push(match kind {
+                                MemberKind::Bracket => OpCode::SetItem,
+                                MemberKind::Dot | MemberKind::DoubleColon => OpCode::SetAttr,
+                            });
+                        }
+                        _ => return Err(SyntaxError::IllegalAst.into()),
+                    }
+                }
+            }
             StmtKind::Block(block) => {
                 for stmt in block.body {
                     code_list.append(&mut self.gen_stmt(stmt, context)?);
