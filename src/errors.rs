@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 use std::num::{ParseFloatError, ParseIntError};
 use std::ops::{Bound, Range, RangeBounds, RangeFrom, RangeInclusive};
 use std::result;
@@ -37,8 +37,11 @@ pub enum SyntaxError {
     EscapeError(#[from] EscapeError),
 
     // parser error
-    #[error("unexpect token (expected {expected:?}, found {token:?})")]
-    NewUnexpectToken {
+    #[error(
+        "unexpect token (expected {}, found {token})",
+        .expected.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", ")
+    )]
+    UnexpectToken {
         token: Box<Token>,
         expected: Vec<TokenType>,
     },
@@ -97,7 +100,7 @@ pub enum EscapeError {
 
 impl Display for EscapeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        Debug::fmt(self, f)
     }
 }
 

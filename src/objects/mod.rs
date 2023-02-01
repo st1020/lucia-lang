@@ -42,7 +42,7 @@ impl Debug for Value {
             Self::Float(arg0) => f.debug_tuple("Float").field(arg0).finish(),
             Self::ExtFunction(_) => f.debug_tuple("ExtFunction").finish(),
             Self::LightUserData(_) => f.debug_tuple("LightUserData").finish(),
-            Self::GCObject(arg0) => unsafe { write!(f, "{:?}", (**arg0).kind) },
+            Self::GCObject(arg0) => unsafe { Debug::fmt(&(**arg0).kind, f) },
         }
     }
 }

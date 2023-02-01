@@ -4,7 +4,7 @@ use crate::token::{LiteralKind, Token, TokenKind, TokenType};
 
 macro_rules! unexpected_error {
     ($self:expr) => {
-        return Err(Error::SyntaxError(SyntaxError::NewUnexpectToken {
+        return Err(Error::SyntaxError(SyntaxError::UnexpectToken {
             token: Box::new($self.token.clone()),
             expected: $self.expected_tokens.clone(),
         }))

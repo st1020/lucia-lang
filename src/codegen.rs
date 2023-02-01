@@ -1,6 +1,6 @@
 use std::cmp::max;
 use std::convert::TryFrom;
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 
 use crate::ast::*;
 use crate::errors::{Error, Result, SyntaxError};
@@ -8,7 +8,7 @@ use crate::lexer::tokenize;
 use crate::parser::Parser;
 
 /// The const value.
-#[derive(Clone, Debug, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum ConstlValue {
     /// "null"
     Null,
@@ -146,7 +146,7 @@ pub enum OPCode {
 
 impl Display for OPCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        Debug::fmt(self, f)
     }
 }
 

@@ -158,7 +158,7 @@ pub struct Lit {
 }
 
 /// Kind of literal.
-#[derive(Clone, Debug, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum LitKind {
     /// "null"
     Null,
