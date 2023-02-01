@@ -64,12 +64,16 @@ pub enum StmtKind {
         kind: ImportKind,
     },
     Assign {
-        left: Vec<Expr>,
+        left: Box<Expr>,
         right: Box<Expr>,
     },
     AssignOp {
         operator: BinOp,
         left: Box<Expr>,
+        right: Box<Expr>,
+    },
+    AssignUnpack {
+        left: Vec<Expr>,
         right: Box<Expr>,
     },
     Block(Box<Block>),

@@ -284,7 +284,7 @@ impl<'a> Parser<'a> {
                 Stmt {
                     start,
                     end: right.end,
-                    kind: StmtKind::Assign { left, right },
+                    kind: StmtKind::AssignUnpack { left, right },
                 }
             } else if self.eat(&TokenKind::Assign) {
                 check_assign_left!(ast_node);
@@ -293,7 +293,7 @@ impl<'a> Parser<'a> {
                     start: ast_node.start,
                     end: right.end,
                     kind: StmtKind::Assign {
-                        left: vec![*ast_node],
+                        left: ast_node,
                         right,
                     },
                 }
