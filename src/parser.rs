@@ -517,11 +517,11 @@ impl<'a> Parser<'a> {
             let temp = self.parse_expr(1)?;
             self.expect(&TokenKind::CloseParen)?;
             Ok(temp)
-        } else if self.check(&TokenKind::Null) {
+        } else if self.eat(&TokenKind::Null) {
             lit_expr!(LitKind::Null)
-        } else if self.check(&TokenKind::True) {
+        } else if self.eat(&TokenKind::True) {
             lit_expr!(LitKind::Bool(true))
-        } else if self.check(&TokenKind::False) {
+        } else if self.eat(&TokenKind::False) {
             lit_expr!(LitKind::Bool(false))
         } else if let Some(v) = self.eat_literal() {
             lit_expr!(match v {
