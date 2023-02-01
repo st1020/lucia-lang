@@ -159,17 +159,11 @@ impl Frame {
         }
 
         macro_rules! call_special_name {
-            ($arg1:ident, $arg2:ident, $special_name:expr, $operator:expr, $block:block) => {
-                if let Some(t) = as_table!($arg1) {
+            ($tos1:ident, $tos:ident, $special_name:expr, $operator:expr, $block:block) => {
+                if let Some(t) = as_table!($tos1) {
                     match t.get(&lvm.get_builtin_str($special_name)) {
-                        Some(v) => {
-                            self.operate_stack.push(v);
-                            self.operate_stack.push($arg1);
-                            self.operate_stack.push($arg2);
-                            let return_value = call!(2)?;
-                            self.operate_stack.push(return_value);
-                        }
-                        None => return_error!(operator_error!($operator, $arg1, $arg2)),
+                        Some(v) => self.operate_stack.push(lvm.call(v, vec![$tos1, $tos])?),
+                        None => return_error!(operator_error!($operator, $tos1, $tos)),
                     }
                 } else $block
             };
@@ -177,13 +171,13 @@ impl Frame {
 
         macro_rules! bin_op {
             ($op: tt, $special_name:expr, $operator:expr) => {{
-                let arg2 = try_stack!(self.operate_stack.pop());
-                let arg1 = try_stack!(self.operate_stack.pop());
-                call_special_name!(arg1, arg2, $special_name, $operator, {
-                    self.operate_stack.push(match (arg1, arg2) {
+                let tos = try_stack!(self.operate_stack.pop());
+                let tos1 = try_stack!(self.operate_stack.pop());
+                call_special_name!(tos1, tos, $special_name, $operator, {
+                    self.operate_stack.push(match (tos1, tos) {
                         (Value::Int(v1), Value::Int(v2)) => Value::Int(v1 $op v2),
                         (Value::Float(v1), Value::Float(v2)) => Value::Float(v1 $op v2),
-                        _ => return_error!(operator_error!($operator, arg1, arg2)),
+                        _ => return_error!(operator_error!($operator, tos1, tos)),
                     });
                 })
             }};
@@ -191,23 +185,23 @@ impl Frame {
 
         macro_rules! eq_ne {
             ($op: tt, $special_name:expr, $operator:expr) => {{
-                let arg2 = try_stack!(self.operate_stack.pop());
-                let arg1 = try_stack!(self.operate_stack.pop());
-                call_special_name!(arg1, arg2, $special_name, $operator, {
-                    self.operate_stack.push(Value::Bool(arg1 $op arg2));
+                let tos = try_stack!(self.operate_stack.pop());
+                let tos1 = try_stack!(self.operate_stack.pop());
+                call_special_name!(tos1, tos, $special_name, $operator, {
+                    self.operate_stack.push(Value::Bool(tos1 $op tos));
                 })
             }};
         }
 
         macro_rules! compare {
             ($op: tt, $special_name:expr, $operator:expr) => {{
-                let arg2 = try_stack!(self.operate_stack.pop());
-                let arg1 = try_stack!(self.operate_stack.pop());
-                call_special_name!(arg1, arg2, $special_name, $operator, {
-                    self.operate_stack.push(Value::Bool(match (arg1, arg2) {
+                let tos = try_stack!(self.operate_stack.pop());
+                let tos1 = try_stack!(self.operate_stack.pop());
+                call_special_name!(tos1, tos, $special_name, $operator, {
+                    self.operate_stack.push(Value::Bool(match (tos1, tos) {
                         (Value::Int(v1), Value::Int(v2)) => v1 $op v2,
                         (Value::Float(v1), Value::Float(v2)) => v1 $op v2,
-                        _ => return_error!(operator_error!($operator, arg1, arg2)),
+                        _ => return_error!(operator_error!($operator, tos1, tos)),
                     }));
                 })
             }};
@@ -215,22 +209,16 @@ impl Frame {
 
         macro_rules! get_table {
             ($special_name:expr) => {{
-                let arg2 = try_stack!(self.operate_stack.pop());
-                let arg1 = try_stack!(self.operate_stack.pop());
-                if let Some(t) = as_table!(arg1) {
+                let tos = try_stack!(self.operate_stack.pop());
+                let tos1 = try_stack!(self.operate_stack.pop());
+                if let Some(t) = as_table!(tos1) {
                     match t.get(&lvm.get_builtin_str($special_name)) {
-                        Some(v) => {
-                            self.operate_stack.push(v);
-                            self.operate_stack.push(arg1);
-                            self.operate_stack.push(arg2);
-                            let return_value = call!(2)?;
-                            self.operate_stack.push(return_value);
-                        }
-                        None => self.operate_stack.push(t.get(&arg2).unwrap_or(Value::Null)),
+                        Some(v) => self.operate_stack.push(lvm.call(v, vec![tos1, tos])?),
+                        None => self.operate_stack.push(t.get(&tos).unwrap_or(Value::Null)),
                     }
                 } else {
                     return_error!($crate::type_convert_error!(
-                        arg1.value_type(),
+                        tos1.value_type(),
                         $crate::objects::ValueType::Table
                     ));
                 }
@@ -239,24 +227,17 @@ impl Frame {
 
         macro_rules! set_table {
             ($special_name:expr) => {{
-                let arg3 = try_stack!(self.operate_stack.pop());
-                let mut arg2 = try_stack!(self.operate_stack.pop());
-                let arg1 = try_stack!(self.operate_stack.pop());
-                if let Some(t) = as_table_mut!(arg2) {
+                let tos = try_stack!(self.operate_stack.pop());
+                let mut tos1 = try_stack!(self.operate_stack.pop());
+                let tos2 = try_stack!(self.operate_stack.pop());
+                if let Some(t) = as_table_mut!(tos1) {
                     match t.get(&lvm.get_builtin_str($special_name)) {
-                        Some(v) => {
-                            self.operate_stack.push(v);
-                            self.operate_stack.push(arg2);
-                            self.operate_stack.push(arg3);
-                            self.operate_stack.push(arg1);
-                            let return_value = call!(3)?;
-                            self.operate_stack.push(return_value);
-                        }
-                        None => t.set(&arg3, arg1),
+                        Some(v) => self.operate_stack.push(lvm.call(v, vec![tos1, tos, tos2])?),
+                        None => t.set(&tos, tos2),
                     }
                 } else {
                     return_error!($crate::type_convert_error!(
-                        arg1.value_type(),
+                        tos2.value_type(),
                         $crate::objects::ValueType::Table
                     ));
                 }
@@ -284,26 +265,26 @@ impl Frame {
                         .push(*try_stack!(self.operate_stack.last()));
                 }
                 OpCode::DupTwo => {
-                    let a = try_stack!(self.operate_stack.pop());
-                    let b = try_stack!(self.operate_stack.pop());
-                    self.operate_stack.push(b);
-                    self.operate_stack.push(a);
-                    self.operate_stack.push(b);
-                    self.operate_stack.push(a);
+                    let tos = try_stack!(self.operate_stack.pop());
+                    let tos1 = try_stack!(self.operate_stack.pop());
+                    self.operate_stack.push(tos1);
+                    self.operate_stack.push(tos);
+                    self.operate_stack.push(tos1);
+                    self.operate_stack.push(tos);
                 }
                 OpCode::RotTwo => {
-                    let a = try_stack!(self.operate_stack.pop());
-                    let b = try_stack!(self.operate_stack.pop());
-                    self.operate_stack.push(a);
-                    self.operate_stack.push(b);
+                    let tos = try_stack!(self.operate_stack.pop());
+                    let tos1 = try_stack!(self.operate_stack.pop());
+                    self.operate_stack.push(tos);
+                    self.operate_stack.push(tos1);
                 }
                 OpCode::RotThree => {
-                    let a = try_stack!(self.operate_stack.pop());
-                    let b = try_stack!(self.operate_stack.pop());
-                    let c = try_stack!(self.operate_stack.pop());
-                    self.operate_stack.push(a);
-                    self.operate_stack.push(c);
-                    self.operate_stack.push(b);
+                    let tos = try_stack!(self.operate_stack.pop());
+                    let tos1 = try_stack!(self.operate_stack.pop());
+                    let tos2 = try_stack!(self.operate_stack.pop());
+                    self.operate_stack.push(tos);
+                    self.operate_stack.push(tos2);
+                    self.operate_stack.push(tos1);
                 }
                 OpCode::LoadLocal(i) => {
                     self.operate_stack.push(*try_get!(
@@ -480,8 +461,8 @@ impl Frame {
                     }
                 }
                 OpCode::ImportGlob => {
-                    let arg1 = try_stack!(self.operate_stack.pop());
-                    let module = try_convert!(lvm, arg1, as_table, Table);
+                    let tos = try_stack!(self.operate_stack.pop());
+                    let module = try_convert!(lvm, tos, as_table, Table);
                     for (k, v) in module.clone() {
                         lvm.set_global_variable(try_convert!(lvm, k, as_str, Str).to_string(), v);
                     }
@@ -510,62 +491,51 @@ impl Frame {
                 OpCode::SetAttr => set_table!("__setattr__"),
                 OpCode::SetItem => set_table!("__setitem__"),
                 OpCode::Neg => {
-                    let arg1 = try_stack!(self.operate_stack.pop());
-                    if let Some(t) = as_table!(arg1) {
+                    let tos = try_stack!(self.operate_stack.pop());
+                    if let Some(t) = as_table!(tos) {
                         match t.get(&lvm.get_builtin_str("__neg__")) {
-                            Some(v) => {
-                                self.operate_stack.push(v);
-                                self.operate_stack.push(arg1);
-                                let return_value = call!(1)?;
-                                self.operate_stack.push(return_value);
-                            }
-                            None => return_error!(operator_error!(code.clone(), arg1)),
+                            Some(v) => self.operate_stack.push(lvm.call(v, vec![tos])?),
+                            None => return_error!(operator_error!(code.clone(), tos)),
                         }
                     } else {
-                        self.operate_stack.push(match arg1 {
+                        self.operate_stack.push(match tos {
                             Value::Int(v) => Value::Int(-v),
                             Value::Float(v) => Value::Float(-v),
-                            _ => return_error!(operator_error!(code.clone(), arg1)),
+                            _ => return_error!(operator_error!(code.clone(), tos)),
                         })
                     }
                 }
                 OpCode::Not => {
-                    let arg1 = try_stack!(self.operate_stack.pop());
+                    let tos = try_stack!(self.operate_stack.pop());
                     self.operate_stack
-                        .push(Value::Bool(!try_convert!(lvm, arg1, as_bool, Bool)));
+                        .push(Value::Bool(!try_convert!(lvm, tos, as_bool, Bool)));
                 }
                 OpCode::Add => {
-                    let arg2 = try_stack!(self.operate_stack.pop());
-                    let arg1 = try_stack!(self.operate_stack.pop());
-                    match arg1.value_type() {
+                    let tos = try_stack!(self.operate_stack.pop());
+                    let tos1 = try_stack!(self.operate_stack.pop());
+                    match tos1.value_type() {
                         ValueType::Str => {
-                            match (arg1.as_str(), arg2.as_str()) {
+                            match (tos1.as_str(), tos.as_str()) {
                                 (Some(v1), Some(v2)) => self
                                     .operate_stack
                                     .push(lvm.new_str_value(v1.to_string() + v2)),
-                                _ => return_error!(operator_error!(code.clone(), arg1, arg2)),
+                                _ => return_error!(operator_error!(code.clone(), tos1, tos)),
                             };
                         }
                         ValueType::Table | ValueType::UserData => {
-                            match as_table!(arg1)
+                            match as_table!(tos1)
                                 .unwrap()
                                 .get(&lvm.get_builtin_str("__add__"))
                             {
-                                Some(v) => {
-                                    self.operate_stack.push(v);
-                                    self.operate_stack.push(arg1);
-                                    self.operate_stack.push(arg2);
-                                    let return_value = call!(2)?;
-                                    self.operate_stack.push(return_value);
-                                }
-                                None => return_error!(operator_error!(code.clone(), arg1, arg2)),
+                                Some(v) => self.operate_stack.push(lvm.call(v, vec![tos1, tos])?),
+                                None => return_error!(operator_error!(code.clone(), tos1, tos)),
                             }
                         }
                         _ => {
-                            self.operate_stack.push(match (arg1, arg2) {
+                            self.operate_stack.push(match (tos1, tos) {
                                 (Value::Int(v1), Value::Int(v2)) => Value::Int(v1 + v2),
                                 (Value::Float(v1), Value::Float(v2)) => Value::Float(v1 + v2),
-                                _ => return_error!(operator_error!(code.clone(), arg1, arg2)),
+                                _ => return_error!(operator_error!(code.clone(), tos1, tos)),
                             });
                         }
                     }
@@ -581,9 +551,9 @@ impl Frame {
                 OpCode::Lt => compare!(<, "__lt__", code.clone()),
                 OpCode::Le => compare!(<=, "__le__", code.clone()),
                 OpCode::Is => {
-                    let arg2 = try_stack!(self.operate_stack.pop());
-                    let arg1 = try_stack!(self.operate_stack.pop());
-                    self.operate_stack.push(Value::Bool(arg1.is(&arg2)));
+                    let tos = try_stack!(self.operate_stack.pop());
+                    let tos1 = try_stack!(self.operate_stack.pop());
+                    self.operate_stack.push(Value::Bool(tos1.is(&tos)));
                 }
                 OpCode::For(JumpTarget(i)) => {
                     let return_value =
@@ -600,15 +570,15 @@ impl Frame {
                     continue;
                 }
                 OpCode::JumpIfNull(JumpTarget(i)) => {
-                    let arg1 = try_stack!(self.operate_stack.last());
-                    if arg1.is_null() {
+                    let tos = try_stack!(self.operate_stack.last());
+                    if tos.is_null() {
                         self.pc = *i;
                         continue;
                     }
                 }
                 OpCode::JumpPopIfFalse(JumpTarget(i)) => {
-                    let arg1 = try_stack!(self.operate_stack.pop());
-                    if let Some(v) = arg1.as_bool() {
+                    let tos = try_stack!(self.operate_stack.pop());
+                    if let Some(v) = tos.as_bool() {
                         if !v {
                             self.pc = *i;
                             continue;
@@ -616,8 +586,8 @@ impl Frame {
                     }
                 }
                 OpCode::JumpIfTureOrPop(JumpTarget(i)) => {
-                    let arg1 = try_stack!(self.operate_stack.last());
-                    if let Some(v) = arg1.as_bool() {
+                    let tos = try_stack!(self.operate_stack.last());
+                    if let Some(v) = tos.as_bool() {
                         if v {
                             self.pc = *i;
                             continue;
@@ -627,8 +597,8 @@ impl Frame {
                     }
                 }
                 OpCode::JumpIfFalseOrPop(JumpTarget(i)) => {
-                    let arg1 = try_stack!(self.operate_stack.last());
-                    if let Some(v) = arg1.as_bool() {
+                    let tos = try_stack!(self.operate_stack.last());
+                    if let Some(v) = tos.as_bool() {
                         if !v {
                             self.pc = *i;
                             continue;
@@ -663,11 +633,11 @@ impl Frame {
                     }
                 }
                 OpCode::Throw => {
-                    let arg1 = try_stack!(self.operate_stack.pop());
-                    if arg1.is_str() || arg1.is_table() || arg1.is_userdata() {
-                        return Ok(error!(arg1));
+                    let tos = try_stack!(self.operate_stack.pop());
+                    if tos.is_str() || tos.is_table() || tos.is_userdata() {
+                        return Ok(error!(tos));
                     } else {
-                        return Err(throw_error!(arg1));
+                        return Err(throw_error!(tos));
                     }
                 }
                 OpCode::ReturnCall(i) => {
