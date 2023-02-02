@@ -13,14 +13,14 @@ macro_rules! check_arguments_num {
         let required = $crate::errors::CallArgumentsErrorKind::$require_ident($require_value);
         if !required.contains(&$args.len()) {
             $crate::return_error!(
+                $lvm,
                 $crate::errors::BuiltinError::TypeError(
                     $crate::errors::TypeError::CallArgumentsError {
                         value: $value,
                         required,
                         given: $args.len(),
                     }
-                ),
-                $lvm
+                )
             );
         }
     };

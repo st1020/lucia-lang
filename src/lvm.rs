@@ -29,7 +29,7 @@ macro_rules! error {
 
 #[macro_export]
 macro_rules! return_error {
-    ($value:expr, $lvm:expr) => {
+    ($lvm:expr, $value:expr) => {
         return Ok($value.into_table_value($lvm))
     };
 }
@@ -40,8 +40,8 @@ macro_rules! try_convert {
         match $expr.$as() {
             Some(val) => val,
             None => $crate::return_error!(
-                $crate::type_convert_error!($expr.value_type(), $crate::objects::ValueType::$to),
-                $lvm
+                $lvm,
+                $crate::type_convert_error!($expr.value_type(), $crate::objects::ValueType::$to)
             ),
         }
     };
@@ -141,7 +141,7 @@ impl Frame {
 
         macro_rules! return_error {
             ($value:expr) => {
-                $crate::return_error!($value, lvm)
+                $crate::return_error!(lvm, $value)
             };
         }
 

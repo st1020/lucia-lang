@@ -68,8 +68,8 @@ pub fn builtin_variables() -> HashMap<String, Value> {
                 Ok(Value::Int(v.len().try_into().unwrap()))
             } else {
                 return_error!(
-                    type_convert_error!(args[0].value_type(), ValueType::Table),
-                    lvm
+                    lvm,
+                    type_convert_error!(args[0].value_type(), ValueType::Table)
                 );
             }
         }),
