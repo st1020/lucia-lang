@@ -11,7 +11,9 @@ use crate::errors::{
 };
 use crate::libs;
 use crate::objects::*;
-use crate::{build_table_error, call_arguments_error, not_callable_error, operator_error};
+use crate::{
+    build_table_error, call_arguments_error, not_callable_error, operator_error, type_convert_error,
+};
 
 #[macro_export]
 macro_rules! error {
@@ -198,10 +200,7 @@ impl Frame {
                 } else if let Some(t) = tos1.as_table() {
                     self.operate_stack.push(t.get(&tos).unwrap_or(Value::Null));
                 } else {
-                    return_error!(crate::type_convert_error!(
-                        tos1.value_type(),
-                        crate::objects::ValueType::Table
-                    ));
+                    return_error!(type_convert_error!(tos1.value_type(), ValueType::Table));
                 }
             }};
         }
@@ -216,10 +215,7 @@ impl Frame {
                 } else if let Some(t) = tos1.as_table_mut() {
                     t.set(&tos, tos2);
                 } else {
-                    return_error!($crate::type_convert_error!(
-                        tos1.value_type(),
-                        $crate::objects::ValueType::Table
-                    ));
+                    return_error!(type_convert_error!(tos1.value_type(), ValueType::Table));
                 }
             }};
         }
@@ -470,27 +466,19 @@ impl Frame {
                 OpCode::GetItem => get_table!("__getitem__"),
                 OpCode::GetMeta => {
                     let tos = try_stack!(self.operate_stack.pop());
-                    if let Some(t) = tos.as_table() {
-                        self.operate_stack.push(t.metatable);
-                    } else {
-                        return_error!(crate::type_convert_error!(
-                            tos.value_type(),
-                            crate::objects::ValueType::Table
-                        ));
-                    }
+                    self.operate_stack
+                        .push(try_convert!(lvm, tos, as_table, Table).metatable);
                 }
                 OpCode::SetAttr => set_table!("__setattr__"),
                 OpCode::SetItem => set_table!("__setitem__"),
                 OpCode::SetMeta => {
                     let mut tos = try_stack!(self.operate_stack.pop());
                     let tos1 = try_stack!(self.operate_stack.pop());
-                    if let Some(t) = tos.as_table_mut() {
+                    let t = try_convert!(lvm, tos, as_table_mut, Table);
+                    if tos1.is_table() || tos1.is_null() {
                         t.metatable = tos1;
                     } else {
-                        return_error!(crate::type_convert_error!(
-                            tos.value_type(),
-                            crate::objects::ValueType::Table
-                        ));
+                        return_error!(type_convert_error!(tos1.value_type(), ValueType::Table));
                     }
                 }
                 OpCode::Neg => {
