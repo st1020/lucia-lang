@@ -160,7 +160,17 @@ impl<'a> Parser<'a> {
             })
         } else if self.eat(&TokenKind::For) {
             stmt!(StmtKind::For {
-                left: self.parse_arguments(&TokenKind::In)?,
+                left: {
+                    let mut temp = Vec::new();
+                    while !self.eat_noexpect(&TokenKind::In) {
+                        temp.push(self.parse_ident()?);
+                        if self.eat(&TokenKind::In) {
+                            break;
+                        }
+                        self.expect(&TokenKind::Comma)?;
+                    }
+                    temp
+                },
                 right: self.parse_expr(1)?,
                 body: self.parse_block()?,
             })
@@ -178,7 +188,17 @@ impl<'a> Parser<'a> {
             })
         } else if self.eat(&TokenKind::Global) {
             stmt!(StmtKind::Global {
-                arguments: self.parse_arguments(&TokenKind::EOL)?,
+                arguments: {
+                    let mut temp = Vec::new();
+                    while !self.check_noexpect(&TokenKind::EOL) {
+                        temp.push(self.parse_ident()?);
+                        if self.check(&TokenKind::EOL) {
+                            break;
+                        }
+                        self.expect(&TokenKind::Comma)?;
+                    }
+                    temp
+                },
             })
         } else if self.eat(&TokenKind::Import) {
             stmt!({
@@ -695,18 +715,5 @@ impl<'a> Parser<'a> {
         } else {
             unexpected_error!(self)
         }
-    }
-
-    /// Parse arguments.
-    fn parse_arguments(&mut self, end_token: &TokenKind) -> Result<Vec<Ident>> {
-        let mut temp = Vec::new();
-        while !self.eat_noexpect(end_token) {
-            temp.push(self.parse_ident()?);
-            if self.eat(end_token) {
-                break;
-            }
-            self.expect(&TokenKind::Comma)?;
-        }
-        Ok(temp)
     }
 }
