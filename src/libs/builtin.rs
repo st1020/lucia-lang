@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::errors::{Error, RuntimeError, RuntimeErrorKind};
 use crate::objects::{Value, ValueType};
-use crate::{as_table, check_arguments_num, error, return_error, type_convert_error};
+use crate::{check_arguments_num, error, get_metamethod, return_error, type_convert_error};
 
 pub fn builtin_variables() -> HashMap<String, Value> {
     let mut t = HashMap::new();
@@ -60,14 +60,12 @@ pub fn builtin_variables() -> HashMap<String, Value> {
         "len".to_string(),
         Value::ExtFunction(|args, lvm| {
             check_arguments_num!(lvm, args, None, Eq(1));
-            if let Some(v) = args[0].as_str() {
+            if let Some(v) = get_metamethod!(lvm, args[0], "__len__") {
+                lvm.call(v, vec![args[0]])
+            } else if let Some(v) = args[0].as_str() {
                 Ok(Value::Int(v.len().try_into().unwrap()))
-            } else if let Some(v) = as_table!(args[0]) {
-                if let Some(t) = v.get(&lvm.get_builtin_str("__len__")) {
-                    lvm.call(t, vec![args[0]])
-                } else {
-                    Ok(Value::Int(v.len().try_into().unwrap()))
-                }
+            } else if let Some(v) = args[0].as_table() {
+                Ok(Value::Int(v.len().try_into().unwrap()))
             } else {
                 return_error!(
                     type_convert_error!(args[0].value_type(), ValueType::Table),
@@ -80,66 +78,61 @@ pub fn builtin_variables() -> HashMap<String, Value> {
         "bool".to_string(),
         Value::ExtFunction(|args, lvm| {
             check_arguments_num!(lvm, args, None, Eq(1));
-            if let Some(v) = as_table!(args[0]) {
-                if let Some(t) = v.get(&lvm.get_builtin_str("__bool__")) {
-                    return lvm.call(t, vec![args[0]]);
-                }
+            if let Some(v) = get_metamethod!(lvm, args[0], "__bool__") {
+                lvm.call(v, vec![args[0]])
+            } else {
+                Ok(Value::Bool(args[0].into()))
             }
-            Ok(Value::Bool(args[0].into()))
         }),
     );
     t.insert(
         "int".to_string(),
         Value::ExtFunction(|args, lvm| {
             check_arguments_num!(lvm, args, None, Eq(1));
-            if let Some(v) = as_table!(args[0]) {
-                if let Some(t) = v.get(&lvm.get_builtin_str("__int__")) {
-                    return lvm.call(t, vec![args[0]]);
-                }
+            if let Some(v) = get_metamethod!(lvm, args[0], "__int__") {
+                lvm.call(v, vec![args[0]])
+            } else {
+                Ok(match args[0].try_into() {
+                    Ok(v) => Value::Int(v),
+                    Err(v) => v.into_table_value(lvm),
+                })
             }
-            Ok(match args[0].try_into() {
-                Ok(v) => Value::Int(v),
-                Err(v) => v.into_table_value(lvm),
-            })
         }),
     );
     t.insert(
         "float".to_string(),
         Value::ExtFunction(|args, lvm| {
             check_arguments_num!(lvm, args, None, Eq(1));
-            if let Some(v) = as_table!(args[0]) {
-                if let Some(t) = v.get(&lvm.get_builtin_str("__float__")) {
-                    return lvm.call(t, vec![args[0]]);
-                }
+            if let Some(v) = get_metamethod!(lvm, args[0], "__float__") {
+                lvm.call(v, vec![args[0]])
+            } else {
+                Ok(match args[0].try_into() {
+                    Ok(v) => Value::Float(v),
+                    Err(v) => v.into_table_value(lvm),
+                })
             }
-            Ok(match args[0].try_into() {
-                Ok(v) => Value::Float(v),
-                Err(v) => v.into_table_value(lvm),
-            })
         }),
     );
     t.insert(
         "str".to_string(),
         Value::ExtFunction(|args, lvm| {
             check_arguments_num!(lvm, args, None, Eq(1));
-            if let Some(v) = as_table!(args[0]) {
-                if let Some(t) = v.get(&lvm.get_builtin_str("__str__")) {
-                    return lvm.call(t, vec![args[0]]);
-                }
+            if let Some(v) = get_metamethod!(lvm, args[0], "__str__") {
+                lvm.call(v, vec![args[0]])
+            } else {
+                Ok(lvm.new_str_value(args[0].into()))
             }
-            Ok(lvm.new_str_value(args[0].into()))
         }),
     );
     t.insert(
         "repr".to_string(),
         Value::ExtFunction(|args, lvm| {
             check_arguments_num!(lvm, args, None, Eq(1));
-            if let Some(v) = as_table!(args[0]) {
-                if let Some(t) = v.get(&lvm.get_builtin_str("__repr__")) {
-                    return lvm.call(t, vec![args[0]]);
-                }
+            if let Some(v) = get_metamethod!(lvm, args[0], "__repr__") {
+                lvm.call(v, vec![args[0]])
+            } else {
+                Ok(lvm.new_str_value(args[0].repr()))
             }
-            Ok(lvm.new_str_value(args[0].repr()))
         }),
     );
     t

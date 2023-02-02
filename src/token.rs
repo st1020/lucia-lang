@@ -110,6 +110,8 @@ pub enum TokenKind {
     OpenBracket,
     /// "]"
     CloseBracket,
+    /// "#"
+    Pound,
     /// "?"
     Question,
     /// ":"
@@ -196,6 +198,7 @@ impl Debug for TokenKind {
             Self::CloseBrace => write!(f, "CloseBrace(}})"),
             Self::OpenBracket => write!(f, "OpenBracket([)"),
             Self::CloseBracket => write!(f, "CloseBracket(])"),
+            Self::Pound => write!(f, "Pound(#)"),
             Self::Question => write!(f, "Question(?)"),
             Self::Colon => write!(f, "Colon(:)"),
             Self::Assign => write!(f, "Assign(=)"),

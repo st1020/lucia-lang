@@ -9,7 +9,7 @@ use super::Value;
 pub struct Table {
     pub array: Vec<(Value, Value)>,
     pub mapping: HashMap<Value, Value>,
-    pub base: Option<Value>,
+    pub metatable: Value,
 }
 
 impl Table {
@@ -18,7 +18,7 @@ impl Table {
         Table {
             array: Vec::new(),
             mapping: HashMap::new(),
-            base: None,
+            metatable: Value::Null,
         }
     }
 
@@ -76,25 +76,21 @@ impl Table {
     pub fn clear(&mut self) {
         self.array.clear();
         self.mapping.clear();
-        self.base = None;
+        self.metatable = Value::Null;
     }
 
     pub fn raw_get(&self, key: &Value) -> Option<Value> {
         if let Some(key) = key.as_int() {
             if let Ok(key) = usize::try_from(key) {
-                if let Some((_k, v)) = self.array.get(key) {
-                    return Some(*v);
-                }
+                return self.array.get(key).map(|(_k, v)| v).copied();
             }
         }
         self.mapping.get(key).copied()
     }
 
     pub fn get(&self, key: &Value) -> Option<Value> {
-        self.raw_get(key).or_else(|| {
-            self.base
-                .and_then(|v| v.as_table().and_then(|v| v.get(key)))
-        })
+        self.raw_get(key)
+            .or_else(|| self.metatable.as_table().and_then(|v| v.get(key)))
     }
 
     pub fn set(&mut self, key: &Value, value: Value) {
@@ -105,9 +101,6 @@ impl Table {
                     return;
                 }
             }
-        } else if let Some("__base__") = key.as_str() {
-            self.base = if value.is_null() { None } else { Some(value) };
-            return;
         }
         if !value.is_null() {
             self.mapping.insert(*key, value);
@@ -117,32 +110,25 @@ impl Table {
     }
 
     pub(crate) fn repr_table(&self, t: &Value) -> String {
-        let temp = self
-            .iter()
-            .map(|(k, v)| {
-                format!(
-                    "{}: {}",
-                    k.repr(),
-                    if v.is(t) {
-                        "<table>".to_string()
-                    } else if let Some(v_t) = v.as_table() {
-                        v_t.repr_table(t)
-                    } else {
-                        v.repr()
-                    },
-                )
-            })
-            .collect::<Vec<String>>()
-            .join(", ");
-        if let Some(base) = self.base {
-            if temp.is_empty() {
-                format!("{{\"__base__\": {}}}", base.repr())
-            } else {
-                format!("{{{}, \"__base__\": {}}}", temp, base.repr())
-            }
-        } else {
-            format!("{{{}}}", temp)
-        }
+        format!(
+            "{{{}}}",
+            self.iter()
+                .map(|(k, v)| {
+                    format!(
+                        "{}: {}",
+                        k.repr(),
+                        if v.is(t) {
+                            "<table>".to_string()
+                        } else if let Some(v_t) = v.as_table() {
+                            v_t.repr_table(t)
+                        } else {
+                            v.repr()
+                        },
+                    )
+                })
+                .collect::<Vec<String>>()
+                .join(", ")
+        )
     }
 }
 
@@ -167,7 +153,7 @@ impl From<Vec<Value>> for Table {
         Table {
             array: temp,
             mapping: HashMap::new(),
-            base: None,
+            metatable: Value::Null,
         }
     }
 }

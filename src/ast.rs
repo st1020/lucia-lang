@@ -130,6 +130,10 @@ pub enum ExprKind {
         kind: MemberKind,
         safe: bool,
     },
+    MetaMember {
+        table: Box<Expr>,
+        safe: bool,
+    },
     Call {
         callee: Box<Expr>,
         arguments: Vec<Expr>,

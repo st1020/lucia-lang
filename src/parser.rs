@@ -242,7 +242,7 @@ impl<'a> Parser<'a> {
                 ($ast_node:expr) => {
                     match $ast_node.kind {
                         ExprKind::Ident(_) => (),
-                        ExprKind::Member { safe, .. } => {
+                        ExprKind::Member { safe, .. } | ExprKind::MetaMember { safe, .. } => {
                             if safe {
                                 return Err(SyntaxError::ParseAssignStmtError.into());
                             }
@@ -449,33 +449,58 @@ impl<'a> Parser<'a> {
         let mut ast_node = self.parse_expr_atom()?;
         macro_rules! member_attr_expr {
             ($member_expr_kind:expr, $safe:expr) => {
-                Box::new(Expr {
-                    kind: ExprKind::Member {
-                        table: ast_node,
-                        kind: $member_expr_kind,
-                        safe: $safe,
-                        property: Box::new(self.parse_ident()?.into()),
-                    },
-                    start,
-                    end: self.prev_token.end,
-                })
+                if self.eat_noexpect(&TokenKind::Pound) {
+                    Box::new(Expr {
+                        kind: ExprKind::MetaMember {
+                            table: ast_node,
+                            safe: $safe,
+                        },
+                        start,
+                        end: self.prev_token.end,
+                    })
+                } else {
+                    Box::new(Expr {
+                        kind: ExprKind::Member {
+                            table: ast_node,
+                            kind: $member_expr_kind,
+                            safe: $safe,
+                            property: Box::new(self.parse_ident()?.into()),
+                        },
+                        start,
+                        end: self.prev_token.end,
+                    })
+                }
             };
         }
         macro_rules! member_item_expr {
             ($safe:expr) => {
-                Box::new(Expr {
-                    kind: ExprKind::Member {
-                        table: ast_node,
-                        kind: MemberKind::Bracket,
-                        safe: $safe,
-                        property: self.parse_expr(1)?,
-                    },
-                    start: {
-                        self.expect(&TokenKind::CloseBracket)?;
-                        start
-                    },
-                    end: self.prev_token.end,
-                })
+                if self.eat_noexpect(&TokenKind::Pound) {
+                    Box::new(Expr {
+                        kind: ExprKind::MetaMember {
+                            table: ast_node,
+                            safe: $safe,
+                        },
+                        start: {
+                            self.expect(&TokenKind::CloseBracket)?;
+                            start
+                        },
+                        end: self.prev_token.end,
+                    })
+                } else {
+                    Box::new(Expr {
+                        kind: ExprKind::Member {
+                            table: ast_node,
+                            kind: MemberKind::Bracket,
+                            safe: $safe,
+                            property: self.parse_expr(1)?,
+                        },
+                        start: {
+                            self.expect(&TokenKind::CloseBracket)?;
+                            start
+                        },
+                        end: self.prev_token.end,
+                    })
+                }
             };
         }
         loop {
@@ -509,7 +534,7 @@ impl<'a> Parser<'a> {
                 member_attr_expr!(MemberKind::DoubleColon, false)
             } else if self.eat_noexpect(&TokenKind::Question) {
                 if self.eat(&TokenKind::OpenBracket) {
-                    member_item_expr!(false)
+                    member_item_expr!(true)
                 } else if self.eat(&TokenKind::Dot) {
                     member_attr_expr!(MemberKind::Dot, true)
                 } else if self.eat(&TokenKind::DoubleColon) {

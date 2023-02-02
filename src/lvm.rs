@@ -66,23 +66,10 @@ macro_rules! try_set {
 }
 
 #[macro_export]
-macro_rules! as_table {
-    ($val:expr) => {
-        $val.as_table()
-            .or_else(|| $val.as_userdata().and_then(|t| Some(&t.table)))
-    };
-}
-
-#[macro_export]
-macro_rules! as_table_mut {
-    ($val:expr) => {
-        match $val.as_table_mut() {
-            Some(val) => Some(val),
-            None => match $val.as_userdata_mut() {
-                Some(t) => Some(&mut t.table),
-                None => None,
-            },
-        }
+macro_rules! get_metamethod {
+    ($lvm:expr, $val:expr, $name:expr) => {
+        $val.metatable()
+            .and_then(|t| t.get(&$lvm.get_builtin_str($name)))
     };
 }
 
@@ -158,86 +145,79 @@ impl Frame {
             };
         }
 
-        macro_rules! call_special_name {
-            ($tos1:ident, $tos:ident, $special_name:expr, $operator:expr, $block:block) => {
-                if let Some(t) = as_table!($tos1) {
-                    match t.get(&lvm.get_builtin_str($special_name)) {
-                        Some(v) => self.operate_stack.push(lvm.call(v, vec![$tos1, $tos])?),
-                        None => return_error!(operator_error!($operator, $tos1, $tos)),
-                    }
-                } else $block
-            };
-        }
-
         macro_rules! bin_op {
-            ($op: tt, $special_name:expr, $operator:expr) => {{
+            ($op: tt, $name:expr, $operator:expr) => {{
                 let tos = try_stack!(self.operate_stack.pop());
                 let tos1 = try_stack!(self.operate_stack.pop());
-                call_special_name!(tos1, tos, $special_name, $operator, {
+                if let Some(v) = get_metamethod!(lvm, tos1, $name) {
+                    self.operate_stack.push(lvm.call(v, vec![tos1, tos])?);
+                } else {
                     self.operate_stack.push(match (tos1, tos) {
                         (Value::Int(v1), Value::Int(v2)) => Value::Int(v1 $op v2),
                         (Value::Float(v1), Value::Float(v2)) => Value::Float(v1 $op v2),
                         _ => return_error!(operator_error!($operator, tos1, tos)),
                     });
-                })
+                }
             }};
         }
 
         macro_rules! eq_ne {
-            ($op: tt, $special_name:expr, $operator:expr) => {{
+            ($op: tt, $name:expr, $operator:expr) => {{
                 let tos = try_stack!(self.operate_stack.pop());
                 let tos1 = try_stack!(self.operate_stack.pop());
-                call_special_name!(tos1, tos, $special_name, $operator, {
+                if let Some(v) = get_metamethod!(lvm, tos1, $name) {
+                    self.operate_stack.push(lvm.call(v, vec![tos1, tos])?);
+                } else {
                     self.operate_stack.push(Value::Bool(tos1 $op tos));
-                })
+                }
             }};
         }
 
         macro_rules! compare {
-            ($op: tt, $special_name:expr, $operator:expr) => {{
+            ($op: tt, $name:expr, $operator:expr) => {{
                 let tos = try_stack!(self.operate_stack.pop());
                 let tos1 = try_stack!(self.operate_stack.pop());
-                call_special_name!(tos1, tos, $special_name, $operator, {
+                if let Some(v) = get_metamethod!(lvm, tos1, $name) {
+                    self.operate_stack.push(lvm.call(v, vec![tos1, tos])?);
+                } else {
                     self.operate_stack.push(Value::Bool(match (tos1, tos) {
                         (Value::Int(v1), Value::Int(v2)) => v1 $op v2,
                         (Value::Float(v1), Value::Float(v2)) => v1 $op v2,
                         _ => return_error!(operator_error!($operator, tos1, tos)),
                     }));
-                })
+                }
             }};
         }
 
         macro_rules! get_table {
-            ($special_name:expr) => {{
+            ($name:expr) => {{
                 let tos = try_stack!(self.operate_stack.pop());
                 let tos1 = try_stack!(self.operate_stack.pop());
-                if let Some(t) = as_table!(tos1) {
-                    match t.get(&lvm.get_builtin_str($special_name)) {
-                        Some(v) => self.operate_stack.push(lvm.call(v, vec![tos1, tos])?),
-                        None => self.operate_stack.push(t.get(&tos).unwrap_or(Value::Null)),
-                    }
+                if let Some(v) = get_metamethod!(lvm, tos1, $name) {
+                    self.operate_stack.push(lvm.call(v, vec![tos1, tos])?);
+                } else if let Some(t) = tos1.as_table() {
+                    self.operate_stack.push(t.get(&tos).unwrap_or(Value::Null));
                 } else {
-                    return_error!($crate::type_convert_error!(
+                    return_error!(crate::type_convert_error!(
                         tos1.value_type(),
-                        $crate::objects::ValueType::Table
+                        crate::objects::ValueType::Table
                     ));
                 }
             }};
         }
 
         macro_rules! set_table {
-            ($special_name:expr) => {{
+            ($name:expr) => {{
                 let tos = try_stack!(self.operate_stack.pop());
                 let mut tos1 = try_stack!(self.operate_stack.pop());
                 let tos2 = try_stack!(self.operate_stack.pop());
-                if let Some(t) = as_table_mut!(tos1) {
-                    match t.get(&lvm.get_builtin_str($special_name)) {
-                        Some(v) => self.operate_stack.push(lvm.call(v, vec![tos1, tos, tos2])?),
-                        None => t.set(&tos, tos2),
-                    }
+                if let Some(v) = get_metamethod!(lvm, tos1, $name) {
+                    self.operate_stack.push(lvm.call(v, vec![tos1, tos, tos2])?);
+                } else if let Some(t) = tos1.as_table_mut() {
+                    t.set(&tos, tos2);
                 } else {
                     return_error!($crate::type_convert_error!(
-                        tos2.value_type(),
+                        tos1.value_type(),
                         $crate::objects::ValueType::Table
                     ));
                 }
@@ -488,21 +468,41 @@ impl Frame {
                 }
                 OpCode::GetAttr => get_table!("__getattr__"),
                 OpCode::GetItem => get_table!("__getitem__"),
+                OpCode::GetMeta => {
+                    let tos = try_stack!(self.operate_stack.pop());
+                    if let Some(t) = tos.as_table() {
+                        self.operate_stack.push(t.metatable);
+                    } else {
+                        return_error!(crate::type_convert_error!(
+                            tos.value_type(),
+                            crate::objects::ValueType::Table
+                        ));
+                    }
+                }
                 OpCode::SetAttr => set_table!("__setattr__"),
                 OpCode::SetItem => set_table!("__setitem__"),
+                OpCode::SetMeta => {
+                    let mut tos = try_stack!(self.operate_stack.pop());
+                    let tos1 = try_stack!(self.operate_stack.pop());
+                    if let Some(t) = tos.as_table_mut() {
+                        t.metatable = tos1;
+                    } else {
+                        return_error!(crate::type_convert_error!(
+                            tos.value_type(),
+                            crate::objects::ValueType::Table
+                        ));
+                    }
+                }
                 OpCode::Neg => {
                     let tos = try_stack!(self.operate_stack.pop());
-                    if let Some(t) = as_table!(tos) {
-                        match t.get(&lvm.get_builtin_str("__neg__")) {
-                            Some(v) => self.operate_stack.push(lvm.call(v, vec![tos])?),
-                            None => return_error!(operator_error!(code.clone(), tos)),
-                        }
+                    if let Some(v) = get_metamethod!(lvm, tos, "__neg__") {
+                        self.operate_stack.push(lvm.call(v, vec![tos])?);
                     } else {
                         self.operate_stack.push(match tos {
                             Value::Int(v) => Value::Int(-v),
                             Value::Float(v) => Value::Float(-v),
                             _ => return_error!(operator_error!(code.clone(), tos)),
-                        })
+                        });
                     }
                 }
                 OpCode::Not => {
@@ -513,31 +513,19 @@ impl Frame {
                 OpCode::Add => {
                     let tos = try_stack!(self.operate_stack.pop());
                     let tos1 = try_stack!(self.operate_stack.pop());
-                    match tos1.value_type() {
-                        ValueType::Str => {
-                            match (tos1.as_str(), tos.as_str()) {
-                                (Some(v1), Some(v2)) => self
-                                    .operate_stack
-                                    .push(lvm.new_str_value(v1.to_string() + v2)),
-                                _ => return_error!(operator_error!(code.clone(), tos1, tos)),
-                            };
+                    if let Some(v) = get_metamethod!(lvm, tos1, "__add__") {
+                        self.operate_stack.push(lvm.call(v, vec![tos1, tos])?);
+                    } else if let Some(v1) = tos1.as_str() {
+                        if let Some(v2) = tos.as_str() {
+                            self.operate_stack
+                                .push(lvm.new_str_value(v1.to_string() + v2));
                         }
-                        ValueType::Table | ValueType::UserData => {
-                            match as_table!(tos1)
-                                .unwrap()
-                                .get(&lvm.get_builtin_str("__add__"))
-                            {
-                                Some(v) => self.operate_stack.push(lvm.call(v, vec![tos1, tos])?),
-                                None => return_error!(operator_error!(code.clone(), tos1, tos)),
-                            }
-                        }
-                        _ => {
-                            self.operate_stack.push(match (tos1, tos) {
-                                (Value::Int(v1), Value::Int(v2)) => Value::Int(v1 + v2),
-                                (Value::Float(v1), Value::Float(v2)) => Value::Float(v1 + v2),
-                                _ => return_error!(operator_error!(code.clone(), tos1, tos)),
-                            });
-                        }
+                    } else {
+                        self.operate_stack.push(match (tos1, tos) {
+                            (Value::Int(v1), Value::Int(v2)) => Value::Int(v1 + v2),
+                            (Value::Float(v1), Value::Float(v2)) => Value::Float(v1 + v2),
+                            _ => return_error!(operator_error!(code.clone(), tos1, tos)),
+                        });
                     }
                 }
                 OpCode::Sub => bin_op!(-, "__sub__", code.clone()),
@@ -644,7 +632,7 @@ impl Frame {
                     let mut args = self.operate_stack.split_off(self.operate_stack.len() - i);
                     let mut callee = try_stack!(self.operate_stack.pop());
 
-                    if let Some(t) = as_table!(callee) {
+                    if let Some(t) = callee.metatable() {
                         args.insert(0, callee);
                         callee = match t.get(&lvm.get_builtin_str("__call__")) {
                             Some(v) => v,
@@ -753,7 +741,7 @@ impl Lvm {
             };
         }
 
-        if let Some(t) = as_table!(callee) {
+        if let Some(t) = callee.metatable() {
             args.insert(0, callee);
             callee = match t.get(&self.get_builtin_str("__call__")) {
                 Some(v) => v,
@@ -945,8 +933,13 @@ impl Lvm {
             (*ptr).gc_state = false;
             match &(*ptr).kind {
                 GCObjectKind::Str(_) => (),
-                GCObjectKind::Table(table) => mark_table!(table),
-                GCObjectKind::UserData(userdata) => mark_table!(userdata.table),
+                GCObjectKind::Table(table) => {
+                    mark_table!(table);
+                    if let Value::GCObject(ptr) = table.metatable {
+                        Self::gc_mark_object(ptr);
+                    }
+                }
+                GCObjectKind::UserData(userdata) => mark_table!(userdata.metatable),
                 GCObjectKind::Closure(closure) => {
                     if let Some(ptr) = closure.base_closure {
                         Self::gc_mark_object(ptr.as_ptr());

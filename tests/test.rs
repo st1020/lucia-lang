@@ -5,19 +5,21 @@ use std::time::Instant;
 fn temp() -> errors::Result<()> {
     let input = "
     import std::io::{println}
-    import std::table::{raw_get}
-    l = {
-        '__base__': {
-            'lll': 1,
-            '__setitem__': fn (self, key, value) {
-                self.a = key
-            },
-            '__getitem__': fn (self, key) {
-                return 0
-            },
+    l = {}
+    l[#] = {
+        '__setitem__': fn (self, key, value) {
+            println('__setitem__', self, key, value)
+            self.k = key
+            self.v = value
+        },
+        '__getitem__': fn (self, key) {
+            println('__setitem__', self, key)
+            return 0
         },
     }
+    println(repr(l[#]))
     l[1] = 2
+    println(repr(l))
     return l['a']
     ";
     let start = Instant::now();
@@ -54,7 +56,7 @@ fn variadic() -> errors::Result<()> {
     import std::io::{println}
     test = fn (a, *b) {
         println(a)
-        println(b)
+        println(repr(b))
     }
     test(1, 2, 3)
     ";
@@ -154,7 +156,7 @@ fn for_test() -> errors::Result<()> {
     for i in a() {
         l[i] = i
     }
-    println(l)
+    println(repr(l))
     return l
     ";
     let start = Instant::now();
@@ -168,23 +170,11 @@ fn for_test() -> errors::Result<()> {
 fn do_test() -> errors::Result<()> {
     let input = "
     import std::io::{println}
-    global t
-    t = 1
     l = do {
-        __base__ = do {
-            t = t
-            lll = 1
-            __setitem__ = fn (self, key, value) {
-                self.a = key
-            }
-            __getitem__ = fn (self, key) {
-                return 0
-            }
-        }
+        a = 1
+        b = 2
     }
-    println(l)
-    l[1] = 2
-    return l['a']
+    println(repr(l))
     ";
     let start = Instant::now();
     lvm::Lvm::from(codegen::Program::try_from(input)?).run()?;

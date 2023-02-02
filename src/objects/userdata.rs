@@ -5,7 +5,7 @@ use super::Table;
 #[derive(Clone)]
 pub struct UserData {
     pub ptr: *mut u8,
-    pub table: Table,
+    pub metatable: Table,
     pub drop_func: fn(&mut UserData),
 }
 
@@ -13,7 +13,7 @@ impl Debug for UserData {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("UserData")
             .field("ptr", &self.ptr)
-            .field("table", &self.table)
+            .field("metatable", &self.metatable)
             .finish()
     }
 }
@@ -36,7 +36,7 @@ impl UserData {
     pub fn new(ptr: *mut u8, table: Table, drop_func: fn(&mut UserData)) -> Self {
         UserData {
             ptr,
-            table,
+            metatable: table,
             drop_func,
         }
     }

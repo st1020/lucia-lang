@@ -302,6 +302,7 @@ impl TryFrom<Value> for f64 {
 }
 
 impl Value {
+    #[inline]
     pub fn value_type(&self) -> ValueType {
         match self {
             Value::Null => ValueType::Null,
@@ -323,6 +324,18 @@ impl Value {
         }
     }
 
+    #[inline]
+    pub fn metatable(&self) -> Option<&Table> {
+        if let Some(t) = self.as_table() {
+            t.metatable.as_table()
+        } else if let Some(t) = self.as_userdata() {
+            Some(&t.metatable)
+        } else {
+            None
+        }
+    }
+
+    #[inline]
     pub fn is_error(&self) -> bool {
         match self {
             Value::GCObject(v) => unsafe { (**v).is_error },
@@ -330,6 +343,7 @@ impl Value {
         }
     }
 
+    #[inline]
     pub fn is(&self, other: &Value) -> bool {
         match (self, other) {
             (Value::GCObject(v1), Value::GCObject(v2)) => v1 == v2,
@@ -337,6 +351,7 @@ impl Value {
         }
     }
 
+    #[inline]
     pub fn repr(&self) -> String {
         if let Some(s) = self.as_str() {
             format!("\"{}\"", s.escape_debug())

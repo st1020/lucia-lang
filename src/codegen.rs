@@ -82,10 +82,14 @@ pub enum OpCode {
     GetAttr,
     /// Implements `TOS = TOS1[TOS]`.
     GetItem,
+    /// Implements `TOS = TOS[#]`.
+    GetMeta,
     /// Implements `TOS1::TOS = TOS2`.
     SetAttr,
     /// Implements `TOS1[TOS] = TOS2`.
     SetItem,
+    /// Implements `TOS[#] = TOS1`.
+    SetMeta,
 
     /// Implements `TOS = -TOS`.
     Neg,
@@ -259,7 +263,9 @@ fn get_stack_size(code: &Vec<OpCode>, mut offset: usize, init_size: usize) -> us
             OpCode::ImportGlob => (),
             OpCode::BuildTable(i) => t = t - i * 2 + 1,
             OpCode::GetAttr | OpCode::GetItem => t -= 1,
+            OpCode::GetMeta => (),
             OpCode::SetAttr | OpCode::SetItem => t -= 2,
+            OpCode::SetMeta => t -= 1,
             OpCode::Neg | OpCode::Not => (),
             OpCode::Add
             | OpCode::Sub
@@ -674,6 +680,15 @@ impl FunctionBuilder {
                 }
                 code_list.push(OpCode::JumpTarget(safe_label));
             }
+            ExprKind::MetaMember { table, safe } => {
+                code_list.append(&mut self.gen_expr(*table, context)?);
+                let safe_label = context.get_jump_target();
+                if safe {
+                    code_list.push(OpCode::JumpIfNull(safe_label));
+                }
+                code_list.push(OpCode::GetMeta);
+                code_list.push(OpCode::JumpTarget(safe_label));
+            }
             ExprKind::Call {
                 callee,
                 arguments,
@@ -950,6 +965,13 @@ impl FunctionBuilder {
                             MemberKind::Dot | MemberKind::DoubleColon => OpCode::SetAttr,
                         });
                     }
+                    ExprKind::MetaMember { table, safe } => {
+                        if safe {
+                            return Err(SyntaxError::IllegalAst.into());
+                        }
+                        code_list.append(&mut self.gen_expr(*table, context)?);
+                        code_list.push(OpCode::SetMeta);
+                    }
                     _ => return Err(SyntaxError::IllegalAst.into()),
                 }
             }
@@ -984,6 +1006,15 @@ impl FunctionBuilder {
                         MemberKind::Dot | MemberKind::DoubleColon => OpCode::SetAttr,
                     });
                 }
+                ExprKind::MetaMember { table, safe } => {
+                    if safe {
+                        return Err(SyntaxError::IllegalAst.into());
+                    }
+                    code_list.append(&mut self.gen_expr(*table, context)?);
+                    code_list.push(OpCode::Dup);
+                    code_list.push(OpCode::GetMeta);
+                    code_list.push(OpCode::SetMeta);
+                }
                 _ => return Err(SyntaxError::IllegalAst.into()),
             },
             StmtKind::AssignUnpack { left, right } => {
@@ -1015,6 +1046,13 @@ impl FunctionBuilder {
                                 MemberKind::Dot | MemberKind::DoubleColon => OpCode::SetAttr,
                             });
                         }
+                        ExprKind::MetaMember { table, safe } => {
+                            if *safe {
+                                return Err(SyntaxError::IllegalAst.into());
+                            }
+                            code_list.append(&mut self.gen_expr(*(*table).clone(), context)?);
+                            code_list.push(OpCode::SetMeta);
+                        }
                         _ => return Err(SyntaxError::IllegalAst.into()),
                     }
                 }
@@ -1042,6 +1080,13 @@ impl FunctionBuilder {
                                 MemberKind::Bracket => OpCode::SetItem,
                                 MemberKind::Dot | MemberKind::DoubleColon => OpCode::SetAttr,
                             });
+                        }
+                        ExprKind::MetaMember { table, safe } => {
+                            if safe {
+                                return Err(SyntaxError::IllegalAst.into());
+                            }
+                            code_list.append(&mut self.gen_expr(*table, context)?);
+                            code_list.push(OpCode::SetMeta);
                         }
                         _ => return Err(SyntaxError::IllegalAst.into()),
                     }
