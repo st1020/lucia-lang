@@ -222,6 +222,7 @@ impl<'a> Parser<'a> {
                         } else {
                             temp.push((t.clone(), t));
                         }
+                        self.eat_eol();
                         if self.eat(&TokenKind::CloseBrace) {
                             break;
                         }
@@ -342,6 +343,7 @@ impl<'a> Parser<'a> {
     /// Parse block.
     fn parse_block(&mut self) -> Result<Box<Block>> {
         self.expect(&TokenKind::OpenBrace)?;
+        self.eat_eol();
         Ok(Box::new(Block {
             start: self.prev_token.start,
             body: {
@@ -485,6 +487,7 @@ impl<'a> Parser<'a> {
                             let mut temp = Vec::new();
                             while !self.eat_noexpect(&TokenKind::CloseParen) {
                                 temp.push(*self.parse_expr(1)?);
+                                self.eat_eol();
                                 if self.eat(&TokenKind::CloseParen) {
                                     break;
                                 }
@@ -598,6 +601,7 @@ impl<'a> Parser<'a> {
                             start,
                             end: self.prev_token.end,
                         });
+                        self.eat_eol();
                         if self.eat(&TokenKind::CloseBrace) {
                             break;
                         }
@@ -639,6 +643,7 @@ impl<'a> Parser<'a> {
                             break;
                         }
                         temp.push(self.parse_ident()?);
+                        self.eat_eol();
                         if self.eat(&end_token) {
                             break;
                         }
