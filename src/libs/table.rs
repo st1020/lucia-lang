@@ -56,7 +56,7 @@ pub fn libs(lvm: &mut Lvm) -> Table {
             check_arguments_num!(lvm, args, None, Eq(1));
             let table = args.first().unwrap().as_table().unwrap();
             Ok(match table.raw_get(args.last().unwrap()) {
-                Some(v) => v,
+                Some(v) => *v,
                 None => Value::Null,
             })
         }),

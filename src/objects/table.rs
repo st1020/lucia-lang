@@ -79,16 +79,16 @@ impl Table {
         self.metatable = Value::Null;
     }
 
-    pub fn raw_get(&self, key: &Value) -> Option<Value> {
+    pub fn raw_get(&self, key: &Value) -> Option<&Value> {
         if let Some(key) = key.as_int() {
             if let Ok(key) = usize::try_from(key) {
-                return self.array.get(key).map(|(_k, v)| v).copied();
+                return self.array.get(key).map(|(_k, v)| v);
             }
         }
-        self.mapping.get(key).copied()
+        self.mapping.get(key)
     }
 
-    pub fn get(&self, key: &Value) -> Option<Value> {
+    pub fn get(&self, key: &Value) -> Option<&Value> {
         self.raw_get(key)
             .or_else(|| self.metatable.as_table().and_then(|v| v.get(key)))
     }

@@ -72,6 +72,7 @@ macro_rules! get_metamethod {
     ($lvm:expr, $val:expr, $name:expr) => {
         $val.metatable()
             .and_then(|t| t.get(&$lvm.get_builtin_str($name)))
+            .copied()
     };
 }
 
@@ -198,7 +199,8 @@ impl Frame {
                 if let Some(v) = get_metamethod!(lvm, tos1, $name) {
                     self.operate_stack.push(lvm.call(v, vec![tos1, tos])?);
                 } else if let Some(t) = tos1.as_table() {
-                    self.operate_stack.push(t.get(&tos).unwrap_or(Value::Null));
+                    self.operate_stack
+                        .push(t.get(&tos).copied().unwrap_or(Value::Null));
                 } else {
                     return_error!(type_convert_error!(tos1.value_type(), ValueType::Table));
                 }
@@ -430,6 +432,7 @@ impl Frame {
                         self.operate_stack.push(
                             module
                                 .raw_get(&lvm.get_builtin_str(t))
+                                .copied()
                                 .unwrap_or(Value::Null),
                         );
                     } else {
@@ -621,11 +624,12 @@ impl Frame {
                     let mut callee = try_stack!(self.operate_stack.pop());
 
                     if let Some(t) = callee.metatable() {
-                        args.insert(0, callee);
-                        callee = match t.get(&lvm.get_builtin_str("__call__")) {
-                            Some(v) => v,
-                            None => return_error!(not_callable_error!(callee)),
-                        };
+                        if let Some(v) = t.get(&lvm.get_builtin_str("__call__")) {
+                            callee = *v;
+                            args.insert(0, callee);
+                        } else {
+                            return_error!(not_callable_error!(callee));
+                        }
                     }
 
                     if let Some(f) = callee.as_ext_function() {
@@ -730,11 +734,12 @@ impl Lvm {
         }
 
         if let Some(t) = callee.metatable() {
-            args.insert(0, callee);
-            callee = match t.get(&self.get_builtin_str("__call__")) {
-                Some(v) => v,
-                None => return_error!(not_callable_error!(callee)),
-            };
+            if let Some(v) = t.get(&self.get_builtin_str("__call__")) {
+                callee = *v;
+                args.insert(0, callee);
+            } else {
+                return_error!(not_callable_error!(callee))
+            }
         }
 
         if let Some(f) = callee.as_ext_function() {
