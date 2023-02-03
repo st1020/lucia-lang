@@ -158,14 +158,14 @@ impl Frame {
                     self.operate_stack.push(match (tos1, tos) {
                         (Value::Int(v1), Value::Int(v2)) => Value::Int(v1 $op v2),
                         (Value::Float(v1), Value::Float(v2)) => Value::Float(v1 $op v2),
-                        _ => return_error!(operator_error!($operator, tos1, tos)),
+                        _ => return_error!(operator_error!($operator.clone(), tos1, tos)),
                     });
                 }
             }};
         }
 
         macro_rules! eq_ne {
-            ($op: tt, $name:expr, $operator:expr) => {{
+            ($op: tt, $name:expr) => {{
                 let tos = try_stack!(self.operate_stack.pop());
                 let tos1 = try_stack!(self.operate_stack.pop());
                 if let Some(v) = get_metamethod!(lvm, tos1, $name) {
@@ -186,7 +186,7 @@ impl Frame {
                     self.operate_stack.push(Value::Bool(match (tos1, tos) {
                         (Value::Int(v1), Value::Int(v2)) => v1 $op v2,
                         (Value::Float(v1), Value::Float(v2)) => v1 $op v2,
-                        _ => return_error!(operator_error!($operator, tos1, tos)),
+                        _ => return_error!(operator_error!($operator.clone(), tos1, tos)),
                     }));
                 }
             }};
@@ -230,7 +230,7 @@ impl Frame {
         };
         loop {
             let code = try_get!(
-                (closure.function.code_list)[self.pc],
+                (closure.function.code)[self.pc],
                 program_error!(ProgramError::CodeIndexError(self.pc))
             );
             // println!("{} {} {:?}", self.pc, code, self.operate_stack);
@@ -313,7 +313,7 @@ impl Frame {
                 OpCode::LoadConst(i) => {
                     self.operate_stack.push(
                         match try_get!(
-                            (closure.function.const_list)[*i],
+                            (closure.function.consts)[*i],
                             program_error!(ProgramError::ConstError(*i))
                         ) {
                             ConstlValue::Null => Value::Null,
@@ -383,11 +383,11 @@ impl Frame {
                 }
                 OpCode::Import(i) => {
                     if let ConstlValue::Str(v) = try_get!(
-                        (closure.function.const_list)[*i],
+                        (closure.function.consts)[*i],
                         program_error!(ProgramError::ConstError(*i))
                     ) {
-                        if let Some(module) = lvm.libs.get(&v.clone()).cloned() {
-                            self.operate_stack.push(module);
+                        if let Some(module) = lvm.libs.get(v) {
+                            self.operate_stack.push(*module);
                         } else {
                             let mut path = PathBuf::new();
                             if let Some(v) = lvm.get_global_variable("__module_path__") {
@@ -416,7 +416,7 @@ impl Frame {
                     let module =
                         try_convert!(lvm, try_stack!(self.operate_stack.last()), as_table, Table);
                     if let ConstlValue::Str(t) = try_get!(
-                        (closure.function.const_list)[*i],
+                        (closure.function.consts)[*i],
                         program_error!(ProgramError::ConstError(*i))
                     ) {
                         self.operate_stack.push(
@@ -431,9 +431,8 @@ impl Frame {
                 }
                 OpCode::ImportGlob => {
                     let tos = try_stack!(self.operate_stack.pop());
-                    let module = try_convert!(lvm, tos, as_table, Table);
-                    for (k, v) in module.clone() {
-                        lvm.set_global_variable(try_convert!(lvm, k, as_str, Str).to_string(), v);
+                    for (k, v) in try_convert!(lvm, tos, as_table, Table).iter() {
+                        lvm.set_global_variable(try_convert!(lvm, k, as_str, Str).to_string(), *v);
                     }
                 }
                 OpCode::BuildTable(i) => {
@@ -509,16 +508,16 @@ impl Frame {
                         });
                     }
                 }
-                OpCode::Sub => bin_op!(-, "__sub__", code.clone()),
-                OpCode::Mul => bin_op!(*, "__mul__", code.clone()),
-                OpCode::Div => bin_op!(/, "__div__", code.clone()),
-                OpCode::Mod => bin_op!(%, "__mod__", code.clone()),
-                OpCode::Eq => eq_ne!(==, "__eq__", code.clone()),
-                OpCode::Ne => eq_ne!(!=, "__ne__", code.clone()),
-                OpCode::Gt => compare!(>, "__gt__", code.clone()),
-                OpCode::Ge => compare!(>=, "__ge__", code.clone()),
-                OpCode::Lt => compare!(<, "__lt__", code.clone()),
-                OpCode::Le => compare!(<=, "__le__", code.clone()),
+                OpCode::Sub => bin_op!(-, "__sub__", code),
+                OpCode::Mul => bin_op!(*, "__mul__", code),
+                OpCode::Div => bin_op!(/, "__div__", code),
+                OpCode::Mod => bin_op!(%, "__mod__", code),
+                OpCode::Eq => eq_ne!(==, "__eq__"),
+                OpCode::Ne => eq_ne!(!=, "__ne__"),
+                OpCode::Gt => compare!(>, "__gt__", code),
+                OpCode::Ge => compare!(>=, "__ge__", code),
+                OpCode::Lt => compare!(<, "__lt__", code),
+                OpCode::Le => compare!(<=, "__le__", code),
                 OpCode::Is => {
                     let tos = try_stack!(self.operate_stack.pop());
                     let tos1 = try_stack!(self.operate_stack.pop());
@@ -880,15 +879,15 @@ impl Lvm {
             }
             // sweep
             let mut new_heap = Vec::new();
-            for ptr in self.heap.clone() {
-                if (*ptr).gc_state {
-                    if let GCObjectKind::UserData(t) = &mut (*ptr).kind {
+            for ptr in &self.heap {
+                if (**ptr).gc_state {
+                    if let GCObjectKind::UserData(t) = &mut (**ptr).kind {
                         (t.drop_func)(t);
                     }
                     ptr.drop_in_place();
-                    dealloc(ptr as *mut u8, self.mem_layout);
+                    dealloc(*ptr as *mut u8, self.mem_layout);
                 } else {
-                    new_heap.push(ptr);
+                    new_heap.push(*ptr);
                 }
             }
             self.heap = new_heap;
