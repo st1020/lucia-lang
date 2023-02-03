@@ -615,8 +615,8 @@ impl Frame {
 
                     if let Some(t) = callee.metatable() {
                         if let Some(v) = t.get(&lvm.get_builtin_str("__call__")) {
-                            callee = *v;
                             args.insert(0, callee);
+                            callee = *v;
                         } else {
                             return_error!(not_callable_error!(callee));
                         }
@@ -721,8 +721,8 @@ impl Lvm {
 
         if let Some(t) = callee.metatable() {
             if let Some(v) = t.get(&self.get_builtin_str("__call__")) {
-                callee = *v;
                 args.insert(0, callee);
+                callee = *v;
             } else {
                 return_error!(not_callable_error!(callee))
             }
