@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
-use crate::codegen::{ConstlValue, FunctionKind, JumpTarget, OpCode, Program};
+use crate::codegen::{ConstlValue, Function, FunctionKind, JumpTarget, OpCode};
 use crate::errors::{
     BuiltinError, Error, ProgramError, Result, RuntimeError, RuntimeErrorKind, TracebackFrame,
 };
@@ -311,36 +311,30 @@ impl Frame {
                     };
                 }
                 OpCode::LoadConst(i) => {
-                    let module = try_get!(
-                        (lvm.modules)[closure.module_id],
-                        program_error!(ProgramError::ModuleError(closure.module_id))
+                    self.operate_stack.push(
+                        match try_get!(
+                            (closure.function.const_list)[*i],
+                            program_error!(ProgramError::ConstError(*i))
+                        ) {
+                            ConstlValue::Null => Value::Null,
+                            ConstlValue::Bool(v) => Value::Bool(*v),
+                            ConstlValue::Int(v) => Value::Int(*v),
+                            ConstlValue::Float(v) => Value::Float(*v),
+                            ConstlValue::Str(v) => lvm.new_str_value(v.clone()),
+                            ConstlValue::Func(v) => {
+                                let base_closure = if v.kind == FunctionKind::Closure {
+                                    Some(self.closure)
+                                } else {
+                                    None
+                                };
+                                lvm.new_closure_value(Closure::new(
+                                    closure.module_id,
+                                    v.clone(),
+                                    base_closure,
+                                ))
+                            }
+                        },
                     );
-                    let t = try_get!(
-                        (module.const_list)[*i],
-                        program_error!(ProgramError::ConstError(*i))
-                    )
-                    .clone();
-                    let v = match t {
-                        ConstlValue::Null => Value::Null,
-                        ConstlValue::Bool(v) => Value::Bool(v),
-                        ConstlValue::Int(v) => Value::Int(v),
-                        ConstlValue::Float(v) => Value::Float(v),
-                        ConstlValue::Str(v) => lvm.new_str_value(v),
-                        ConstlValue::Func(func_id) => {
-                            let f = try_get!(
-                                (module.func_list)[func_id],
-                                program_error!(ProgramError::FuncListError(func_id))
-                            )
-                            .clone();
-                            let base_closure = if f.kind == FunctionKind::Closure {
-                                Some(self.closure)
-                            } else {
-                                None
-                            };
-                            lvm.new_closure_value(Closure::new(closure.module_id, f, base_closure))
-                        }
-                    };
-                    self.operate_stack.push(v);
                 }
                 OpCode::StoreLocal(i) => {
                     try_set!(
@@ -389,12 +383,10 @@ impl Frame {
                 }
                 OpCode::Import(i) => {
                     if let ConstlValue::Str(v) = try_get!(
-                        (lvm.modules[closure.module_id].const_list)[*i],
+                        (closure.function.const_list)[*i],
                         program_error!(ProgramError::ConstError(*i))
-                    )
-                    .clone()
-                    {
-                        if let Some(module) = lvm.libs.get(&v).cloned() {
+                    ) {
+                        if let Some(module) = lvm.libs.get(&v.clone()).cloned() {
                             self.operate_stack.push(module);
                         } else {
                             let mut path = PathBuf::new();
@@ -406,7 +398,7 @@ impl Frame {
                             self.operate_stack
                                 .push(match fs::read_to_string(path.clone()) {
                                     Ok(input_file) => {
-                                        lvm.modules.push(Program::try_from(&input_file)?);
+                                        lvm.modules.push(Function::try_from(&input_file)?);
                                         lvm.run_module(lvm.modules.len() - 1)?
                                     }
                                     Err(_) => BuiltinError::ImportError(format!(
@@ -423,12 +415,10 @@ impl Frame {
                 OpCode::ImportFrom(i) => {
                     let module =
                         try_convert!(lvm, try_stack!(self.operate_stack.last()), as_table, Table);
-                    if let ConstlValue::Str(t) = &try_get!(
-                        (lvm.modules[closure.module_id].const_list)[*i],
+                    if let ConstlValue::Str(t) = try_get!(
+                        (closure.function.const_list)[*i],
                         program_error!(ProgramError::ConstError(*i))
-                    )
-                    .clone()
-                    {
+                    ) {
                         self.operate_stack.push(
                             module
                                 .raw_get(&lvm.get_builtin_str(t))
@@ -671,7 +661,7 @@ impl Frame {
 
 #[derive(Debug, Clone)]
 pub struct Lvm {
-    pub modules: Vec<Program>,
+    pub modules: Vec<Function>,
     pub global_variables: HashMap<String, Value>,
     pub builtin_variables: HashMap<String, Value>,
     pub libs: HashMap<String, Value>,
@@ -712,12 +702,8 @@ impl Lvm {
                 })
             };
         }
-        let module = try_get!(
-            (self.modules)[module_id],
-            program_error!(ProgramError::ModuleError(module_id))
-        );
         let func = try_get!(
-            (module.func_list)[0],
+            (self.modules)[module_id],
             program_error!(ProgramError::ModuleError(module_id))
         )
         .clone();
@@ -961,8 +947,8 @@ impl Default for Lvm {
     }
 }
 
-impl From<Program> for Lvm {
-    fn from(program: Program) -> Self {
+impl From<Function> for Lvm {
+    fn from(program: Function) -> Self {
         let mut lvm = Lvm::new();
         lvm.modules.push(program);
         lvm

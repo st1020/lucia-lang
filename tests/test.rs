@@ -25,7 +25,7 @@ fn temp() -> errors::Result<()> {
     let start = Instant::now();
     let a = parser::Parser::new(&mut lexer::tokenize(input)).parse()?;
     let b = codegen::gen_code(a)?;
-    // println!("{:#?}", b);
+    println!("{:#?}", b);
     // println!("{:?}", std::mem::size_of::<errors::LuciaError>());
     let mut c = lvm::Lvm::from(b);
     println!("{:?}", c.run());
@@ -46,7 +46,7 @@ fn tail_call() -> errors::Result<()> {
     }
     return f(1_000_000, 1)
     ";
-    lvm::Lvm::from(codegen::Program::try_from(input)?).run()?;
+    lvm::Lvm::from(codegen::Function::try_from(input)?).run()?;
     Ok(())
 }
 
@@ -60,7 +60,7 @@ fn variadic() -> errors::Result<()> {
     }
     test(1, 2, 3)
     ";
-    lvm::Lvm::from(codegen::Program::try_from(input)?).run()?;
+    lvm::Lvm::from(codegen::Function::try_from(input)?).run()?;
     Ok(())
 }
 
@@ -70,7 +70,7 @@ fn import() -> errors::Result<()> {
     import std::io::{input, println}
     println(bool(int(input())))
     ";
-    lvm::Lvm::from(codegen::Program::try_from(input)?).run()?;
+    lvm::Lvm::from(codegen::Function::try_from(input)?).run()?;
     Ok(())
 }
 
@@ -84,7 +84,7 @@ fn for_table() -> errors::Result<()> {
         println(i)
     }
     ";
-    lvm::Lvm::from(codegen::Program::try_from(input)?).run()?;
+    lvm::Lvm::from(codegen::Function::try_from(input)?).run()?;
     Ok(())
 }
 
@@ -100,7 +100,7 @@ fn add_pref() -> errors::Result<()> {
     ";
     let start = Instant::now();
     for _ in 0..100 {
-        lvm::Lvm::from(codegen::Program::try_from(input)?).run()?;
+        lvm::Lvm::from(codegen::Function::try_from(input)?).run()?;
     }
     let duration = start.elapsed();
     println!("Time: {:?}", duration / 100);
@@ -131,7 +131,7 @@ fn gcd_pref() -> errors::Result<()> {
     ";
     let start = Instant::now();
     for _ in 0..100 {
-        lvm::Lvm::from(codegen::Program::try_from(input)?).run()?;
+        lvm::Lvm::from(codegen::Function::try_from(input)?).run()?;
     }
     let duration = start.elapsed();
     println!("Time: {:?}", duration / 100);
@@ -160,7 +160,7 @@ fn for_test() -> errors::Result<()> {
     return l
     ";
     let start = Instant::now();
-    lvm::Lvm::from(codegen::Program::try_from(input)?).run()?;
+    lvm::Lvm::from(codegen::Function::try_from(input)?).run()?;
     let duration = start.elapsed();
     println!("Time: {:?}", duration);
     Ok(())
@@ -177,7 +177,7 @@ fn do_test() -> errors::Result<()> {
     println(repr(l))
     ";
     let start = Instant::now();
-    lvm::Lvm::from(codegen::Program::try_from(input)?).run()?;
+    lvm::Lvm::from(codegen::Function::try_from(input)?).run()?;
     let duration = start.elapsed();
     println!("Time: {:?}", duration);
     Ok(())

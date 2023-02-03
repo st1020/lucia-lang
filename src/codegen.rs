@@ -8,7 +8,7 @@ use crate::lexer::tokenize;
 use crate::parser::Parser;
 
 /// The const value.
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ConstlValue {
     /// "null"
     Null,
@@ -21,7 +21,7 @@ pub enum ConstlValue {
     /// ""abc"", ""abc"
     Str(String),
     /// func id
-    Func(usize),
+    Func(Function),
 }
 
 impl From<LitKind> for ConstlValue {
@@ -187,62 +187,6 @@ impl From<UnOp> for OpCode {
     }
 }
 
-/// Generate code from AST.
-pub fn gen_code(ast_root: Box<Block>) -> Result<Program> {
-    let mut context = Context::new();
-    let func = FunctionBuilder::new(ast_root, 0, None, Vec::new(), None, FunctionKind::Funciton);
-    context.func_list.push(func);
-
-    let mut func_count = 0;
-    while func_count < context.func_list.len() {
-        let mut func = context.func_list[func_count].clone();
-        func.gen_code(&mut context)?;
-        context.func_list[func_count] = func;
-        func_count += 1;
-    }
-
-    let mut temp: Vec<usize> = vec![0; context.jump_target_count];
-    for func in &mut context.func_list {
-        let mut i = 0;
-        while i < func.code_list.len() {
-            match func.code_list[i] {
-                OpCode::JumpTarget(JumpTarget(index)) => {
-                    temp[index] = i;
-                    func.code_list.remove(i);
-                }
-                _ => i += 1,
-            }
-        }
-    }
-    for func in &mut context.func_list {
-        let mut i = 0;
-        while i < func.code_list.len() {
-            func.code_list[i] = match &func.code_list[i] {
-                OpCode::For(JumpTarget(v)) => OpCode::For(JumpTarget(temp[*v])),
-                OpCode::Jump(JumpTarget(v)) => OpCode::Jump(JumpTarget(temp[*v])),
-                OpCode::JumpIfNull(JumpTarget(v)) => OpCode::JumpIfNull(JumpTarget(temp[*v])),
-                OpCode::JumpPopIfFalse(JumpTarget(v)) => {
-                    OpCode::JumpPopIfFalse(JumpTarget(temp[*v]))
-                }
-                OpCode::JumpIfTureOrPop(JumpTarget(v)) => {
-                    OpCode::JumpIfTureOrPop(JumpTarget(temp[*v]))
-                }
-                OpCode::JumpIfFalseOrPop(JumpTarget(v)) => {
-                    OpCode::JumpIfFalseOrPop(JumpTarget(temp[*v]))
-                }
-                v => v.clone(),
-            };
-            i += 1;
-        }
-    }
-
-    for func in &mut context.func_list {
-        func.stack_size = get_stack_size(&func.code_list, 0, 0);
-    }
-
-    Ok(Program::from(context))
-}
-
 /// Try estimate function stack size.
 fn get_stack_size(code: &Vec<OpCode>, mut offset: usize, init_size: usize) -> usize {
     let mut stack_size = init_size;
@@ -304,32 +248,59 @@ fn get_stack_size(code: &Vec<OpCode>, mut offset: usize, init_size: usize) -> us
     stack_size
 }
 
-/// A program.
+/// Kind of function.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FunctionKind {
+    Funciton,
+    Closure,
+    Do,
+}
+
+/// A function.
 #[derive(Debug, Clone)]
-pub struct Program {
-    pub func_list: Vec<Function>,
+pub struct Function {
+    pub params: Vec<String>,
+    pub variadic: Option<String>,
+    pub code_list: Vec<OpCode>,
+    pub kind: FunctionKind,
+
     pub const_list: Vec<ConstlValue>,
+    pub local_names: Vec<String>,
+    pub global_names: Vec<String>,
+    pub upvalue_names: Vec<(String, usize, usize)>,
+
+    pub stack_size: usize,
 }
 
-impl Program {
-    pub fn new(func_list: Vec<Function>, const_list: Vec<ConstlValue>) -> Self {
-        Program {
-            func_list,
-            const_list,
+impl PartialEq for Function {
+    fn eq(&self, _: &Self) -> bool {
+        false
+    }
+}
+
+impl Function {
+    pub fn new() -> Self {
+        Function {
+            params: Vec::new(),
+            variadic: None,
+            code_list: Vec::new(),
+            kind: FunctionKind::Funciton,
+            const_list: Vec::new(),
+            local_names: Vec::new(),
+            global_names: Vec::new(),
+            upvalue_names: Vec::new(),
+            stack_size: 0,
         }
     }
 }
 
-impl From<Context> for Program {
-    fn from(value: Context) -> Self {
-        Program {
-            func_list: Vec::from_iter(value.func_list.iter().map(|x| Function::from(x.clone()))),
-            const_list: value.const_list,
-        }
+impl Default for Function {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
-impl TryFrom<&str> for Program {
+impl TryFrom<&str> for Function {
     type Error = Error;
 
     fn try_from(value: &str) -> Result<Self> {
@@ -337,7 +308,7 @@ impl TryFrom<&str> for Program {
     }
 }
 
-impl TryFrom<&String> for Program {
+impl TryFrom<&String> for Function {
     type Error = Error;
 
     fn try_from(value: &String) -> Result<Self> {
@@ -345,19 +316,54 @@ impl TryFrom<&String> for Program {
     }
 }
 
-#[derive(Debug, Clone)]
-struct Context {
-    pub func_list: Vec<FunctionBuilder>,
-    pub const_list: Vec<ConstlValue>,
-    jump_target_count: usize,
+pub fn gen_code(ast_root: Box<Block>) -> Result<Function> {
+    let t = FunctionBuilder::new(ast_root, Vec::new(), None, FunctionKind::Funciton);
+    t.gen_code()
 }
 
-impl Context {
-    pub fn new() -> Self {
-        Context {
-            func_list: Vec::new(),
+#[derive(Debug, Clone)]
+pub struct FunctionBuilder<'a> {
+    code: Box<Block>,
+
+    pub params: Vec<String>,
+    pub variadic: Option<String>,
+    pub code_list: Vec<OpCode>,
+    pub kind: FunctionKind,
+
+    pub const_list: Vec<ConstlValue>,
+    pub local_names: Vec<String>,
+    pub global_names: Vec<(String, bool /* writable */)>,
+    pub upvalue_names: Vec<(String, usize, usize)>,
+
+    base_function: Option<&'a FunctionBuilder<'a>>,
+    func_list: Vec<FunctionBuilder<'a>>,
+    jump_target_count: usize,
+    continue_stack: Vec<JumpTarget>,
+    break_stack: Vec<JumpTarget>,
+}
+
+impl<'a> FunctionBuilder<'a> {
+    pub fn new(
+        code: Box<Block>,
+        params: Vec<String>,
+        variadic: Option<String>,
+        kind: FunctionKind,
+    ) -> Self {
+        FunctionBuilder {
+            code,
+            params,
+            variadic,
+            code_list: Vec::new(),
+            kind,
+            base_function: None,
             const_list: Vec::new(),
+            local_names: Vec::new(),
+            global_names: Vec::new(),
+            upvalue_names: Vec::new(),
+            func_list: Vec::new(),
             jump_target_count: 0,
+            continue_stack: Vec::new(),
+            break_stack: Vec::new(),
         }
     }
 
@@ -372,96 +378,6 @@ impl Context {
         } else {
             self.const_list.push(value);
             self.const_list.len() - 1
-        }
-    }
-}
-
-/// Kind of function.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FunctionKind {
-    Funciton,
-    Closure,
-    Do,
-}
-
-/// A function.
-#[derive(Debug, Clone)]
-pub struct Function {
-    pub function_id: usize,
-    pub params: Vec<String>,
-    pub variadic: Option<String>,
-    pub code_list: Vec<OpCode>,
-    pub kind: FunctionKind,
-    pub base_function: Option<usize>,
-
-    pub local_names: Vec<String>,
-    pub global_names: Vec<String>,
-    pub upvalue_names: Vec<(String, usize, usize)>,
-
-    pub stack_size: usize,
-}
-
-impl From<FunctionBuilder> for Function {
-    fn from(value: FunctionBuilder) -> Self {
-        Function {
-            function_id: value.function_id,
-            params: value.params,
-            variadic: value.variadic,
-            code_list: value.code_list,
-            kind: value.kind,
-            base_function: value.base_function,
-            local_names: value.local_names,
-            global_names: Vec::from_iter(value.global_names.iter().map(|(x, _)| x.clone())),
-            upvalue_names: value.upvalue_names,
-            stack_size: value.stack_size,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct FunctionBuilder {
-    code: Box<Block>,
-
-    pub function_id: usize,
-    pub params: Vec<String>,
-    pub variadic: Option<String>,
-    pub code_list: Vec<OpCode>,
-    pub kind: FunctionKind,
-    pub base_function: Option<usize>,
-
-    pub local_names: Vec<String>,
-    pub global_names: Vec<(String, bool /* writable */)>,
-    pub upvalue_names: Vec<(String, usize, usize)>,
-
-    pub stack_size: usize,
-
-    continue_stack: Vec<JumpTarget>,
-    break_stack: Vec<JumpTarget>,
-}
-
-impl FunctionBuilder {
-    fn new(
-        code: Box<Block>,
-        function_id: usize,
-        base_function: Option<usize>,
-        params: Vec<String>,
-        variadic: Option<String>,
-        kind: FunctionKind,
-    ) -> Self {
-        FunctionBuilder {
-            code,
-            function_id,
-            params,
-            variadic,
-            code_list: Vec::new(),
-            kind,
-            base_function,
-            local_names: Vec::new(),
-            global_names: Vec::new(),
-            upvalue_names: Vec::new(),
-            stack_size: 0,
-            continue_stack: Vec::new(),
-            break_stack: Vec::new(),
         }
     }
 
@@ -483,7 +399,7 @@ impl FunctionBuilder {
         }
     }
 
-    fn load(&mut self, name: &String, context: &mut Context) -> OpCode {
+    fn load(&mut self, name: &String) -> OpCode {
         if let Some(index) = self.local_names.iter().position(|x| x == name) {
             OpCode::LoadLocal(index)
         } else if let Some(index) = self.global_names.iter().position(|(x, _)| x == name) {
@@ -492,23 +408,26 @@ impl FunctionBuilder {
             OpCode::LoadGlobal(self.add_global_name(name))
         } else {
             let mut base_func_count = 0;
-            let mut base_func_id = self.base_function.unwrap();
+            let mut base_func = self.base_function.unwrap();
             loop {
-                let base_func = &context.func_list[base_func_id];
                 if let Some(i) = base_func.local_names.iter().position(|x| x == name) {
                     self.upvalue_names.push((name.clone(), base_func_count, i));
                     break OpCode::LoadUpvalue(self.upvalue_names.len() - 1);
                 }
-                if !(self.kind == FunctionKind::Closure) {
+                if self.kind != FunctionKind::Closure {
                     break OpCode::LoadGlobal(self.add_global_name(name));
                 }
-                base_func_id = base_func.base_function.unwrap();
-                base_func_count += 1;
+                if let Some(func) = base_func.base_function {
+                    base_func = func;
+                    base_func_count += 1;
+                } else {
+                    break OpCode::LoadGlobal(self.add_global_name(name));
+                }
             }
         }
     }
 
-    fn store(&mut self, name: &String, context: &mut Context) -> OpCode {
+    fn store(&mut self, name: &String) -> OpCode {
         if let Some(index) = self.local_names.iter().position(|x| x == name) {
             OpCode::StoreLocal(index)
         } else if let Some(index) = self.global_names.iter().position(|(x, _)| x == name) {
@@ -521,23 +440,26 @@ impl FunctionBuilder {
             OpCode::StoreLocal(self.add_local_name(name))
         } else {
             let mut base_func_count = 0;
-            let mut base_func_id = self.base_function.unwrap();
+            let mut base_func = self.base_function.unwrap();
             loop {
-                let base_func = &context.func_list[base_func_id];
                 if let Some(i) = base_func.local_names.iter().position(|x| x == name) {
                     self.upvalue_names.push((name.clone(), base_func_count, i));
                     break OpCode::StoreUpvalue(self.upvalue_names.len() - 1);
                 }
-                if !(self.kind == FunctionKind::Closure) {
+                if self.kind != FunctionKind::Closure {
                     break OpCode::StoreLocal(self.add_local_name(name));
                 }
-                base_func_id = base_func.base_function.unwrap();
-                base_func_count += 1;
+                if let Some(func) = base_func.base_function {
+                    base_func = func;
+                    base_func_count += 1;
+                } else {
+                    break OpCode::StoreLocal(self.add_local_name(name));
+                }
             }
         }
     }
 
-    fn gen_code(&mut self, context: &mut Context) -> Result<()> {
+    pub fn gen_code(mut self) -> Result<Function> {
         for param in self.params.clone() {
             self.add_local_name(&param);
         }
@@ -545,40 +467,95 @@ impl FunctionBuilder {
             self.add_local_name(&v);
         }
         for stmt in self.code.body.clone() {
-            let t = &mut self.gen_stmt(&stmt, context)?;
+            let t = &mut self.gen_stmt(&stmt)?;
             self.code_list.append(t);
         }
         if self.kind == FunctionKind::Do {
             self.code_list.push(OpCode::Return);
         } else if *self.code_list.last().unwrap_or(&OpCode::Pop) != OpCode::Return {
-            self.code_list
-                .push(OpCode::LoadConst(context.add_const(ConstlValue::Null)));
+            let t = self.add_const(ConstlValue::Null);
+            self.code_list.push(OpCode::LoadConst(t));
             self.code_list.push(OpCode::Return);
         }
-        Ok(())
+
+        let mut temp: Vec<usize> = vec![0; self.jump_target_count];
+        let mut i = 0;
+        while i < self.code_list.len() {
+            match self.code_list[i] {
+                OpCode::JumpTarget(JumpTarget(index)) => {
+                    temp[index] = i;
+                    self.code_list.remove(i);
+                }
+                _ => i += 1,
+            }
+        }
+        let mut i = 0;
+        while i < self.code_list.len() {
+            self.code_list[i] = match &self.code_list[i] {
+                OpCode::For(JumpTarget(v)) => OpCode::For(JumpTarget(temp[*v])),
+                OpCode::Jump(JumpTarget(v)) => OpCode::Jump(JumpTarget(temp[*v])),
+                OpCode::JumpIfNull(JumpTarget(v)) => OpCode::JumpIfNull(JumpTarget(temp[*v])),
+                OpCode::JumpPopIfFalse(JumpTarget(v)) => {
+                    OpCode::JumpPopIfFalse(JumpTarget(temp[*v]))
+                }
+                OpCode::JumpIfTureOrPop(JumpTarget(v)) => {
+                    OpCode::JumpIfTureOrPop(JumpTarget(temp[*v]))
+                }
+                OpCode::JumpIfFalseOrPop(JumpTarget(v)) => {
+                    OpCode::JumpIfFalseOrPop(JumpTarget(temp[*v]))
+                }
+                v => v.clone(),
+            };
+            i += 1;
+        }
+
+        let stack_size = get_stack_size(&self.code_list, 0, 0);
+        let mut func_list = Vec::new();
+        for func in self.func_list.clone() {
+            let mut func = func.clone();
+            func.base_function = Some(&self);
+            func_list.push(func.gen_code()?);
+        }
+
+        let mut t = func_list.into_iter();
+
+        for v in &mut self.const_list {
+            if let ConstlValue::Func(func) = v {
+                *func = t.next().unwrap();
+            }
+        }
+
+        Ok(Function {
+            params: self.params,
+            variadic: self.variadic,
+            code_list: self.code_list,
+            kind: self.kind,
+            const_list: self.const_list,
+            local_names: self.local_names,
+            global_names: self.global_names.iter().map(|(x, _)| x.clone()).collect(),
+            upvalue_names: self.upvalue_names,
+            stack_size,
+        })
     }
 
-    fn gen_expr(&mut self, ast_node: &Expr, context: &mut Context) -> Result<Vec<OpCode>> {
+    fn gen_expr(&mut self, ast_node: &Expr) -> Result<Vec<OpCode>> {
         let mut code_list = Vec::new();
         match &ast_node.kind {
             ExprKind::Lit(lit) => code_list.push(OpCode::LoadConst(
-                context.add_const(ConstlValue::from(lit.value.clone())),
+                self.add_const(ConstlValue::from(lit.value.clone())),
             )),
-            ExprKind::Ident(ident) => code_list.push(self.load(&ident.name, context)),
+            ExprKind::Ident(ident) => code_list.push(self.load(&ident.name)),
             ExprKind::Do(body) => {
-                let func = FunctionBuilder::new(
+                self.func_list.push(FunctionBuilder::new(
                     body.clone(),
-                    context.func_list.len(),
-                    Some(self.function_id),
                     Vec::new(),
                     None,
                     FunctionKind::Do,
-                );
+                ));
                 code_list.push(OpCode::LoadConst(
-                    context.add_const(ConstlValue::Func(func.function_id)),
+                    self.add_const(ConstlValue::Func(Function::new())),
                 ));
                 code_list.push(OpCode::Call(0));
-                context.func_list.push(func);
             }
             ExprKind::Function {
                 params,
@@ -586,39 +563,30 @@ impl FunctionBuilder {
                 body,
                 is_closure,
             } => {
-                let func = FunctionBuilder::new(
+                self.func_list.push(FunctionBuilder::new(
                     body.clone(),
-                    context.func_list.len(),
-                    Some(self.function_id),
-                    {
-                        let mut temp = Vec::new();
-                        for param in params {
-                            temp.push(param.name.clone());
-                        }
-                        temp
-                    },
+                    params.iter().map(|x| x.name.clone()).collect(),
                     variadic.clone().map(|v| v.name),
                     if *is_closure {
                         FunctionKind::Closure
                     } else {
                         FunctionKind::Funciton
                     },
-                );
-                code_list.push(OpCode::LoadConst(
-                    context.add_const(ConstlValue::Func(func.function_id)),
                 ));
-                context.func_list.push(func);
+                code_list.push(OpCode::LoadConst(
+                    self.add_const(ConstlValue::Func(Function::new())),
+                ));
             }
             ExprKind::Table { properties } => {
                 let temp = properties.len();
                 for TableProperty { key, value, .. } in properties {
-                    code_list.append(&mut self.gen_expr(key, context)?);
-                    code_list.append(&mut self.gen_expr(value, context)?);
+                    code_list.append(&mut self.gen_expr(key)?);
+                    code_list.append(&mut self.gen_expr(value)?);
                 }
                 code_list.push(OpCode::BuildTable(temp));
             }
             ExprKind::Unary { operator, argument } => {
-                code_list.append(&mut self.gen_expr(argument, context)?);
+                code_list.append(&mut self.gen_expr(argument)?);
                 code_list.push(OpCode::from(*operator));
             }
             ExprKind::Binary {
@@ -627,22 +595,22 @@ impl FunctionBuilder {
                 right,
             } => match operator {
                 BinOp::And => {
-                    let label = context.get_jump_target();
-                    code_list.append(&mut self.gen_expr(left, context)?);
+                    let label = self.get_jump_target();
+                    code_list.append(&mut self.gen_expr(left)?);
                     code_list.push(OpCode::JumpIfFalseOrPop(label));
-                    code_list.append(&mut self.gen_expr(right, context)?);
+                    code_list.append(&mut self.gen_expr(right)?);
                     code_list.push(OpCode::JumpTarget(label));
                 }
                 BinOp::Or => {
-                    let label = context.get_jump_target();
-                    code_list.append(&mut self.gen_expr(left, context)?);
+                    let label = self.get_jump_target();
+                    code_list.append(&mut self.gen_expr(left)?);
                     code_list.push(OpCode::JumpIfTureOrPop(label));
-                    code_list.append(&mut self.gen_expr(right, context)?);
+                    code_list.append(&mut self.gen_expr(right)?);
                     code_list.push(OpCode::JumpTarget(label));
                 }
                 operator => {
-                    code_list.append(&mut self.gen_expr(left, context)?);
-                    code_list.append(&mut self.gen_expr(right, context)?);
+                    code_list.append(&mut self.gen_expr(left)?);
+                    code_list.append(&mut self.gen_expr(right)?);
                     code_list.push(OpCode::try_from(*operator)?);
                 }
             },
@@ -652,21 +620,21 @@ impl FunctionBuilder {
                 kind,
                 safe,
             } => {
-                code_list.append(&mut self.gen_expr(table, context)?);
-                let safe_label = context.get_jump_target();
+                code_list.append(&mut self.gen_expr(table)?);
+                let safe_label = self.get_jump_target();
                 if *safe {
                     code_list.push(OpCode::JumpIfNull(safe_label));
                 }
                 match kind {
                     MemberKind::Bracket => {
-                        code_list.append(&mut self.gen_expr(property, context)?);
+                        code_list.append(&mut self.gen_expr(property)?);
                         code_list.push(OpCode::GetItem);
                     }
                     MemberKind::Dot | MemberKind::DoubleColon => {
                         match &property.kind {
                             ExprKind::Ident(ident) => {
                                 code_list.push(OpCode::LoadConst(
-                                    context.add_const(ConstlValue::Str(ident.name.clone())),
+                                    self.add_const(ConstlValue::Str(ident.name.clone())),
                                 ));
                             }
                             _ => return Err(SyntaxError::IllegalAst.into()),
@@ -677,8 +645,8 @@ impl FunctionBuilder {
                 code_list.push(OpCode::JumpTarget(safe_label));
             }
             ExprKind::MetaMember { table, safe } => {
-                code_list.append(&mut self.gen_expr(table, context)?);
-                let safe_label = context.get_jump_target();
+                code_list.append(&mut self.gen_expr(table)?);
+                let safe_label = self.get_jump_target();
                 if *safe {
                     code_list.push(OpCode::JumpIfNull(safe_label));
                 }
@@ -691,7 +659,7 @@ impl FunctionBuilder {
                 propagating_error,
             } => {
                 let mut temp: usize = arguments.len();
-                let safe_label = context.get_jump_target();
+                let safe_label = self.get_jump_target();
                 match callee.kind.clone() {
                     ExprKind::Member {
                         table,
@@ -699,13 +667,13 @@ impl FunctionBuilder {
                         kind,
                         safe,
                     } => {
-                        code_list.append(&mut self.gen_expr(&table, context)?);
+                        code_list.append(&mut self.gen_expr(&table)?);
                         if safe {
                             code_list.push(OpCode::JumpIfNull(safe_label));
                         }
                         match kind {
                             MemberKind::Bracket => {
-                                code_list.append(&mut self.gen_expr(&property, context)?);
+                                code_list.append(&mut self.gen_expr(&property)?);
                                 code_list.push(OpCode::GetItem);
                             }
                             MemberKind::Dot => {
@@ -713,7 +681,7 @@ impl FunctionBuilder {
                                 match property.kind {
                                     ExprKind::Ident(ident) => {
                                         code_list.push(OpCode::LoadConst(
-                                            context.add_const(ConstlValue::Str(ident.name)),
+                                            self.add_const(ConstlValue::Str(ident.name)),
                                         ));
                                     }
                                     _ => return Err(SyntaxError::IllegalAst.into()),
@@ -726,7 +694,7 @@ impl FunctionBuilder {
                                 match property.kind {
                                     ExprKind::Ident(ident) => {
                                         code_list.push(OpCode::LoadConst(
-                                            context.add_const(ConstlValue::Str(ident.name)),
+                                            self.add_const(ConstlValue::Str(ident.name)),
                                         ));
                                     }
                                     _ => return Err(SyntaxError::IllegalAst.into()),
@@ -736,11 +704,11 @@ impl FunctionBuilder {
                         }
                     }
                     _ => {
-                        code_list.append(&mut self.gen_expr(callee, context)?);
+                        code_list.append(&mut self.gen_expr(callee)?);
                     }
                 }
                 for arg in arguments {
-                    code_list.append(&mut self.gen_expr(arg, context)?);
+                    code_list.append(&mut self.gen_expr(arg)?);
                 }
                 code_list.push(if *propagating_error {
                     OpCode::TryCall(temp)
@@ -753,12 +721,12 @@ impl FunctionBuilder {
         Ok(code_list)
     }
 
-    fn gen_stmt(&mut self, ast_node: &Stmt, context: &mut Context) -> Result<Vec<OpCode>> {
+    fn gen_stmt(&mut self, ast_node: &Stmt) -> Result<Vec<OpCode>> {
         let mut code_list = Vec::new();
         macro_rules! gen_block {
             ($block:expr) => {
                 for stmt in &$block.body {
-                    code_list.append(&mut self.gen_stmt(stmt, context)?);
+                    code_list.append(&mut self.gen_stmt(stmt)?);
                 }
             };
         }
@@ -767,15 +735,15 @@ impl FunctionBuilder {
                 if $safe {
                     return Err(SyntaxError::IllegalAst.into());
                 }
-                code_list.append(&mut self.gen_expr(&$table, context)?);
+                code_list.append(&mut self.gen_expr(&$table)?);
                 match $kind {
                     MemberKind::Bracket => {
-                        code_list.append(&mut self.gen_expr(&$property, context)?);
+                        code_list.append(&mut self.gen_expr(&$property)?);
                     }
                     MemberKind::Dot | MemberKind::DoubleColon => match $property.kind {
                         ExprKind::Ident(ident) => {
                             code_list.push(OpCode::LoadConst(
-                                context.add_const(ConstlValue::Str(ident.name)),
+                                self.add_const(ConstlValue::Str(ident.name)),
                             ));
                         }
                         _ => return Err(SyntaxError::IllegalAst.into()),
@@ -801,26 +769,26 @@ impl FunctionBuilder {
                 b:                           b:
                 */
                 if let Some(alternate) = alternate {
-                    let false_label = context.get_jump_target();
-                    let end_label = context.get_jump_target();
-                    code_list.append(&mut self.gen_expr(test, context)?);
+                    let false_label = self.get_jump_target();
+                    let end_label = self.get_jump_target();
+                    code_list.append(&mut self.gen_expr(test)?);
                     code_list.push(OpCode::JumpPopIfFalse(false_label));
                     gen_block!(consequent);
                     code_list.push(OpCode::Jump(end_label));
                     code_list.push(OpCode::JumpTarget(false_label));
-                    code_list.append(&mut self.gen_stmt(alternate, context)?);
+                    code_list.append(&mut self.gen_stmt(alternate)?);
                     code_list.push(OpCode::JumpTarget(end_label));
                 } else {
-                    let end_label = context.get_jump_target();
-                    code_list.append(&mut self.gen_expr(test, context)?);
+                    let end_label = self.get_jump_target();
+                    code_list.append(&mut self.gen_expr(test)?);
                     code_list.push(OpCode::JumpPopIfFalse(end_label));
                     gen_block!(consequent);
                     code_list.push(OpCode::JumpTarget(end_label));
                 }
             }
             StmtKind::Loop { body } => {
-                let continue_label = context.get_jump_target();
-                let break_label = context.get_jump_target();
+                let continue_label = self.get_jump_target();
+                let break_label = self.get_jump_target();
                 self.continue_stack.push(continue_label);
                 self.break_stack.push(break_label);
 
@@ -833,13 +801,13 @@ impl FunctionBuilder {
                 self.break_stack.pop();
             }
             StmtKind::While { test, body } => {
-                let continue_label = context.get_jump_target();
-                let break_label = context.get_jump_target();
+                let continue_label = self.get_jump_target();
+                let break_label = self.get_jump_target();
                 self.continue_stack.push(continue_label);
                 self.break_stack.push(break_label);
 
                 code_list.push(OpCode::JumpTarget(continue_label));
-                code_list.append(&mut self.gen_expr(test, context)?);
+                code_list.append(&mut self.gen_expr(test)?);
                 code_list.push(OpCode::JumpPopIfFalse(break_label));
                 gen_block!(body);
                 code_list.push(OpCode::Jump(continue_label));
@@ -849,12 +817,12 @@ impl FunctionBuilder {
                 self.break_stack.pop();
             }
             StmtKind::For { left, right, body } => {
-                let continue_label = context.get_jump_target();
-                let break_label = context.get_jump_target();
+                let continue_label = self.get_jump_target();
+                let break_label = self.get_jump_target();
                 self.continue_stack.push(continue_label);
                 self.break_stack.push(break_label);
 
-                code_list.append(&mut self.gen_expr(right, context)?);
+                code_list.append(&mut self.gen_expr(right)?);
                 code_list.push(OpCode::JumpTarget(continue_label));
                 code_list.push(OpCode::For(break_label));
                 if left.len() == 1 {
@@ -863,7 +831,7 @@ impl FunctionBuilder {
                     for (i, l) in left.iter().enumerate() {
                         code_list.push(OpCode::Dup);
                         code_list.push(OpCode::LoadConst(
-                            context.add_const(ConstlValue::Int(i.try_into().unwrap())),
+                            self.add_const(ConstlValue::Int(i.try_into().unwrap())),
                         ));
                         code_list.push(OpCode::GetItem);
                         code_list.push(OpCode::StoreLocal(self.add_local_name(&l.name)));
@@ -898,7 +866,7 @@ impl FunctionBuilder {
                     propagating_error, ..
                 } = argument.kind.clone()
                 {
-                    code_list.append(&mut self.gen_expr(argument, context)?);
+                    code_list.append(&mut self.gen_expr(argument)?);
                     if propagating_error {
                         code_list.push(OpCode::Return);
                     } else if let OpCode::Call(i) = code_list[code_list.len() - 2] {
@@ -906,7 +874,7 @@ impl FunctionBuilder {
                         code_list[t - 2] = OpCode::ReturnCall(i);
                     }
                 } else {
-                    code_list.append(&mut self.gen_expr(argument, context)?);
+                    code_list.append(&mut self.gen_expr(argument)?);
                     code_list.push(OpCode::Return);
                 }
             }
@@ -914,7 +882,7 @@ impl FunctionBuilder {
                 if self.kind == FunctionKind::Do {
                     return Err(SyntaxError::ThrowOutsideFunction.into());
                 }
-                code_list.append(&mut self.gen_expr(argument, context)?);
+                code_list.append(&mut self.gen_expr(argument)?);
                 code_list.push(OpCode::Throw);
             }
             StmtKind::Global { arguments } => {
@@ -931,9 +899,7 @@ impl FunctionBuilder {
                     .map(|x| x.name.clone())
                     .collect::<Vec<String>>()
                     .join("::");
-                code_list.push(OpCode::Import(
-                    context.add_const(ConstlValue::Str(path_str)),
-                ));
+                code_list.push(OpCode::Import(self.add_const(ConstlValue::Str(path_str))));
                 match kind {
                     ImportKind::Simple(alias) => {
                         code_list.push(OpCode::StoreGlobal(self.add_global_name(&alias.name)));
@@ -941,7 +907,7 @@ impl FunctionBuilder {
                     ImportKind::Nested(items) => {
                         for (name, alias) in items {
                             code_list.push(OpCode::ImportFrom(
-                                context.add_const(ConstlValue::Str(name.name.clone())),
+                                self.add_const(ConstlValue::Str(name.name.clone())),
                             ));
                             code_list.push(OpCode::StoreGlobal(self.add_global_name(&alias.name)));
                         }
@@ -953,9 +919,9 @@ impl FunctionBuilder {
                 }
             }
             StmtKind::Assign { left, right } => {
-                code_list.append(&mut self.gen_expr(right, context)?);
+                code_list.append(&mut self.gen_expr(right)?);
                 match left.kind.clone() {
-                    ExprKind::Ident(ident) => code_list.push(self.store(&ident.name, context)),
+                    ExprKind::Ident(ident) => code_list.push(self.store(&ident.name)),
                     ExprKind::Member {
                         table,
                         property,
@@ -972,7 +938,7 @@ impl FunctionBuilder {
                         if safe {
                             return Err(SyntaxError::IllegalAst.into());
                         }
-                        code_list.append(&mut self.gen_expr(&table, context)?);
+                        code_list.append(&mut self.gen_expr(&table)?);
                         code_list.push(OpCode::SetMeta);
                     }
                     _ => return Err(SyntaxError::IllegalAst.into()),
@@ -984,10 +950,10 @@ impl FunctionBuilder {
                 right,
             } => match left.kind.clone() {
                 ExprKind::Ident(ident) => {
-                    code_list.append(&mut self.gen_expr(left, context)?);
-                    code_list.append(&mut self.gen_expr(right, context)?);
+                    code_list.append(&mut self.gen_expr(left)?);
+                    code_list.append(&mut self.gen_expr(right)?);
                     code_list.push(OpCode::try_from(*operator)?);
-                    code_list.push(self.store(&ident.name, context));
+                    code_list.push(self.store(&ident.name));
                 }
                 ExprKind::Member {
                     table,
@@ -1001,7 +967,7 @@ impl FunctionBuilder {
                         MemberKind::Bracket => OpCode::GetItem,
                         MemberKind::Dot | MemberKind::DoubleColon => OpCode::GetAttr,
                     });
-                    code_list.append(&mut self.gen_expr(right, context)?);
+                    code_list.append(&mut self.gen_expr(right)?);
                     code_list.push(OpCode::try_from(*operator)?);
                     code_list.push(OpCode::RotThree);
                     code_list.push(match kind {
@@ -1013,7 +979,7 @@ impl FunctionBuilder {
                     if safe {
                         return Err(SyntaxError::IllegalAst.into());
                     }
-                    code_list.append(&mut self.gen_expr(&table, context)?);
+                    code_list.append(&mut self.gen_expr(&table)?);
                     code_list.push(OpCode::Dup);
                     code_list.push(OpCode::GetMeta);
                     code_list.push(OpCode::SetMeta);
@@ -1021,16 +987,16 @@ impl FunctionBuilder {
                 _ => return Err(SyntaxError::IllegalAst.into()),
             },
             StmtKind::AssignUnpack { left, right } => {
-                let right_expr = self.gen_expr(right, context)?;
+                let right_expr = self.gen_expr(right)?;
                 for (i, l) in left.iter().enumerate() {
                     code_list.append(&mut right_expr.clone());
                     code_list.push(OpCode::LoadConst(
-                        context.add_const(ConstlValue::Int(i.try_into().unwrap())),
+                        self.add_const(ConstlValue::Int(i.try_into().unwrap())),
                     ));
                     code_list.push(OpCode::GetItem);
                     match &l.kind {
                         ExprKind::Ident(ident) => {
-                            code_list.push(self.store(&ident.name, context));
+                            code_list.push(self.store(&ident.name));
                         }
                         ExprKind::Member {
                             table,
@@ -1053,7 +1019,7 @@ impl FunctionBuilder {
                             if *safe {
                                 return Err(SyntaxError::IllegalAst.into());
                             }
-                            code_list.append(&mut self.gen_expr(table, context)?);
+                            code_list.append(&mut self.gen_expr(table)?);
                             code_list.push(OpCode::SetMeta);
                         }
                         _ => return Err(SyntaxError::IllegalAst.into()),
@@ -1065,12 +1031,12 @@ impl FunctionBuilder {
                     return Err(SyntaxError::IllegalAst.into());
                 }
                 for right in right {
-                    code_list.append(&mut self.gen_expr(right, context)?);
+                    code_list.append(&mut self.gen_expr(right)?);
                 }
                 for left in left.iter().rev() {
                     match left.kind.clone() {
                         ExprKind::Ident(ident) => {
-                            code_list.push(self.store(&ident.name, context));
+                            code_list.push(self.store(&ident.name));
                         }
                         ExprKind::Member {
                             table,
@@ -1088,7 +1054,7 @@ impl FunctionBuilder {
                             if safe {
                                 return Err(SyntaxError::IllegalAst.into());
                             }
-                            code_list.append(&mut self.gen_expr(&table, context)?);
+                            code_list.append(&mut self.gen_expr(&table)?);
                             code_list.push(OpCode::SetMeta);
                         }
                         _ => return Err(SyntaxError::IllegalAst.into()),
@@ -1097,7 +1063,7 @@ impl FunctionBuilder {
             }
             StmtKind::Block(block) => gen_block!(block),
             StmtKind::Expr(expr) => {
-                code_list.append(&mut self.gen_expr(expr, context)?);
+                code_list.append(&mut self.gen_expr(expr)?);
                 code_list.push(OpCode::Pop);
             }
         }
