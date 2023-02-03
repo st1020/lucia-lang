@@ -1,15 +1,14 @@
 use core::ptr::NonNull;
 use std::fmt::Display;
 
-use crate::codegen::{Function, FunctionKind};
+use crate::code::{Code, FunctionKind};
 
 use super::{GCObject, Value};
 
 /// The closure object. Any function is a closure.
 #[derive(Debug, Clone)]
 pub struct Closure {
-    pub module_id: usize,
-    pub function: Function,
+    pub function: Code,
     pub base_closure: Option<NonNull<GCObject>>,
     pub variables: Vec<Value>,
 }
@@ -33,13 +32,8 @@ impl Display for Closure {
 }
 
 impl Closure {
-    pub fn new(
-        module_id: usize,
-        function: Function,
-        base_closure: Option<NonNull<GCObject>>,
-    ) -> Self {
+    pub fn new(function: Code, base_closure: Option<NonNull<GCObject>>) -> Self {
         Closure {
-            module_id,
             base_closure,
             variables: {
                 let mut temp: Vec<Value> = Vec::with_capacity(function.local_names.len());

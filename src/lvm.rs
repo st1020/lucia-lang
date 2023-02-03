@@ -5,12 +5,13 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
-use crate::codegen::{ConstlValue, Function, FunctionKind, JumpTarget, OpCode};
+use crate::code::{Code, ConstlValue, FunctionKind};
 use crate::errors::{
     BuiltinError, Error, ProgramError, Result, RuntimeError, RuntimeErrorKind, TracebackFrame,
 };
 use crate::libs;
 use crate::objects::*;
+use crate::opcode::{JumpTarget, OpCode};
 use crate::{
     build_table_error, call_arguments_error, not_callable_error, operator_error, type_convert_error,
 };
@@ -327,11 +328,7 @@ impl Frame {
                                 } else {
                                     None
                                 };
-                                lvm.new_closure_value(Closure::new(
-                                    closure.module_id,
-                                    v.clone(),
-                                    base_closure,
-                                ))
+                                lvm.new_closure_value(Closure::new(v.clone(), base_closure))
                             }
                         },
                     );
@@ -397,10 +394,7 @@ impl Frame {
                             path.set_extension("lucia");
                             self.operate_stack
                                 .push(match fs::read_to_string(path.clone()) {
-                                    Ok(input_file) => {
-                                        lvm.modules.push(Function::try_from(&input_file)?);
-                                        lvm.run_module(lvm.modules.len() - 1)?
-                                    }
+                                    Ok(input_file) => lvm.run(Code::try_from(&input_file)?)?,
                                     Err(_) => BuiltinError::ImportError(format!(
                                         "can not read file: {}",
                                         path.to_str().unwrap_or("unknown")
@@ -660,7 +654,6 @@ impl Frame {
 
 #[derive(Debug, Clone)]
 pub struct Lvm {
-    pub modules: Vec<Function>,
     pub global_variables: HashMap<String, Value>,
     pub builtin_variables: HashMap<String, Value>,
     pub libs: HashMap<String, Value>,
@@ -674,7 +667,6 @@ pub struct Lvm {
 impl Lvm {
     pub fn new() -> Self {
         let mut t = Lvm {
-            modules: Vec::new(),
             global_variables: HashMap::new(),
             builtin_variables: libs::builtin::builtin_variables(),
             libs: HashMap::new(),
@@ -688,25 +680,8 @@ impl Lvm {
         t
     }
 
-    pub fn run(&mut self) -> Result<Value> {
-        self.run_module(0)
-    }
-
-    pub fn run_module(&mut self, module_id: usize) -> Result<Value> {
-        macro_rules! program_error {
-            ($value:expr) => {
-                Error::RuntimeError(RuntimeError {
-                    kind: RuntimeErrorKind::ProgramError($value),
-                    traceback: self.traceback(),
-                })
-            };
-        }
-        let func = try_get!(
-            (self.modules)[module_id],
-            program_error!(ProgramError::ModuleError(module_id))
-        )
-        .clone();
-        let callee = self.new_closure_value(Closure::new(module_id, func, None));
+    pub fn run(&mut self, code: Code) -> Result<Value> {
+        let callee = self.new_closure_value(Closure::new(code, None));
         self.call(callee, Vec::new())
     }
 
@@ -943,14 +918,6 @@ impl Lvm {
 impl Default for Lvm {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl From<Function> for Lvm {
-    fn from(program: Function) -> Self {
-        let mut lvm = Lvm::new();
-        lvm.modules.push(program);
-        lvm
     }
 }
 

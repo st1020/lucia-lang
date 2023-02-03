@@ -1,160 +1,11 @@
 use std::cmp::max;
 use std::convert::TryFrom;
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 
 use crate::ast::*;
+use crate::code::{Code, ConstlValue, FunctionKind};
 use crate::errors::{Error, Result, SyntaxError};
-use crate::lexer::tokenize;
-use crate::parser::Parser;
-
-/// The const value.
-#[derive(Debug, Clone, PartialEq)]
-pub enum ConstlValue {
-    /// "null"
-    Null,
-    /// "true", "false"
-    Bool(bool),
-    /// "12", "0o100", "0b110"
-    Int(i64),
-    /// "12.34", "0b100.100"
-    Float(f64),
-    /// ""abc"", ""abc"
-    Str(String),
-    /// func id
-    Func(Function),
-}
-
-impl From<LitKind> for ConstlValue {
-    fn from(value: LitKind) -> Self {
-        match value {
-            LitKind::Null => ConstlValue::Null,
-            LitKind::Bool(v) => ConstlValue::Bool(v),
-            LitKind::Int(v) => ConstlValue::Int(v),
-            LitKind::Float(v) => ConstlValue::Float(v),
-            LitKind::Str(v) => ConstlValue::Str(v),
-        }
-    }
-}
-
-/// The jump target.
-/// Note that this is only used during code generation and will not appear in the `Program`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct JumpTarget(pub usize);
-
-/// The operation code.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum OpCode {
-    /// Removes the top-of-stack (TOS) item.
-    Pop,
-    /// Duplicates the reference on top of the stack.
-    Dup,
-    /// Duplicates the two references on top of the stack, leaving them in the same order.
-    DupTwo,
-    /// Swaps the two top-most stack items.
-    RotTwo,
-    /// Lifts second and third stack item one position up, moves top down to position three.
-    RotThree,
-    /// Pushes the value associated with `local_names[namei]` onto the stack.
-    LoadLocal(usize),
-    /// Pushes the value associated with `global_names[namei]` onto the stack.
-    LoadGlobal(usize),
-    /// Pushes the value associated with `upvalue_names[namei]` onto the stack.
-    LoadUpvalue(usize),
-    /// Pushes `consts[consti]` onto the stack.
-    LoadConst(usize),
-    /// Stores TOS into the `local_names[namei]`.
-    StoreLocal(usize),
-    /// Stores TOS into the `global_names[namei]`.
-    StoreGlobal(usize),
-    /// Stores TOS into the `upvalue_names[namei]`.
-    StoreUpvalue(usize),
-
-    /// Imports the module `consts[consti]` and pushed it onto the stack.
-    Import(usize),
-    /// Loads the attribute `consts[consti]` the module found in TOS and pushed it onto the stack.
-    ImportFrom(usize),
-    /// LoLoads all symbols from the module TOS to the global namespace.
-    ImportGlob,
-
-    /// Pushes a new table onto the stack. Pops `2 * count` items to build table.
-    BuildTable(usize),
-    /// Implements `TOS = TOS1::TOS`.
-    GetAttr,
-    /// Implements `TOS = TOS1[TOS]`.
-    GetItem,
-    /// Implements `TOS = TOS[#]`.
-    GetMeta,
-    /// Implements `TOS1::TOS = TOS2`.
-    SetAttr,
-    /// Implements `TOS1[TOS] = TOS2`.
-    SetItem,
-    /// Implements `TOS[#] = TOS1`.
-    SetMeta,
-
-    /// Implements `TOS = -TOS`.
-    Neg,
-    /// Implements `TOS = not TOS`.
-    Not,
-
-    /// Implements `TOS = TOS1 + TOS`.
-    Add,
-    /// Implements `TOS = TOS1 - TOS`.
-    Sub,
-    /// Implements `TOS = TOS1 * TOS`.
-    Mul,
-    /// Implements `TOS = TOS1 / TOS`.
-    Div,
-    /// Implements `TOS = TOS1 % TOS`.
-    Mod,
-
-    /// Implements `TOS = TOS1 == TOS`.
-    Eq,
-    /// Implements `TOS = TOS1 != TOS`.
-    Ne,
-    /// Implements `TOS = TOS1 > TOS`.
-    Gt,
-    /// Implements `TOS = TOS1 >= TOS`.
-    Ge,
-    /// Implements `TOS = TOS1 < TOS`.
-    Lt,
-    /// Implements `TOS = TOS1 <= TOS`.
-    Le,
-    /// Implements `TOS = TOS1 is TOS`.
-    Is,
-
-    ///
-    For(JumpTarget),
-    /// Sets the bytecode counter to target.
-    Jump(JumpTarget),
-    /// If TOS is null, sets the bytecode counter to target.
-    JumpIfNull(JumpTarget),
-    /// If TOS is false, sets the bytecode counter to target. TOS is popped.
-    JumpPopIfFalse(JumpTarget),
-    /// If TOS is true, sets the bytecode counter to target and leaves TOS on the stack. Otherwise, TOS is popped.
-    JumpIfTureOrPop(JumpTarget),
-    /// If TOS is false, sets the bytecode counter to target and leaves TOS on the stack. Otherwise, TOS is popped.
-    JumpIfFalseOrPop(JumpTarget),
-
-    /// Pops numbers of item for function arguments, then pop an callable value and call it.
-    Call(usize),
-    /// Call with a shortcut for propagating errors.
-    TryCall(usize),
-    /// Returns with TOS to the caller of the function.
-    Return,
-    /// Returns with TOS as a error.
-    Throw,
-    /// Same as "Call(usize); Return;", this is for tail call optimization.
-    ReturnCall(usize),
-
-    /// A jump target, only used during code generation.
-    JumpTarget(JumpTarget),
-}
-
-impl Display for OpCode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Debug::fmt(self, f)
-    }
-}
+use crate::opcode::{JumpTarget, OpCode};
 
 impl TryFrom<BinOp> for OpCode {
     type Error = Error;
@@ -178,188 +29,51 @@ impl TryFrom<BinOp> for OpCode {
     }
 }
 
-impl From<UnOp> for OpCode {
-    fn from(value: UnOp) -> Self {
-        match value {
-            UnOp::Not => OpCode::Not,
-            UnOp::Neg => OpCode::Neg,
-        }
-    }
-}
-
-/// Try estimate function stack size.
-fn get_stack_size(code: &Vec<OpCode>, mut offset: usize, init_size: usize) -> usize {
-    let mut stack_size = init_size;
-    let mut t = init_size;
-    while offset < code.len() {
-        match code[offset] {
-            OpCode::Pop => t += 1,
-            OpCode::Dup => t += 1,
-            OpCode::DupTwo => t += 2,
-            OpCode::RotTwo | OpCode::RotThree => (),
-            OpCode::LoadLocal(_)
-            | OpCode::LoadGlobal(_)
-            | OpCode::LoadUpvalue(_)
-            | OpCode::LoadConst(_) => t += 1,
-            OpCode::StoreLocal(_) | OpCode::StoreGlobal(_) | OpCode::StoreUpvalue(_) => t -= 1,
-            OpCode::Import(_) => t += 1,
-            OpCode::ImportFrom(_) => t += 1,
-            OpCode::ImportGlob => (),
-            OpCode::BuildTable(i) => t = t - i * 2 + 1,
-            OpCode::GetAttr | OpCode::GetItem => t -= 1,
-            OpCode::GetMeta => (),
-            OpCode::SetAttr | OpCode::SetItem => t -= 2,
-            OpCode::SetMeta => t -= 1,
-            OpCode::Neg | OpCode::Not => (),
-            OpCode::Add
-            | OpCode::Sub
-            | OpCode::Mul
-            | OpCode::Div
-            | OpCode::Mod
-            | OpCode::Eq
-            | OpCode::Ne
-            | OpCode::Gt
-            | OpCode::Ge
-            | OpCode::Lt
-            | OpCode::Le
-            | OpCode::Is => t -= 1,
-            OpCode::For(_) => t += 1,
-            OpCode::Jump(JumpTarget(_)) => (),
-            OpCode::JumpIfNull(JumpTarget(i)) => {
-                stack_size = max(stack_size, get_stack_size(code, i, t));
-            }
-            OpCode::JumpPopIfFalse(JumpTarget(i)) => {
-                t -= 1;
-                stack_size = max(stack_size, get_stack_size(code, i, t));
-            }
-            OpCode::JumpIfTureOrPop(JumpTarget(i)) | OpCode::JumpIfFalseOrPop(JumpTarget(i)) => {
-                stack_size = max(stack_size, get_stack_size(code, i, t));
-                t -= 1;
-            }
-            OpCode::Call(i) => t = t - i + 1,
-            OpCode::TryCall(i) => t = t - i + 1,
-            OpCode::Return | OpCode::Throw => break,
-            OpCode::ReturnCall(i) => t = t - i + 1,
-            OpCode::JumpTarget(_) => panic!(),
-        }
-        stack_size = max(stack_size, t);
-        offset += 1;
-    }
-    stack_size
-}
-
-/// Kind of function.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FunctionKind {
-    Funciton,
-    Closure,
-    Do,
-}
-
-/// A function.
 #[derive(Debug, Clone)]
-pub struct Function {
-    pub params: Vec<String>,
-    pub variadic: Option<String>,
-    pub code_list: Vec<OpCode>,
-    pub kind: FunctionKind,
-
-    pub const_list: Vec<ConstlValue>,
-    pub local_names: Vec<String>,
-    pub global_names: Vec<String>,
-    pub upvalue_names: Vec<(String, usize, usize)>,
-
-    pub stack_size: usize,
-}
-
-impl PartialEq for Function {
-    fn eq(&self, _: &Self) -> bool {
-        false
-    }
-}
-
-impl Function {
-    pub fn new() -> Self {
-        Function {
-            params: Vec::new(),
-            variadic: None,
-            code_list: Vec::new(),
-            kind: FunctionKind::Funciton,
-            const_list: Vec::new(),
-            local_names: Vec::new(),
-            global_names: Vec::new(),
-            upvalue_names: Vec::new(),
-            stack_size: 0,
-        }
-    }
-}
-
-impl Default for Function {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl TryFrom<&str> for Function {
-    type Error = Error;
-
-    fn try_from(value: &str) -> Result<Self> {
-        gen_code(Parser::new(&mut tokenize(value)).parse()?)
-    }
-}
-
-impl TryFrom<&String> for Function {
-    type Error = Error;
-
-    fn try_from(value: &String) -> Result<Self> {
-        gen_code(Parser::new(&mut tokenize(value)).parse()?)
-    }
-}
-
-pub fn gen_code(ast_root: Box<Block>) -> Result<Function> {
-    let t = FunctionBuilder::new(ast_root, Vec::new(), None, FunctionKind::Funciton);
-    t.gen_code()
-}
-
-#[derive(Debug, Clone)]
-pub struct FunctionBuilder<'a> {
-    code: Box<Block>,
+pub struct CodeGen<'a> {
+    pub ast: Box<Block>,
 
     pub params: Vec<String>,
     pub variadic: Option<String>,
-    pub code_list: Vec<OpCode>,
     pub kind: FunctionKind,
+    pub code: Vec<OpCode>,
 
-    pub const_list: Vec<ConstlValue>,
+    pub consts: Vec<ConstlValue>,
     pub local_names: Vec<String>,
     pub global_names: Vec<(String, bool /* writable */)>,
     pub upvalue_names: Vec<(String, usize, usize)>,
 
-    base_function: Option<&'a FunctionBuilder<'a>>,
-    func_list: Vec<FunctionBuilder<'a>>,
+    base_function: Option<&'a CodeGen<'a>>,
+    func_list: Vec<CodeGen<'a>>,
     jump_target_count: usize,
     continue_stack: Vec<JumpTarget>,
     break_stack: Vec<JumpTarget>,
 }
 
-impl<'a> FunctionBuilder<'a> {
+impl From<Box<Block>> for CodeGen<'_> {
+    fn from(value: Box<Block>) -> Self {
+        CodeGen::new(value, Vec::new(), None, FunctionKind::Funciton)
+    }
+}
+
+impl<'a> CodeGen<'a> {
     pub fn new(
-        code: Box<Block>,
+        ast: Box<Block>,
         params: Vec<String>,
         variadic: Option<String>,
         kind: FunctionKind,
     ) -> Self {
-        FunctionBuilder {
-            code,
+        CodeGen {
+            ast,
             params,
             variadic,
-            code_list: Vec::new(),
             kind,
-            base_function: None,
-            const_list: Vec::new(),
+            code: Vec::new(),
+            consts: Vec::new(),
             local_names: Vec::new(),
             global_names: Vec::new(),
             upvalue_names: Vec::new(),
+            base_function: None,
             func_list: Vec::new(),
             jump_target_count: 0,
             continue_stack: Vec::new(),
@@ -373,11 +87,11 @@ impl<'a> FunctionBuilder<'a> {
     }
 
     fn add_const(&mut self, value: ConstlValue) -> usize {
-        if let Some(index) = self.const_list.iter().position(|x| *x == value) {
+        if let Some(index) = self.consts.iter().position(|x| *x == value) {
             index
         } else {
-            self.const_list.push(value);
-            self.const_list.len() - 1
+            self.consts.push(value);
+            self.consts.len() - 1
         }
     }
 
@@ -459,80 +173,81 @@ impl<'a> FunctionBuilder<'a> {
         }
     }
 
-    pub fn gen_code(mut self) -> Result<Function> {
+    pub fn gen_code(mut self) -> Result<Code> {
         for param in self.params.clone() {
             self.add_local_name(&param);
         }
         if let Some(v) = self.variadic.clone() {
             self.add_local_name(&v);
         }
-        for stmt in self.code.body.clone() {
+        for stmt in self.ast.body.clone() {
             let t = &mut self.gen_stmt(&stmt)?;
-            self.code_list.append(t);
+            self.code.append(t);
         }
         if self.kind == FunctionKind::Do {
-            self.code_list.push(OpCode::Return);
-        } else if *self.code_list.last().unwrap_or(&OpCode::Pop) != OpCode::Return {
+            self.code.push(OpCode::Return);
+        } else if *self.code.last().unwrap_or(&OpCode::Pop) != OpCode::Return {
             let t = self.add_const(ConstlValue::Null);
-            self.code_list.push(OpCode::LoadConst(t));
-            self.code_list.push(OpCode::Return);
+            self.code.push(OpCode::LoadConst(t));
+            self.code.push(OpCode::Return);
         }
 
         let mut temp: Vec<usize> = vec![0; self.jump_target_count];
         let mut i = 0;
-        while i < self.code_list.len() {
-            match self.code_list[i] {
+        while i < self.code.len() {
+            match self.code[i] {
                 OpCode::JumpTarget(JumpTarget(index)) => {
                     temp[index] = i;
-                    self.code_list.remove(i);
+                    self.code.remove(i);
                 }
                 _ => i += 1,
             }
         }
         let mut i = 0;
-        while i < self.code_list.len() {
-            self.code_list[i] = match &self.code_list[i] {
-                OpCode::For(JumpTarget(v)) => OpCode::For(JumpTarget(temp[*v])),
-                OpCode::Jump(JumpTarget(v)) => OpCode::Jump(JumpTarget(temp[*v])),
-                OpCode::JumpIfNull(JumpTarget(v)) => OpCode::JumpIfNull(JumpTarget(temp[*v])),
+        while i < self.code.len() {
+            match &self.code[i] {
+                OpCode::For(JumpTarget(v)) => self.code[i] = OpCode::For(JumpTarget(temp[*v])),
+                OpCode::Jump(JumpTarget(v)) => self.code[i] = OpCode::Jump(JumpTarget(temp[*v])),
+                OpCode::JumpIfNull(JumpTarget(v)) => {
+                    self.code[i] = OpCode::JumpIfNull(JumpTarget(temp[*v]))
+                }
                 OpCode::JumpPopIfFalse(JumpTarget(v)) => {
-                    OpCode::JumpPopIfFalse(JumpTarget(temp[*v]))
+                    self.code[i] = OpCode::JumpPopIfFalse(JumpTarget(temp[*v]))
                 }
                 OpCode::JumpIfTureOrPop(JumpTarget(v)) => {
-                    OpCode::JumpIfTureOrPop(JumpTarget(temp[*v]))
+                    self.code[i] = OpCode::JumpIfTureOrPop(JumpTarget(temp[*v]))
                 }
                 OpCode::JumpIfFalseOrPop(JumpTarget(v)) => {
-                    OpCode::JumpIfFalseOrPop(JumpTarget(temp[*v]))
+                    self.code[i] = OpCode::JumpIfFalseOrPop(JumpTarget(temp[*v]))
                 }
-                v => v.clone(),
-            };
+                _ => (),
+            }
             i += 1;
         }
 
-        let stack_size = get_stack_size(&self.code_list, 0, 0);
+        let stack_size = get_stack_size(&self.code, 0, 0);
         let mut func_list = Vec::new();
-        for func in self.func_list.clone() {
+        for func in &self.func_list {
             let mut func = func.clone();
             func.base_function = Some(&self);
             func_list.push(func.gen_code()?);
         }
 
-        let mut t = func_list.into_iter();
-
-        for v in &mut self.const_list {
+        let mut func_iter = func_list.into_iter();
+        for v in &mut self.consts {
             if let ConstlValue::Func(func) = v {
-                *func = t.next().unwrap();
+                *func = func_iter.next().unwrap();
             }
         }
 
-        Ok(Function {
+        Ok(Code {
             params: self.params,
             variadic: self.variadic,
-            code_list: self.code_list,
             kind: self.kind,
-            const_list: self.const_list,
+            code: self.code,
+            consts: self.consts,
             local_names: self.local_names,
-            global_names: self.global_names.iter().map(|(x, _)| x.clone()).collect(),
+            global_names: self.global_names.into_iter().map(|(x, _)| x).collect(),
             upvalue_names: self.upvalue_names,
             stack_size,
         })
@@ -541,19 +256,25 @@ impl<'a> FunctionBuilder<'a> {
     fn gen_expr(&mut self, ast_node: &Expr) -> Result<Vec<OpCode>> {
         let mut code_list = Vec::new();
         match &ast_node.kind {
-            ExprKind::Lit(lit) => code_list.push(OpCode::LoadConst(
-                self.add_const(ConstlValue::from(lit.value.clone())),
-            )),
+            ExprKind::Lit(lit) => {
+                code_list.push(OpCode::LoadConst(self.add_const(match &lit.value {
+                    LitKind::Null => ConstlValue::Null,
+                    LitKind::Bool(v) => ConstlValue::Bool(*v),
+                    LitKind::Int(v) => ConstlValue::Int(*v),
+                    LitKind::Float(v) => ConstlValue::Float(*v),
+                    LitKind::Str(v) => ConstlValue::Str(v.clone()),
+                })))
+            }
             ExprKind::Ident(ident) => code_list.push(self.load(&ident.name)),
             ExprKind::Do(body) => {
-                self.func_list.push(FunctionBuilder::new(
+                self.func_list.push(CodeGen::new(
                     body.clone(),
                     Vec::new(),
                     None,
                     FunctionKind::Do,
                 ));
                 code_list.push(OpCode::LoadConst(
-                    self.add_const(ConstlValue::Func(Function::new())),
+                    self.add_const(ConstlValue::Func(Code::dummy())),
                 ));
                 code_list.push(OpCode::Call(0));
             }
@@ -563,7 +284,7 @@ impl<'a> FunctionBuilder<'a> {
                 body,
                 is_closure,
             } => {
-                self.func_list.push(FunctionBuilder::new(
+                self.func_list.push(CodeGen::new(
                     body.clone(),
                     params.iter().map(|x| x.name.clone()).collect(),
                     variadic.clone().map(|v| v.name),
@@ -574,7 +295,7 @@ impl<'a> FunctionBuilder<'a> {
                     },
                 ));
                 code_list.push(OpCode::LoadConst(
-                    self.add_const(ConstlValue::Func(Function::new())),
+                    self.add_const(ConstlValue::Func(Code::dummy())),
                 ));
             }
             ExprKind::Table { properties } => {
@@ -587,7 +308,10 @@ impl<'a> FunctionBuilder<'a> {
             }
             ExprKind::Unary { operator, argument } => {
                 code_list.append(&mut self.gen_expr(argument)?);
-                code_list.push(OpCode::from(*operator));
+                code_list.push(match operator {
+                    UnOp::Not => OpCode::Not,
+                    UnOp::Neg => OpCode::Neg,
+                });
             }
             ExprKind::Binary {
                 operator,
@@ -1069,4 +793,65 @@ impl<'a> FunctionBuilder<'a> {
         }
         Ok(code_list)
     }
+}
+
+/// Try estimate function stack size.
+fn get_stack_size(code: &Vec<OpCode>, mut offset: usize, init_size: usize) -> usize {
+    let mut stack_size = init_size;
+    let mut t = init_size;
+    while offset < code.len() {
+        match code[offset] {
+            OpCode::Pop => t += 1,
+            OpCode::Dup => t += 1,
+            OpCode::DupTwo => t += 2,
+            OpCode::RotTwo | OpCode::RotThree => (),
+            OpCode::LoadLocal(_)
+            | OpCode::LoadGlobal(_)
+            | OpCode::LoadUpvalue(_)
+            | OpCode::LoadConst(_) => t += 1,
+            OpCode::StoreLocal(_) | OpCode::StoreGlobal(_) | OpCode::StoreUpvalue(_) => t -= 1,
+            OpCode::Import(_) => t += 1,
+            OpCode::ImportFrom(_) => t += 1,
+            OpCode::ImportGlob => (),
+            OpCode::BuildTable(i) => t = t - i * 2 + 1,
+            OpCode::GetAttr | OpCode::GetItem => t -= 1,
+            OpCode::GetMeta => (),
+            OpCode::SetAttr | OpCode::SetItem => t -= 2,
+            OpCode::SetMeta => t -= 1,
+            OpCode::Neg | OpCode::Not => (),
+            OpCode::Add
+            | OpCode::Sub
+            | OpCode::Mul
+            | OpCode::Div
+            | OpCode::Mod
+            | OpCode::Eq
+            | OpCode::Ne
+            | OpCode::Gt
+            | OpCode::Ge
+            | OpCode::Lt
+            | OpCode::Le
+            | OpCode::Is => t -= 1,
+            OpCode::For(_) => t += 1,
+            OpCode::Jump(JumpTarget(_)) => (),
+            OpCode::JumpIfNull(JumpTarget(i)) => {
+                stack_size = max(stack_size, get_stack_size(code, i, t));
+            }
+            OpCode::JumpPopIfFalse(JumpTarget(i)) => {
+                t -= 1;
+                stack_size = max(stack_size, get_stack_size(code, i, t));
+            }
+            OpCode::JumpIfTureOrPop(JumpTarget(i)) | OpCode::JumpIfFalseOrPop(JumpTarget(i)) => {
+                stack_size = max(stack_size, get_stack_size(code, i, t));
+                t -= 1;
+            }
+            OpCode::Call(i) => t = t - i + 1,
+            OpCode::TryCall(i) => t = t - i + 1,
+            OpCode::Return | OpCode::Throw => break,
+            OpCode::ReturnCall(i) => t = t - i + 1,
+            OpCode::JumpTarget(_) => panic!(),
+        }
+        stack_size = max(stack_size, t);
+        offset += 1;
+    }
+    stack_size
 }

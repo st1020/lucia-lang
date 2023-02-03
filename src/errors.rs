@@ -5,9 +5,9 @@ use std::result;
 
 use thiserror::Error;
 
-use crate::codegen::OpCode;
 use crate::lvm::Lvm;
 use crate::objects::{Closure, Table, Value, ValueType};
+use crate::opcode::OpCode;
 use crate::token::{Token, TokenType};
 
 pub type Result<T> = result::Result<T, Error>;
