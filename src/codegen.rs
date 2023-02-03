@@ -367,19 +367,13 @@ impl Context {
     }
 
     fn add_const(&mut self, value: ConstlValue) -> usize {
-        match self.const_list.iter().position(|x| *x == value) {
-            Some(index) => index,
-            None => {
-                self.const_list.push(value);
-                self.const_list.len() - 1
-            }
+        if let Some(index) = self.const_list.iter().position(|x| *x == value) {
+            index
+        } else {
+            self.const_list.push(value);
+            self.const_list.len() - 1
         }
     }
-}
-
-enum LoadStore {
-    Load,
-    Store,
 }
 
 /// Kind of function.
@@ -436,7 +430,7 @@ pub struct FunctionBuilder {
     pub base_function: Option<usize>,
 
     pub local_names: Vec<String>,
-    pub global_names: Vec<(String, bool)>,
+    pub global_names: Vec<(String, bool /* writable */)>,
     pub upvalue_names: Vec<(String, usize, usize)>,
 
     pub stack_size: usize,
@@ -489,36 +483,13 @@ impl FunctionBuilder {
         }
     }
 
-    fn get_load(&mut self, name: &String, context: &mut Context) -> OpCode {
-        self.get_load_store(name, LoadStore::Load, context)
-    }
-
-    fn get_store(&mut self, name: &String, context: &mut Context) -> OpCode {
-        self.get_load_store(name, LoadStore::Store, context)
-    }
-
-    fn get_load_store(&mut self, name: &String, kind: LoadStore, context: &mut Context) -> OpCode {
+    fn load(&mut self, name: &String, context: &mut Context) -> OpCode {
         if let Some(index) = self.local_names.iter().position(|x| x == name) {
-            match kind {
-                LoadStore::Load => OpCode::LoadLocal(index),
-                LoadStore::Store => OpCode::StoreLocal(index),
-            }
+            OpCode::LoadLocal(index)
         } else if let Some(index) = self.global_names.iter().position(|(x, _)| x == name) {
-            match kind {
-                LoadStore::Load => OpCode::LoadGlobal(index),
-                LoadStore::Store => {
-                    if self.global_names[index].1 {
-                        OpCode::StoreGlobal(index)
-                    } else {
-                        OpCode::StoreLocal(self.add_local_name(name))
-                    }
-                }
-            }
+            OpCode::LoadGlobal(index)
         } else if !(self.kind == FunctionKind::Closure) {
-            match kind {
-                LoadStore::Load => OpCode::LoadGlobal(self.add_global_name(name)),
-                LoadStore::Store => OpCode::StoreLocal(self.add_local_name(name)),
-            }
+            OpCode::LoadGlobal(self.add_global_name(name))
         } else {
             let mut base_func_count = 0;
             let mut base_func_id = self.base_function.unwrap();
@@ -526,16 +497,39 @@ impl FunctionBuilder {
                 let base_func = &context.func_list[base_func_id];
                 if let Some(i) = base_func.local_names.iter().position(|x| x == name) {
                     self.upvalue_names.push((name.clone(), base_func_count, i));
-                    break match kind {
-                        LoadStore::Load => OpCode::LoadUpvalue(self.upvalue_names.len() - 1),
-                        LoadStore::Store => OpCode::StoreUpvalue(self.upvalue_names.len() - 1),
-                    };
+                    break OpCode::LoadUpvalue(self.upvalue_names.len() - 1);
                 }
                 if !(self.kind == FunctionKind::Closure) {
-                    break match kind {
-                        LoadStore::Load => OpCode::LoadGlobal(self.add_global_name(name)),
-                        LoadStore::Store => OpCode::StoreLocal(self.add_local_name(name)),
-                    };
+                    break OpCode::LoadGlobal(self.add_global_name(name));
+                }
+                base_func_id = base_func.base_function.unwrap();
+                base_func_count += 1;
+            }
+        }
+    }
+
+    fn store(&mut self, name: &String, context: &mut Context) -> OpCode {
+        if let Some(index) = self.local_names.iter().position(|x| x == name) {
+            OpCode::StoreLocal(index)
+        } else if let Some(index) = self.global_names.iter().position(|(x, _)| x == name) {
+            if self.global_names[index].1 {
+                OpCode::StoreGlobal(index)
+            } else {
+                OpCode::StoreLocal(self.add_local_name(name))
+            }
+        } else if !(self.kind == FunctionKind::Closure) {
+            OpCode::StoreLocal(self.add_local_name(name))
+        } else {
+            let mut base_func_count = 0;
+            let mut base_func_id = self.base_function.unwrap();
+            loop {
+                let base_func = &context.func_list[base_func_id];
+                if let Some(i) = base_func.local_names.iter().position(|x| x == name) {
+                    self.upvalue_names.push((name.clone(), base_func_count, i));
+                    break OpCode::StoreUpvalue(self.upvalue_names.len() - 1);
+                }
+                if !(self.kind == FunctionKind::Closure) {
+                    break OpCode::StoreLocal(self.add_local_name(name));
                 }
                 base_func_id = base_func.base_function.unwrap();
                 base_func_count += 1;
@@ -550,8 +544,10 @@ impl FunctionBuilder {
         if let Some(v) = self.variadic.clone() {
             self.add_local_name(&v);
         }
-        let t = &mut self.gen_stmt(Stmt::from(*self.code.clone()), context)?;
-        self.code_list.append(t);
+        for stmt in self.code.body.clone() {
+            let t = &mut self.gen_stmt(&stmt, context)?;
+            self.code_list.append(t);
+        }
         if self.kind == FunctionKind::Do {
             self.code_list.push(OpCode::Return);
         } else if *self.code_list.last().unwrap_or(&OpCode::Pop) != OpCode::Return {
@@ -562,16 +558,16 @@ impl FunctionBuilder {
         Ok(())
     }
 
-    fn gen_expr(&mut self, ast_node: Expr, context: &mut Context) -> Result<Vec<OpCode>> {
+    fn gen_expr(&mut self, ast_node: &Expr, context: &mut Context) -> Result<Vec<OpCode>> {
         let mut code_list = Vec::new();
-        match ast_node.kind {
+        match &ast_node.kind {
             ExprKind::Lit(lit) => code_list.push(OpCode::LoadConst(
-                context.add_const(ConstlValue::from(lit.value)),
+                context.add_const(ConstlValue::from(lit.value.clone())),
             )),
-            ExprKind::Ident(ident) => code_list.push(self.get_load(&ident.name, context)),
+            ExprKind::Ident(ident) => code_list.push(self.load(&ident.name, context)),
             ExprKind::Do(body) => {
                 let func = FunctionBuilder::new(
-                    body,
+                    body.clone(),
                     context.func_list.len(),
                     Some(self.function_id),
                     Vec::new(),
@@ -591,18 +587,18 @@ impl FunctionBuilder {
                 is_closure,
             } => {
                 let func = FunctionBuilder::new(
-                    body,
+                    body.clone(),
                     context.func_list.len(),
                     Some(self.function_id),
                     {
                         let mut temp = Vec::new();
                         for param in params {
-                            temp.push(param.name);
+                            temp.push(param.name.clone());
                         }
                         temp
                     },
-                    variadic.map(|v| v.name),
-                    if is_closure {
+                    variadic.clone().map(|v| v.name),
+                    if *is_closure {
                         FunctionKind::Closure
                     } else {
                         FunctionKind::Funciton
@@ -616,14 +612,14 @@ impl FunctionBuilder {
             ExprKind::Table { properties } => {
                 let temp = properties.len();
                 for TableProperty { key, value, .. } in properties {
-                    code_list.append(&mut self.gen_expr(*key, context)?);
-                    code_list.append(&mut self.gen_expr(*value, context)?);
+                    code_list.append(&mut self.gen_expr(key, context)?);
+                    code_list.append(&mut self.gen_expr(value, context)?);
                 }
                 code_list.push(OpCode::BuildTable(temp));
             }
             ExprKind::Unary { operator, argument } => {
-                code_list.append(&mut self.gen_expr(*argument, context)?);
-                code_list.push(OpCode::from(operator));
+                code_list.append(&mut self.gen_expr(argument, context)?);
+                code_list.push(OpCode::from(*operator));
             }
             ExprKind::Binary {
                 operator,
@@ -632,22 +628,22 @@ impl FunctionBuilder {
             } => match operator {
                 BinOp::And => {
                     let label = context.get_jump_target();
-                    code_list.append(&mut self.gen_expr(*left, context)?);
+                    code_list.append(&mut self.gen_expr(left, context)?);
                     code_list.push(OpCode::JumpIfFalseOrPop(label));
-                    code_list.append(&mut self.gen_expr(*right, context)?);
+                    code_list.append(&mut self.gen_expr(right, context)?);
                     code_list.push(OpCode::JumpTarget(label));
                 }
                 BinOp::Or => {
                     let label = context.get_jump_target();
-                    code_list.append(&mut self.gen_expr(*left, context)?);
+                    code_list.append(&mut self.gen_expr(left, context)?);
                     code_list.push(OpCode::JumpIfTureOrPop(label));
-                    code_list.append(&mut self.gen_expr(*right, context)?);
+                    code_list.append(&mut self.gen_expr(right, context)?);
                     code_list.push(OpCode::JumpTarget(label));
                 }
                 operator => {
-                    code_list.append(&mut self.gen_expr(*left, context)?);
-                    code_list.append(&mut self.gen_expr(*right, context)?);
-                    code_list.push(OpCode::try_from(operator)?);
+                    code_list.append(&mut self.gen_expr(left, context)?);
+                    code_list.append(&mut self.gen_expr(right, context)?);
+                    code_list.push(OpCode::try_from(*operator)?);
                 }
             },
             ExprKind::Member {
@@ -656,21 +652,21 @@ impl FunctionBuilder {
                 kind,
                 safe,
             } => {
-                code_list.append(&mut self.gen_expr(*table, context)?);
+                code_list.append(&mut self.gen_expr(table, context)?);
                 let safe_label = context.get_jump_target();
-                if safe {
+                if *safe {
                     code_list.push(OpCode::JumpIfNull(safe_label));
                 }
                 match kind {
                     MemberKind::Bracket => {
-                        code_list.append(&mut self.gen_expr(*property, context)?);
+                        code_list.append(&mut self.gen_expr(property, context)?);
                         code_list.push(OpCode::GetItem);
                     }
                     MemberKind::Dot | MemberKind::DoubleColon => {
-                        match property.kind {
+                        match &property.kind {
                             ExprKind::Ident(ident) => {
                                 code_list.push(OpCode::LoadConst(
-                                    context.add_const(ConstlValue::Str(ident.name)),
+                                    context.add_const(ConstlValue::Str(ident.name.clone())),
                                 ));
                             }
                             _ => return Err(SyntaxError::IllegalAst.into()),
@@ -681,9 +677,9 @@ impl FunctionBuilder {
                 code_list.push(OpCode::JumpTarget(safe_label));
             }
             ExprKind::MetaMember { table, safe } => {
-                code_list.append(&mut self.gen_expr(*table, context)?);
+                code_list.append(&mut self.gen_expr(table, context)?);
                 let safe_label = context.get_jump_target();
-                if safe {
+                if *safe {
                     code_list.push(OpCode::JumpIfNull(safe_label));
                 }
                 code_list.push(OpCode::GetMeta);
@@ -703,13 +699,13 @@ impl FunctionBuilder {
                         kind,
                         safe,
                     } => {
-                        code_list.append(&mut self.gen_expr(*table, context)?);
+                        code_list.append(&mut self.gen_expr(&table, context)?);
                         if safe {
                             code_list.push(OpCode::JumpIfNull(safe_label));
                         }
                         match kind {
                             MemberKind::Bracket => {
-                                code_list.append(&mut self.gen_expr(*property, context)?);
+                                code_list.append(&mut self.gen_expr(&property, context)?);
                                 code_list.push(OpCode::GetItem);
                             }
                             MemberKind::Dot => {
@@ -740,13 +736,13 @@ impl FunctionBuilder {
                         }
                     }
                     _ => {
-                        code_list.append(&mut self.gen_expr(*callee, context)?);
+                        code_list.append(&mut self.gen_expr(callee, context)?);
                     }
                 }
                 for arg in arguments {
                     code_list.append(&mut self.gen_expr(arg, context)?);
                 }
-                code_list.push(if propagating_error {
+                code_list.push(if *propagating_error {
                     OpCode::TryCall(temp)
                 } else {
                     OpCode::Call(temp)
@@ -757,17 +753,24 @@ impl FunctionBuilder {
         Ok(code_list)
     }
 
-    fn gen_stmt(&mut self, ast_node: Stmt, context: &mut Context) -> Result<Vec<OpCode>> {
+    fn gen_stmt(&mut self, ast_node: &Stmt, context: &mut Context) -> Result<Vec<OpCode>> {
         let mut code_list = Vec::new();
+        macro_rules! gen_block {
+            ($block:expr) => {
+                for stmt in &$block.body {
+                    code_list.append(&mut self.gen_stmt(stmt, context)?);
+                }
+            };
+        }
         macro_rules! gen_expr_member_without_get {
             ($table:expr, $property:expr, $kind:expr, $safe:expr) => {{
                 if $safe {
                     return Err(SyntaxError::IllegalAst.into());
                 }
-                code_list.append(&mut self.gen_expr(*$table, context)?);
+                code_list.append(&mut self.gen_expr(&$table, context)?);
                 match $kind {
                     MemberKind::Bracket => {
-                        code_list.append(&mut self.gen_expr(*$property, context)?);
+                        code_list.append(&mut self.gen_expr(&$property, context)?);
                     }
                     MemberKind::Dot | MemberKind::DoubleColon => match $property.kind {
                         ExprKind::Ident(ident) => {
@@ -780,7 +783,7 @@ impl FunctionBuilder {
                 }
             }};
         }
-        match ast_node.kind {
+        match &ast_node.kind {
             StmtKind::If {
                 test,
                 consequent,
@@ -800,18 +803,18 @@ impl FunctionBuilder {
                 if let Some(alternate) = alternate {
                     let false_label = context.get_jump_target();
                     let end_label = context.get_jump_target();
-                    code_list.append(&mut self.gen_expr(*test, context)?);
+                    code_list.append(&mut self.gen_expr(test, context)?);
                     code_list.push(OpCode::JumpPopIfFalse(false_label));
-                    code_list.append(&mut self.gen_stmt(Stmt::from(*consequent), context)?);
+                    gen_block!(consequent);
                     code_list.push(OpCode::Jump(end_label));
                     code_list.push(OpCode::JumpTarget(false_label));
-                    code_list.append(&mut self.gen_stmt(*alternate, context)?);
+                    code_list.append(&mut self.gen_stmt(alternate, context)?);
                     code_list.push(OpCode::JumpTarget(end_label));
                 } else {
                     let end_label = context.get_jump_target();
-                    code_list.append(&mut self.gen_expr(*test, context)?);
+                    code_list.append(&mut self.gen_expr(test, context)?);
                     code_list.push(OpCode::JumpPopIfFalse(end_label));
-                    code_list.append(&mut self.gen_stmt(Stmt::from(*consequent), context)?);
+                    gen_block!(consequent);
                     code_list.push(OpCode::JumpTarget(end_label));
                 }
             }
@@ -822,7 +825,7 @@ impl FunctionBuilder {
                 self.break_stack.push(break_label);
 
                 code_list.push(OpCode::JumpTarget(continue_label));
-                code_list.append(&mut self.gen_stmt(Stmt::from(*body), context)?);
+                gen_block!(body);
                 code_list.push(OpCode::Jump(continue_label));
                 code_list.push(OpCode::JumpTarget(break_label));
 
@@ -836,9 +839,9 @@ impl FunctionBuilder {
                 self.break_stack.push(break_label);
 
                 code_list.push(OpCode::JumpTarget(continue_label));
-                code_list.append(&mut self.gen_expr(*test, context)?);
+                code_list.append(&mut self.gen_expr(test, context)?);
                 code_list.push(OpCode::JumpPopIfFalse(break_label));
-                code_list.append(&mut self.gen_stmt(Stmt::from(*body), context)?);
+                gen_block!(body);
                 code_list.push(OpCode::Jump(continue_label));
                 code_list.push(OpCode::JumpTarget(break_label));
 
@@ -851,7 +854,7 @@ impl FunctionBuilder {
                 self.continue_stack.push(continue_label);
                 self.break_stack.push(break_label);
 
-                code_list.append(&mut self.gen_expr(*right, context)?);
+                code_list.append(&mut self.gen_expr(right, context)?);
                 code_list.push(OpCode::JumpTarget(continue_label));
                 code_list.push(OpCode::For(break_label));
                 if left.len() == 1 {
@@ -867,7 +870,7 @@ impl FunctionBuilder {
                     }
                     code_list.push(OpCode::Pop);
                 }
-                code_list.append(&mut self.gen_stmt(Stmt::from(*body), context)?);
+                gen_block!(body);
                 code_list.push(OpCode::Jump(continue_label));
                 code_list.push(OpCode::JumpTarget(break_label));
                 code_list.push(OpCode::Pop);
@@ -895,7 +898,7 @@ impl FunctionBuilder {
                     propagating_error, ..
                 } = argument.kind.clone()
                 {
-                    code_list.append(&mut self.gen_expr(*argument, context)?);
+                    code_list.append(&mut self.gen_expr(argument, context)?);
                     if propagating_error {
                         code_list.push(OpCode::Return);
                     } else if let OpCode::Call(i) = code_list[code_list.len() - 2] {
@@ -903,7 +906,7 @@ impl FunctionBuilder {
                         code_list[t - 2] = OpCode::ReturnCall(i);
                     }
                 } else {
-                    code_list.append(&mut self.gen_expr(*argument, context)?);
+                    code_list.append(&mut self.gen_expr(argument, context)?);
                     code_list.push(OpCode::Return);
                 }
             }
@@ -911,7 +914,7 @@ impl FunctionBuilder {
                 if self.kind == FunctionKind::Do {
                     return Err(SyntaxError::ThrowOutsideFunction.into());
                 }
-                code_list.append(&mut self.gen_expr(*argument, context)?);
+                code_list.append(&mut self.gen_expr(argument, context)?);
                 code_list.push(OpCode::Throw);
             }
             StmtKind::Global { arguments } => {
@@ -919,7 +922,7 @@ impl FunctionBuilder {
                     return Err(SyntaxError::GlobalOutsideFunction.into());
                 }
                 for arg in arguments {
-                    self.global_names.push((arg.name, true));
+                    self.global_names.push((arg.name.clone(), true));
                 }
             }
             StmtKind::Import { path, kind } => {
@@ -938,7 +941,7 @@ impl FunctionBuilder {
                     ImportKind::Nested(items) => {
                         for (name, alias) in items {
                             code_list.push(OpCode::ImportFrom(
-                                context.add_const(ConstlValue::Str(name.name)),
+                                context.add_const(ConstlValue::Str(name.name.clone())),
                             ));
                             code_list.push(OpCode::StoreGlobal(self.add_global_name(&alias.name)));
                         }
@@ -950,9 +953,9 @@ impl FunctionBuilder {
                 }
             }
             StmtKind::Assign { left, right } => {
-                code_list.append(&mut self.gen_expr(*right, context)?);
+                code_list.append(&mut self.gen_expr(right, context)?);
                 match left.kind.clone() {
-                    ExprKind::Ident(ident) => code_list.push(self.get_store(&ident.name, context)),
+                    ExprKind::Ident(ident) => code_list.push(self.store(&ident.name, context)),
                     ExprKind::Member {
                         table,
                         property,
@@ -969,7 +972,7 @@ impl FunctionBuilder {
                         if safe {
                             return Err(SyntaxError::IllegalAst.into());
                         }
-                        code_list.append(&mut self.gen_expr(*table, context)?);
+                        code_list.append(&mut self.gen_expr(&table, context)?);
                         code_list.push(OpCode::SetMeta);
                     }
                     _ => return Err(SyntaxError::IllegalAst.into()),
@@ -981,10 +984,10 @@ impl FunctionBuilder {
                 right,
             } => match left.kind.clone() {
                 ExprKind::Ident(ident) => {
-                    code_list.append(&mut self.gen_expr(*left, context)?);
-                    code_list.append(&mut self.gen_expr(*right, context)?);
-                    code_list.push(OpCode::try_from(operator)?);
-                    code_list.push(self.get_store(&ident.name, context));
+                    code_list.append(&mut self.gen_expr(left, context)?);
+                    code_list.append(&mut self.gen_expr(right, context)?);
+                    code_list.push(OpCode::try_from(*operator)?);
+                    code_list.push(self.store(&ident.name, context));
                 }
                 ExprKind::Member {
                     table,
@@ -998,8 +1001,8 @@ impl FunctionBuilder {
                         MemberKind::Bracket => OpCode::GetItem,
                         MemberKind::Dot | MemberKind::DoubleColon => OpCode::GetAttr,
                     });
-                    code_list.append(&mut self.gen_expr(*right, context)?);
-                    code_list.push(OpCode::try_from(operator)?);
+                    code_list.append(&mut self.gen_expr(right, context)?);
+                    code_list.push(OpCode::try_from(*operator)?);
                     code_list.push(OpCode::RotThree);
                     code_list.push(match kind {
                         MemberKind::Bracket => OpCode::SetItem,
@@ -1010,7 +1013,7 @@ impl FunctionBuilder {
                     if safe {
                         return Err(SyntaxError::IllegalAst.into());
                     }
-                    code_list.append(&mut self.gen_expr(*table, context)?);
+                    code_list.append(&mut self.gen_expr(&table, context)?);
                     code_list.push(OpCode::Dup);
                     code_list.push(OpCode::GetMeta);
                     code_list.push(OpCode::SetMeta);
@@ -1018,7 +1021,7 @@ impl FunctionBuilder {
                 _ => return Err(SyntaxError::IllegalAst.into()),
             },
             StmtKind::AssignUnpack { left, right } => {
-                let right_expr = self.gen_expr(*right, context)?;
+                let right_expr = self.gen_expr(right, context)?;
                 for (i, l) in left.iter().enumerate() {
                     code_list.append(&mut right_expr.clone());
                     code_list.push(OpCode::LoadConst(
@@ -1027,7 +1030,7 @@ impl FunctionBuilder {
                     code_list.push(OpCode::GetItem);
                     match &l.kind {
                         ExprKind::Ident(ident) => {
-                            code_list.push(self.get_store(&ident.name, context));
+                            code_list.push(self.store(&ident.name, context));
                         }
                         ExprKind::Member {
                             table,
@@ -1050,7 +1053,7 @@ impl FunctionBuilder {
                             if *safe {
                                 return Err(SyntaxError::IllegalAst.into());
                             }
-                            code_list.append(&mut self.gen_expr(*(*table).clone(), context)?);
+                            code_list.append(&mut self.gen_expr(table, context)?);
                             code_list.push(OpCode::SetMeta);
                         }
                         _ => return Err(SyntaxError::IllegalAst.into()),
@@ -1067,7 +1070,7 @@ impl FunctionBuilder {
                 for left in left.iter().rev() {
                     match left.kind.clone() {
                         ExprKind::Ident(ident) => {
-                            code_list.push(self.get_store(&ident.name, context));
+                            code_list.push(self.store(&ident.name, context));
                         }
                         ExprKind::Member {
                             table,
@@ -1085,20 +1088,16 @@ impl FunctionBuilder {
                             if safe {
                                 return Err(SyntaxError::IllegalAst.into());
                             }
-                            code_list.append(&mut self.gen_expr(*table, context)?);
+                            code_list.append(&mut self.gen_expr(&table, context)?);
                             code_list.push(OpCode::SetMeta);
                         }
                         _ => return Err(SyntaxError::IllegalAst.into()),
                     }
                 }
             }
-            StmtKind::Block(block) => {
-                for stmt in block.body {
-                    code_list.append(&mut self.gen_stmt(stmt, context)?);
-                }
-            }
+            StmtKind::Block(block) => gen_block!(block),
             StmtKind::Expr(expr) => {
-                code_list.append(&mut self.gen_expr(*expr, context)?);
+                code_list.append(&mut self.gen_expr(expr, context)?);
                 code_list.push(OpCode::Pop);
             }
         }
