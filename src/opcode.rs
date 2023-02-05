@@ -116,6 +116,58 @@ pub enum OpCode {
 
 impl Display for OpCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Debug::fmt(self, f)
+        let width = 20;
+        match self {
+            Self::Pop => write!(f, "{:width$}", "Pop"),
+            Self::Dup => write!(f, "{:width$}", "Dup"),
+            Self::DupTwo => write!(f, "{:width$}", "DupTwo"),
+            Self::RotTwo => write!(f, "{:width$}", "RotTwo"),
+            Self::RotThree => write!(f, "{:width$}", "RotThree"),
+            Self::LoadLocal(i) => write!(f, "{:width$}{}", "LoadLocal", i),
+            Self::LoadGlobal(i) => write!(f, "{:width$}{}", "LoadGlobal", i),
+            Self::LoadUpvalue(i) => write!(f, "{:width$}{}", "LoadUpvalue", i),
+            Self::LoadConst(i) => write!(f, "{:width$}{}", "LoadConst", i),
+            Self::StoreLocal(i) => write!(f, "{:width$}{}", "StoreLocal", i),
+            Self::StoreGlobal(i) => write!(f, "{:width$}{}", "StoreGlobal", i),
+            Self::StoreUpvalue(i) => write!(f, "{:width$}{}", "StoreUpvalue", i),
+            Self::Import(i) => write!(f, "{:width$}{}", "Import", i),
+            Self::ImportFrom(i) => write!(f, "{:width$}{}", "ImportFrom", i),
+            Self::ImportGlob => write!(f, "{:width$}", "ImportGlob"),
+            Self::BuildTable(i) => write!(f, "{:width$}{}", "BuildTable", i),
+            Self::GetAttr => write!(f, "{:width$}", "GetAttr"),
+            Self::GetItem => write!(f, "{:width$}", "GetItem"),
+            Self::GetMeta => write!(f, "{:width$}", "GetMeta"),
+            Self::SetAttr => write!(f, "{:width$}", "SetAttr"),
+            Self::SetItem => write!(f, "{:width$}", "SetItem"),
+            Self::SetMeta => write!(f, "{:width$}", "SetMeta"),
+            Self::Neg => write!(f, "{:width$}", "Neg"),
+            Self::Not => write!(f, "{:width$}", "Not"),
+            Self::Add => write!(f, "{:width$}", "Add"),
+            Self::Sub => write!(f, "{:width$}", "Sub"),
+            Self::Mul => write!(f, "{:width$}", "Mul"),
+            Self::Div => write!(f, "{:width$}", "Div"),
+            Self::Mod => write!(f, "{:width$}", "Mod"),
+            Self::Eq => write!(f, "{:width$}", "Eq"),
+            Self::Ne => write!(f, "{:width$}", "Ne"),
+            Self::Gt => write!(f, "{:width$}", "Gt"),
+            Self::Ge => write!(f, "{:width$}", "Ge"),
+            Self::Lt => write!(f, "{:width$}", "Lt"),
+            Self::Le => write!(f, "{:width$}", "Le"),
+            Self::Is => write!(f, "{:width$}", "Is"),
+            Self::For(JumpTarget(i)) => write!(f, "{:width$}{}", "For", i),
+            Self::Jump(JumpTarget(i)) => write!(f, "{:width$}{}", "Jump", i),
+            Self::JumpIfNull(JumpTarget(i)) => write!(f, "{:width$}{}", "JumpIfNull", i),
+            Self::JumpPopIfFalse(JumpTarget(i)) => write!(f, "{:width$}{}", "JumpPopIfFalse", i),
+            Self::JumpIfTureOrPop(JumpTarget(i)) => write!(f, "{:width$}{}", "JumpIfTureOrPop", i),
+            Self::JumpIfFalseOrPop(JumpTarget(i)) => {
+                write!(f, "{:width$}{}", "JumpIfFalseOrPop", i)
+            }
+            Self::Call(i) => write!(f, "{:width$}{}", "Call", i),
+            Self::TryCall(i) => write!(f, "{:width$}{}", "TryCall", i),
+            Self::Return => write!(f, "{:width$}", "Return"),
+            Self::Throw => write!(f, "{:width$}", "Throw"),
+            Self::ReturnCall(i) => write!(f, "{:width$}{}", "ReturnCall", i),
+            Self::JumpTarget(JumpTarget(i)) => write!(f, "{:width$}{}", "JumpTarget", i),
+        }
     }
 }
