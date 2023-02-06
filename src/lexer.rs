@@ -5,9 +5,10 @@ use unicode_xid;
 use crate::errors::{EscapeError, SyntaxError};
 use crate::token::{
     LiteralKind::*,
-    Location, Token,
+    Token,
     TokenKind::{self, *},
 };
+use crate::utils::Location;
 
 /// Peekable iterator over a char sequence.
 ///

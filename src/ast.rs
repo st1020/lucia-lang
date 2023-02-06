@@ -1,4 +1,4 @@
-use crate::token::Location;
+use crate::utils::Location;
 
 /// A statement.
 #[derive(Debug, Clone)]
@@ -100,6 +100,26 @@ pub struct Expr {
     pub end: Location,
 }
 
+impl From<Lit> for Expr {
+    fn from(value: Lit) -> Self {
+        Expr {
+            start: value.start,
+            end: value.end,
+            kind: ExprKind::Lit(Box::new(value)),
+        }
+    }
+}
+
+impl From<Ident> for Expr {
+    fn from(value: Ident) -> Self {
+        Expr {
+            start: value.start,
+            end: value.end,
+            kind: ExprKind::Ident(Box::new(value)),
+        }
+    }
+}
+
 /// Kind of expression.
 #[derive(Debug, Clone)]
 pub enum ExprKind {
@@ -139,26 +159,6 @@ pub enum ExprKind {
         arguments: Vec<Expr>,
         propagating_error: bool,
     },
-}
-
-impl From<Lit> for Expr {
-    fn from(value: Lit) -> Self {
-        Expr {
-            start: value.start,
-            end: value.end,
-            kind: ExprKind::Lit(Box::new(value)),
-        }
-    }
-}
-
-impl From<Ident> for Expr {
-    fn from(value: Ident) -> Self {
-        Expr {
-            start: value.start,
-            end: value.end,
-            kind: ExprKind::Ident(Box::new(value)),
-        }
-    }
 }
 
 /// A literal.
