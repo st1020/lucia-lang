@@ -1,16 +1,27 @@
 use core::ptr::NonNull;
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 
 use crate::code::{Code, FunctionKind};
+use crate::utils::ValueVecDebug;
 
 use super::{GCObject, Value};
 
 /// The closure object. Any function is a closure.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Closure {
     pub function: Code,
     pub base_closure: Option<NonNull<GCObject>>,
     pub variables: Vec<Value>,
+}
+
+impl Debug for Closure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Closure")
+            .field("function", &self.function)
+            .field("base_closure", &self.base_closure)
+            .field("variables", &ValueVecDebug(&self.variables))
+            .finish()
+    }
 }
 
 impl PartialEq for Closure {

@@ -2,6 +2,7 @@ use std::fmt::{Debug, Display};
 
 use crate::errors::Result;
 use crate::lvm::Lvm;
+use crate::utils::ValueVecDebug;
 
 use super::Value;
 
@@ -16,7 +17,7 @@ pub struct ExtClosure {
 impl Debug for ExtClosure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ExtClosure")
-            .field("upvalues", &self.upvalues)
+            .field("upvalues", &ValueVecDebug(&self.upvalues))
             .finish()
     }
 }

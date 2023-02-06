@@ -1,11 +1,13 @@
 use std::collections::HashMap;
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 use std::iter::FusedIterator;
+
+use crate::utils::ValueDebug;
 
 use super::Value;
 
 /// The table implement.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Table {
     pub array: Vec<(Value, Value)>,
     pub mapping: HashMap<Value, Value>,
@@ -135,6 +137,32 @@ impl Table {
 impl Default for Table {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Debug for Table {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        struct DebugMetaSign {}
+
+        impl Debug for DebugMetaSign {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "#")
+            }
+        }
+
+        f.debug_map()
+            .entries(
+                self.array
+                    .iter()
+                    .map(|(k, v)| (ValueDebug(k), ValueDebug(v))),
+            )
+            .entries(
+                self.mapping
+                    .iter()
+                    .map(|(k, v)| (ValueDebug(k), ValueDebug(v))),
+            )
+            .entry(&DebugMetaSign {}, &self.metatable)
+            .finish()
     }
 }
 
