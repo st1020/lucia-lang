@@ -6,6 +6,7 @@ use crate::ast::*;
 use crate::code::{Code, ConstlValue, FunctionKind};
 use crate::errors::{Error, Result, SyntaxError};
 use crate::opcode::{JumpTarget, OpCode};
+use crate::utils::Join;
 
 impl TryFrom<BinOp> for OpCode {
     type Error = Error;
@@ -642,12 +643,7 @@ impl<'a> CodeGen<'a> {
                 }
             }
             StmtKind::Import { path, kind } => {
-                let path_str = path
-                    .clone()
-                    .into_iter()
-                    .map(|x| x.name)
-                    .collect::<Vec<String>>()
-                    .join("::");
+                let path_str = path.iter().map(|x| x.name.as_str()).join("::");
                 let t = self.add_const(ConstlValue::Str(path_str));
                 self.code.push(OpCode::Import(t));
                 match kind {

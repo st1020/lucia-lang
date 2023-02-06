@@ -3,6 +3,7 @@ use std::io;
 use crate::check_arguments_num;
 use crate::lvm::Lvm;
 use crate::objects::{Table, Value};
+use crate::utils::Join;
 
 pub fn libs(lvm: &mut Lvm) -> Table {
     let mut t = Table::new();
@@ -12,13 +13,7 @@ pub fn libs(lvm: &mut Lvm) -> Table {
             match args.len() {
                 0 => (),
                 1 => print!("{}", args.first().unwrap()),
-                _ => print!(
-                    "{}",
-                    args.iter()
-                        .map(|x| x.to_string())
-                        .collect::<Vec<String>>()
-                        .join(" ")
-                ),
+                _ => print!("{}", args.iter().join(" ")),
             }
             Ok(Value::Null)
         }),
@@ -29,13 +24,7 @@ pub fn libs(lvm: &mut Lvm) -> Table {
             match args.len() {
                 0 => println!(),
                 1 => println!("{}", args.first().unwrap()),
-                _ => println!(
-                    "{}",
-                    args.iter()
-                        .map(|x| x.to_string())
-                        .collect::<Vec<String>>()
-                        .join(" ")
-                ),
+                _ => println!("{}", args.iter().join(" ")),
             }
             Ok(Value::Null)
         }),

@@ -9,6 +9,7 @@ use crate::lvm::Lvm;
 use crate::objects::{Closure, Table, Value, ValueType};
 use crate::opcode::OpCode;
 use crate::token::{Token, TokenType};
+use crate::utils::Join;
 
 pub type Result<T> = result::Result<T, Error>;
 
@@ -37,10 +38,7 @@ pub enum SyntaxError {
     EscapeError(#[from] EscapeError),
 
     // parser error
-    #[error(
-        "unexpect token (expected {}, found {token})",
-        .expected.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", ")
-    )]
+    #[error("unexpect token (expected {}, found {token})", .expected.iter().join(", "))]
     UnexpectToken {
         token: Box<Token>,
         expected: Vec<TokenType>,
