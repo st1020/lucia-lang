@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::iter::FusedIterator;
 
-use crate::utils::ValueDebug;
+use crate::utils::{Join, ValueDebug};
 
 use super::Value;
 
@@ -128,7 +128,6 @@ impl Table {
                         },
                     )
                 })
-                .collect::<Vec<String>>()
                 .join(", ")
         )
     }
