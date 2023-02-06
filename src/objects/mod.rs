@@ -9,6 +9,7 @@ use std::hash::Hash;
 use crate::errors::{BuiltinError, Result};
 use crate::lvm::Lvm;
 use crate::type_convert_error;
+use crate::utils::escape_str;
 
 pub use self::closure::Closure;
 pub use self::ext_closure::{ExtClosure, ExtClosureFunc};
@@ -354,7 +355,7 @@ impl Value {
     #[inline]
     pub fn repr(&self) -> String {
         if let Some(s) = self.as_str() {
-            format!("\"{}\"", s.escape_debug())
+            format!("\"{}\"", escape_str(s, false))
         } else if let Some(t) = self.as_table() {
             t.repr_table(self)
         } else {

@@ -19,3 +19,22 @@ impl Display for Location {
         Debug::fmt(self, f)
     }
 }
+
+pub fn escape_str(value: &str, ascii_only: bool) -> String {
+    let mut ans = String::new();
+    for c in value.chars() {
+        match c {
+            '\0' => ans.push_str("\\0"),
+            '\t' => ans.push_str("\\t"),
+            '\r' => ans.push_str("\\t"),
+            '\n' => ans.push_str("\\n"),
+            '\\' => ans.push_str("\\\\"),
+            '"' => ans.push_str("\\\""),
+            '\'' => ans.push_str("\\\'"),
+            '\x20'..='\x7e' if ascii_only => ans.push(c),
+            _ if ascii_only => ans.push_str(&c.escape_default().to_string()),
+            _ => ans.push(c),
+        }
+    }
+    ans
+}
