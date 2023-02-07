@@ -22,15 +22,12 @@ fn temp() -> errors::Result<()> {
     println(repr(l))
     return l['a']
     ";
-    let start = Instant::now();
-    let a = parser::Parser::new(&mut lexer::tokenize(input)).parse()?;
-    let b = codegen::CodeGen::from(a).gen_code()?;
-    println!("{:#?}", b);
-    // println!("{:?}", std::mem::size_of::<errors::LuciaError>());
+    let ast = parser::Parser::new(&mut lexer::tokenize(input)).parse()?;
+    // println!("{:#?}", ast);
+    let code = codegen::CodeGen::from(ast).gen_code()?;
+    // println!("{:#}", code);
     let mut lvm = lvm::Lvm::new();
-    println!("{:?}", lvm.run(b));
-    let duration = start.elapsed();
-    println!("Time: {:?}", duration);
+    println!("{:?}", lvm.run(code));
     Ok(())
 }
 
@@ -38,7 +35,7 @@ fn temp() -> errors::Result<()> {
 fn tail_call() -> errors::Result<()> {
     let input = "
     global f
-    f = fn (n, total) {
+    fn f(n, total) {
         if n == 1 {
             return total
         }
@@ -54,7 +51,7 @@ fn tail_call() -> errors::Result<()> {
 fn variadic() -> errors::Result<()> {
     let input = "
     import std::io::{println}
-    test = fn (a, *b) {
+    fn test(a, *b) {
         println(a)
         println(repr(b))
     }
@@ -111,7 +108,7 @@ fn add_pref() -> errors::Result<()> {
 fn gcd_pref() -> errors::Result<()> {
     let input = "
     global gcd
-    gcd = fn (x, y) {
+    fn gcd(x, y) {
         if y == 0 {
             return x
         } else {
@@ -142,7 +139,7 @@ fn gcd_pref() -> errors::Result<()> {
 fn for_test() -> errors::Result<()> {
     let input = "
     import std::io::{println}
-    a = fn () {
+    fn a() {
         t = 0
         return || {
             t += 1

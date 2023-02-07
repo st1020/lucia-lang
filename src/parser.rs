@@ -146,6 +146,34 @@ impl<'a> Parser<'a> {
                 }
             };
         }
+        macro_rules! check_assign_left {
+            ($ast_node:expr) => {
+                match $ast_node.kind {
+                    ExprKind::Ident(_) => (),
+                    ExprKind::Member { safe, .. } | ExprKind::MetaMember { safe, .. } => {
+                        if safe {
+                            return Err(SyntaxError::ParseAssignStmtError.into());
+                        }
+                    }
+                    _ => return Err(SyntaxError::ParseAssignStmtError.into()),
+                }
+            };
+        }
+        macro_rules! assign_op_stmt {
+            ($ast_node:expr, $bin_op:expr) => {{
+                check_assign_left!($ast_node);
+                let right = self.parse_expr(1)?;
+                Stmt {
+                    start: $ast_node.start,
+                    end: right.end,
+                    kind: StmtKind::AssignOp {
+                        operator: $bin_op,
+                        left: $ast_node,
+                        right,
+                    },
+                }
+            }};
+        }
         self.eat_eol();
         let ast_node = if self.eat(&TokenKind::If) {
             self.parse_stmt_if()?
@@ -257,35 +285,12 @@ impl<'a> Parser<'a> {
             })
         } else if self.check(&TokenKind::OpenBrace) {
             (*self.parse_block()?).into()
+        } else if self.eat(&TokenKind::Fn) {
+            stmt!(StmtKind::Assign {
+                left: Box::new(self.parse_ident()?.into()),
+                right: self.parse_expr_func(false)?
+            })
         } else {
-            macro_rules! check_assign_left {
-                ($ast_node:expr) => {
-                    match $ast_node.kind {
-                        ExprKind::Ident(_) => (),
-                        ExprKind::Member { safe, .. } | ExprKind::MetaMember { safe, .. } => {
-                            if safe {
-                                return Err(SyntaxError::ParseAssignStmtError.into());
-                            }
-                        }
-                        _ => return Err(SyntaxError::ParseAssignStmtError.into()),
-                    }
-                };
-            }
-            macro_rules! assign_op_stmt {
-                ($ast_node:expr, $bin_op:expr) => {{
-                    check_assign_left!($ast_node);
-                    let right = self.parse_expr(1)?;
-                    Stmt {
-                        start: $ast_node.start,
-                        end: right.end,
-                        kind: StmtKind::AssignOp {
-                            operator: $bin_op,
-                            left: $ast_node,
-                            right,
-                        },
-                    }
-                }};
-            }
             let ast_node = self.parse_expr(1)?;
             if self.check(&TokenKind::Comma) {
                 check_assign_left!(ast_node);
@@ -596,10 +601,12 @@ impl<'a> Parser<'a> {
                 LiteralKind::Float(v) => LitKind::Float(v?),
                 LiteralKind::Str(v) => LitKind::Str(v?),
             })
-        } else if self.check(&TokenKind::OpenBrace) {
+        } else if self.eat(&TokenKind::OpenBrace) {
             self.parse_expr_table()
-        } else if self.check(&TokenKind::Fn) || self.check(&TokenKind::VBar) {
-            self.parse_expr_func()
+        } else if self.eat(&TokenKind::Fn) {
+            self.parse_expr_func(false)
+        } else if self.eat(&TokenKind::VBar) {
+            self.parse_expr_func(true)
         } else if self.eat(&TokenKind::Do) {
             Ok(Box::new(Expr {
                 start: self.prev_token.start,
@@ -613,7 +620,6 @@ impl<'a> Parser<'a> {
 
     /// Parse table expression.
     fn parse_expr_table(&mut self) -> Result<Box<Expr>> {
-        self.expect(&TokenKind::OpenBrace)?;
         Ok(Box::new(Expr {
             start: self.prev_token.start,
             kind: ExprKind::Table {
@@ -661,24 +667,19 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse function expression.
-    fn parse_expr_func(&mut self) -> Result<Box<Expr>> {
-        let end_token;
+    fn parse_expr_func(&mut self, is_closure: bool) -> Result<Box<Expr>> {
+        let start = self.prev_token.start;
+        let end_token = if is_closure {
+            TokenKind::VBar
+        } else {
+            self.expect(&TokenKind::OpenParen)?;
+            TokenKind::CloseParen
+        };
         let mut variadic = None;
         Ok(Box::new(Expr {
-            start: self.token.start,
+            start,
             kind: ExprKind::Function {
-                is_closure: {
-                    if self.eat(&TokenKind::Fn) {
-                        self.expect(&TokenKind::OpenParen)?;
-                        end_token = TokenKind::CloseParen;
-                        false
-                    } else if self.eat(&TokenKind::VBar) {
-                        end_token = TokenKind::VBar;
-                        true
-                    } else {
-                        unexpected_error!(self);
-                    }
-                },
+                is_closure,
                 params: {
                     let mut temp = Vec::new();
                     while !self.eat_noexpect(&end_token) {
