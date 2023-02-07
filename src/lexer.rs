@@ -102,7 +102,7 @@ impl<'a> Cursor<'a> {
 }
 
 /// Base of numeric literal encoding according to its prefix.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Base {
     /// Literal starts with "0b".
     Binary,
