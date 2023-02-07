@@ -23,9 +23,9 @@ fn temp() -> errors::Result<()> {
     return l['a']
     ";
     let ast = parser::Parser::new(&mut lexer::tokenize(input)).parse()?;
-    // println!("{:#?}", ast);
+    // println!("{}", ast);
     let code = codegen::CodeGen::from(ast).gen_code()?;
-    // println!("{:#}", code);
+    // println!("{}", code);
     let mut lvm = lvm::Lvm::new();
     println!("{:?}", lvm.run(code));
     Ok(())

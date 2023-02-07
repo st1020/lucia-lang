@@ -1,4 +1,6 @@
-use crate::utils::Location;
+use std::fmt::Display;
+
+use crate::utils::{escape_str, Join, Location};
 
 /// A statement.
 #[derive(Debug, Clone)]
@@ -6,6 +8,12 @@ pub struct Stmt {
     pub kind: StmtKind,
     pub start: Location,
     pub end: Location,
+}
+
+impl Display for Stmt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.kind)
+    }
 }
 
 impl From<Block> for Stmt {
@@ -84,6 +92,67 @@ pub enum StmtKind {
     Expr(Box<Expr>),
 }
 
+impl Display for StmtKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StmtKind::If {
+                test,
+                consequent,
+                alternate,
+            } => {
+                if let Some(alternate) = alternate {
+                    writeln!(f, "if {test} {consequent} else {alternate}")
+                } else {
+                    writeln!(f, "if {test} {consequent}")
+                }
+            }
+            StmtKind::Loop { body } => writeln!(f, "loop {body}"),
+            StmtKind::While { test, body } => writeln!(f, "while {test} {body}"),
+            StmtKind::For { left, right, body } => {
+                writeln!(f, "for {} in {right} {body}", left.iter().join(", "))
+            }
+            StmtKind::Break => writeln!(f, "break"),
+            StmtKind::Continue => writeln!(f, "continue"),
+            StmtKind::Return { argument } => writeln!(f, "return {argument}"),
+            StmtKind::Throw { argument } => writeln!(f, "throw {argument}"),
+            StmtKind::Global { arguments } => writeln!(f, "global {}", arguments.iter().join(", ")),
+            StmtKind::Import { path, kind } => match kind {
+                ImportKind::Simple(alias) => {
+                    writeln!(f, "import {} as {alias}", path.iter().join("::"))
+                }
+                ImportKind::Nested(v) => writeln!(
+                    f,
+                    "import {}::{{{}}}",
+                    path.iter().join("::"),
+                    v.iter()
+                        .map(|(name, alias)| format!("{name} as {alias}"))
+                        .join(", ")
+                ),
+                ImportKind::Glob => writeln!(f, "import {}::*", path.iter().join("::")),
+            },
+            StmtKind::Assign { left, right } => writeln!(f, "{left} = {right}"),
+            StmtKind::AssignOp {
+                operator,
+                left,
+                right,
+            } => writeln!(f, "{left} {operator}= {right}"),
+            StmtKind::AssignUnpack { left, right } => {
+                writeln!(f, "{} = {right}", left.iter().join(", "))
+            }
+            StmtKind::AssignMulti { left, right } => {
+                writeln!(
+                    f,
+                    "{} = {}",
+                    left.iter().join(", "),
+                    right.iter().join(", ")
+                )
+            }
+            StmtKind::Block(block) => writeln!(f, "{}", block),
+            StmtKind::Expr(expr) => writeln!(f, "{}", expr),
+        }
+    }
+}
+
 /// A block.
 #[derive(Debug, Clone)]
 pub struct Block {
@@ -92,12 +161,28 @@ pub struct Block {
     pub end: Location,
 }
 
+impl Display for Block {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{{")?;
+        for stmt in &self.body {
+            write!(f, "{}", stmt)?;
+        }
+        write!(f, "}}")
+    }
+}
+
 /// An expression.
 #[derive(Debug, Clone)]
 pub struct Expr {
     pub kind: ExprKind,
     pub start: Location,
     pub end: Location,
+}
+
+impl Display for Expr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.kind)
+    }
 }
 
 impl From<Lit> for Expr {
@@ -161,12 +246,103 @@ pub enum ExprKind {
     },
 }
 
+impl Display for ExprKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ExprKind::Lit(lit) => write!(f, "{lit}"),
+            ExprKind::Ident(ident) => write!(f, "{ident}"),
+            ExprKind::Do(block) => write!(f, "do {block}"),
+            ExprKind::Function {
+                params,
+                variadic,
+                body,
+                is_closure,
+            } => {
+                if let Some(variadic) = variadic {
+                    if *is_closure {
+                        write!(f, "|{}, {}| {}", params.iter().join(", "), variadic, body)
+                    } else {
+                        write!(
+                            f,
+                            "fn ({}, {}) {}",
+                            params.iter().join(", "),
+                            variadic,
+                            body
+                        )
+                    }
+                } else if *is_closure {
+                    write!(f, "|{}| {}", params.iter().join(", "), body)
+                } else {
+                    write!(f, "fn ({}) {}", params.iter().join(", "), body)
+                }
+            }
+            ExprKind::Table { properties } => {
+                if properties.is_empty() {
+                    write!(f, "{{}}")
+                } else {
+                    write!(f, "{{\n{},\n}}", properties.iter().join(",\n"))
+                }
+            }
+            ExprKind::Unary { operator, argument } => write!(f, "{operator} {argument}"),
+            ExprKind::Binary {
+                operator,
+                left,
+                right,
+            } => write!(f, "({left} {operator} {right})"),
+            ExprKind::Member {
+                table,
+                property,
+                kind,
+                safe,
+            } => {
+                if *safe {
+                    match kind {
+                        MemberKind::Bracket => write!(f, "{table}?[{property}]"),
+                        MemberKind::Dot => write!(f, "{table}?.{property}"),
+                        MemberKind::DoubleColon => write!(f, "{table}?::{property}"),
+                    }
+                } else {
+                    match kind {
+                        MemberKind::Bracket => write!(f, "{table}[{property}]"),
+                        MemberKind::Dot => write!(f, "{table}.{property}"),
+                        MemberKind::DoubleColon => write!(f, "{table}::{property}"),
+                    }
+                }
+            }
+            ExprKind::MetaMember { table, safe } => {
+                if *safe {
+                    write!(f, "{table}?[#]")
+                } else {
+                    write!(f, "{table}[#]")
+                }
+            }
+            ExprKind::Call {
+                callee,
+                arguments,
+                propagating_error,
+            } => {
+                if *propagating_error {
+                    write!(f, "{callee}({})?", arguments.iter().join(", "))
+                } else {
+                    write!(f, "{callee}({})", arguments.iter().join(", "))
+                }
+            }
+        }
+    }
+}
+
 /// A literal.
 #[derive(Debug, Clone)]
 pub struct Lit {
     pub value: LitKind,
     pub start: Location,
     pub end: Location,
+}
+
+impl Display for Lit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.value)
+    }
 }
 
 /// Kind of literal.
@@ -184,6 +360,18 @@ pub enum LitKind {
     Str(String),
 }
 
+impl Display for LitKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LitKind::Null => write!(f, "null"),
+            LitKind::Bool(v) => write!(f, "{v}"),
+            LitKind::Int(v) => write!(f, "{v}"),
+            LitKind::Float(v) => write!(f, "{v}"),
+            LitKind::Str(v) => write!(f, "\"{}\"", escape_str(v, false)),
+        }
+    }
+}
+
 /// An ident.
 #[derive(Debug, Clone)]
 pub struct Ident {
@@ -192,8 +380,14 @@ pub struct Ident {
     pub end: Location,
 }
 
+impl Display for Ident {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
 /// Unary operator.
-#[derive(Clone, PartialEq, Eq, Debug, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnOp {
     /// The `not` operator for logical inversion
     Not,
@@ -201,8 +395,17 @@ pub enum UnOp {
     Neg,
 }
 
+impl Display for UnOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UnOp::Not => write!(f, "not"),
+            UnOp::Neg => write!(f, "-"),
+        }
+    }
+}
+
 /// Binary operator.
-#[derive(Clone, PartialEq, Eq, Debug, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinOp {
     /// The `+` operator (addition)
     Add,
@@ -234,6 +437,27 @@ pub enum BinOp {
     Is,
 }
 
+impl Display for BinOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BinOp::Add => write!(f, "+"),
+            BinOp::Sub => write!(f, "-"),
+            BinOp::Mul => write!(f, "*"),
+            BinOp::Div => write!(f, "/"),
+            BinOp::Mod => write!(f, "%"),
+            BinOp::And => write!(f, "and"),
+            BinOp::Or => write!(f, "or"),
+            BinOp::Eq => write!(f, "=="),
+            BinOp::Lt => write!(f, "<"),
+            BinOp::Le => write!(f, "<="),
+            BinOp::Ne => write!(f, "!="),
+            BinOp::Ge => write!(f, ">"),
+            BinOp::Gt => write!(f, ">="),
+            BinOp::Is => write!(f, "is"),
+        }
+    }
+}
+
 impl BinOp {
     pub fn precedence(&self) -> u32 {
         match self {
@@ -260,7 +484,7 @@ impl BinOp {
 }
 
 /// Kind of member expression.
-#[derive(Clone, PartialEq, Eq, Debug, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MemberKind {
     /// `[]`
     Bracket,
@@ -287,4 +511,10 @@ pub struct TableProperty {
     pub value: Box<Expr>,
     pub start: Location,
     pub end: Location,
+}
+
+impl Display for TableProperty {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.key, self.value)
+    }
 }
