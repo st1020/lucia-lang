@@ -118,7 +118,13 @@ impl Table {
                 .map(|(k, v)| {
                     format!(
                         "{}: {}",
-                        k.repr(),
+                        if k.is(t) {
+                            "<table>".to_string()
+                        } else if let Some(k_t) = k.as_table() {
+                            k_t.repr_table(t)
+                        } else {
+                            k.repr()
+                        },
                         if v.is(t) {
                             "<table>".to_string()
                         } else if let Some(v_t) = v.as_table() {
