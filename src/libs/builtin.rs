@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::errors::{Error, RuntimeError, RuntimeErrorKind};
 use crate::objects::{Value, ValueType};
-use crate::{check_arguments_num, error, get_metamethod, return_error, type_convert_error};
+use crate::{check_arguments_num, error, get_metamethod, return_error, unexpect_type_error};
 
 pub fn builtin_variables() -> HashMap<String, Value> {
     let mut t = HashMap::new();
@@ -69,7 +69,10 @@ pub fn builtin_variables() -> HashMap<String, Value> {
             } else {
                 return_error!(
                     lvm,
-                    type_convert_error!(args[0].value_type(), ValueType::Table)
+                    unexpect_type_error!(
+                        args[0].value_type(),
+                        vec![ValueType::Str, ValueType::Table]
+                    )
                 );
             }
         }),

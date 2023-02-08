@@ -2,7 +2,7 @@ use crate::ast::*;
 use crate::errors::{Error, Result, SyntaxError};
 use crate::token::{LiteralKind, Token, TokenKind, TokenType};
 
-macro_rules! unexpected_error {
+macro_rules! unexpected_token_error {
     ($self:expr) => {
         return Err(Error::SyntaxError(SyntaxError::UnexpectToken {
             token: Box::new($self.token.clone()),
@@ -65,7 +65,7 @@ impl<'a> Parser<'a> {
             Err(Error::SyntaxError(SyntaxError::UnexpectEOF))
         } else {
             self.expected_tokens.push(TokenType::Token(t.clone()));
-            unexpected_error!(self)
+            unexpected_token_error!(self)
         }
     }
 
@@ -253,7 +253,7 @@ impl<'a> Parser<'a> {
                 }
                 if path.is_empty() {
                     self.expected_tokens = vec![TokenType::Ident];
-                    unexpected_error!(self);
+                    unexpected_token_error!(self);
                 }
                 let kind = if glob {
                     ImportKind::Glob
@@ -279,7 +279,7 @@ impl<'a> Parser<'a> {
                     }
                     ImportKind::Nested(temp)
                 } else {
-                    unexpected_error!(self);
+                    unexpected_token_error!(self);
                 };
                 StmtKind::Import { path, kind }
             })
@@ -565,7 +565,7 @@ impl<'a> Parser<'a> {
                 } else if self.eat(&TokenKind::DoubleColon) {
                     member_attr_expr!(MemberKind::DoubleColon, true)
                 } else {
-                    unexpected_error!(self);
+                    unexpected_token_error!(self);
                 }
             } else {
                 break;
@@ -714,7 +714,7 @@ impl<'a> Parser<'a> {
                 end: self.token.end,
             })
         } else {
-            unexpected_error!(self)
+            unexpected_token_error!(self)
         }
     }
 }

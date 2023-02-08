@@ -209,6 +209,11 @@ impl Display for BuiltinError {
 pub enum TypeError {
     #[error("convert error (from {from} to {to})")]
     ConvertError { from: ValueType, to: ValueType },
+    #[error("unexpect type error (expected {}, found {value_type})", .expected.iter().join(", "))]
+    UnexpectTypeError {
+        value_type: ValueType,
+        expected: Vec<ValueType>,
+    },
     #[error("operator error (unsupported operand type(s) for {operator}: {operand})")]
     UnOperatorError {
         operator: OpCode,
@@ -278,6 +283,16 @@ impl Display for CallArgumentsErrorKind {
 }
 
 #[macro_export]
+macro_rules! unexpect_type_error {
+    ($value_type:expr, $expected:expr) => {
+        $crate::errors::BuiltinError::TypeError($crate::errors::TypeError::UnexpectTypeError {
+            value_type: $value_type,
+            expected: $expected,
+        })
+    };
+}
+
+#[macro_export]
 macro_rules! operator_error {
     ($operator:expr, $arg1:expr) => {
         $crate::errors::BuiltinError::TypeError($crate::errors::TypeError::UnOperatorError {
@@ -285,7 +300,6 @@ macro_rules! operator_error {
             operand: $arg1.value_type(),
         })
     };
-
     ($operator:expr, $arg1:expr, $arg2:expr) => {
         $crate::errors::BuiltinError::TypeError($crate::errors::TypeError::BinOperatorError {
             operator: $operator,

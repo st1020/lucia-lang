@@ -12,9 +12,7 @@ use crate::errors::{
 use crate::libs;
 use crate::objects::*;
 use crate::opcode::{JumpTarget, OpCode};
-use crate::{
-    build_table_error, call_arguments_error, not_callable_error, operator_error, type_convert_error,
-};
+use crate::{build_table_error, call_arguments_error, not_callable_error, operator_error};
 
 #[macro_export]
 macro_rules! error {
@@ -44,7 +42,10 @@ macro_rules! try_convert {
             Some(val) => val,
             None => $crate::return_error!(
                 $lvm,
-                $crate::type_convert_error!($expr.value_type(), $crate::objects::ValueType::$to)
+                $crate::unexpect_type_error!(
+                    $expr.value_type(),
+                    vec![$crate::objects::ValueType::$to]
+                )
             ),
         }
     };
@@ -194,7 +195,7 @@ impl Frame {
         }
 
         macro_rules! get_table {
-            ($name:expr) => {{
+            ($name:expr, $operator:expr) => {{
                 let tos = try_stack!(self.operate_stack.pop());
                 let tos1 = try_stack!(self.operate_stack.pop());
                 if let Some(v) = get_metamethod!(lvm, tos1, $name) {
@@ -203,13 +204,13 @@ impl Frame {
                     self.operate_stack
                         .push(t.get(&tos).copied().unwrap_or(Value::Null));
                 } else {
-                    return_error!(type_convert_error!(tos1.value_type(), ValueType::Table));
+                    return_error!(operator_error!($operator.clone(), tos1));
                 }
             }};
         }
 
         macro_rules! set_table {
-            ($name:expr) => {{
+            ($name:expr, $operator:expr) => {{
                 let tos = try_stack!(self.operate_stack.pop());
                 let mut tos1 = try_stack!(self.operate_stack.pop());
                 let tos2 = try_stack!(self.operate_stack.pop());
@@ -218,7 +219,7 @@ impl Frame {
                 } else if let Some(t) = tos1.as_table_mut() {
                     t.set(&tos, tos2);
                 } else {
-                    return_error!(type_convert_error!(tos1.value_type(), ValueType::Table));
+                    return_error!(operator_error!($operator.clone(), tos1));
                 }
             }};
         }
@@ -388,7 +389,9 @@ impl Frame {
                         } else {
                             let mut path = PathBuf::new();
                             if let Some(v) = lvm.get_global_variable("__module_path__") {
-                                path.push(try_convert!(lvm, v, as_str, Str));
+                                if let Some(v) = v.as_str() {
+                                    path.push(v);
+                                }
                             }
                             path.push(v);
                             path.set_extension("lucia");
@@ -407,26 +410,35 @@ impl Frame {
                     }
                 }
                 OpCode::ImportFrom(i) => {
-                    let module =
-                        try_convert!(lvm, try_stack!(self.operate_stack.last()), as_table, Table);
-                    if let ConstlValue::Str(t) = try_get!(
-                        (closure.function.consts)[*i],
-                        program_error!(ProgramError::ConstError(*i))
-                    ) {
-                        self.operate_stack.push(
-                            module
-                                .raw_get(&lvm.get_builtin_str(t))
-                                .copied()
-                                .unwrap_or(Value::Null),
-                        );
+                    let tos = try_stack!(self.operate_stack.last());
+                    if let Some(module) = tos.as_table() {
+                        if let ConstlValue::Str(t) = try_get!(
+                            (closure.function.consts)[*i],
+                            program_error!(ProgramError::ConstError(*i))
+                        ) {
+                            self.operate_stack.push(
+                                module
+                                    .raw_get(&lvm.get_builtin_str(t))
+                                    .copied()
+                                    .unwrap_or(Value::Null),
+                            );
+                        } else {
+                            return Err(program_error!(ProgramError::ConstError(*i)));
+                        }
                     } else {
-                        return Err(program_error!(ProgramError::ConstError(*i)));
+                        return_error!(operator_error!(code.clone(), tos));
                     }
                 }
                 OpCode::ImportGlob => {
                     let tos = try_stack!(self.operate_stack.pop());
-                    for (k, v) in try_convert!(lvm, tos, as_table, Table).iter() {
-                        lvm.set_global_variable(try_convert!(lvm, k, as_str, Str).to_string(), *v);
+                    if let Some(module) = tos.as_table() {
+                        for (k, v) in module.iter() {
+                            if let Some(k) = k.as_str() {
+                                lvm.set_global_variable(k.to_string(), *v);
+                            }
+                        }
+                    } else {
+                        return_error!(operator_error!(code.clone(), tos));
                     }
                 }
                 OpCode::BuildTable(i) => {
@@ -448,23 +460,29 @@ impl Frame {
                         return Err(stack_error!());
                     }
                 }
-                OpCode::GetAttr => get_table!("__getattr__"),
-                OpCode::GetItem => get_table!("__getitem__"),
+                OpCode::GetAttr => get_table!("__getattr__", code),
+                OpCode::GetItem => get_table!("__getitem__", code),
                 OpCode::GetMeta => {
                     let tos = try_stack!(self.operate_stack.pop());
-                    self.operate_stack
-                        .push(try_convert!(lvm, tos, as_table, Table).metatable);
+                    if let Some(t) = tos.as_table() {
+                        self.operate_stack.push(t.metatable);
+                    } else {
+                        return_error!(operator_error!(code.clone(), tos));
+                    }
                 }
-                OpCode::SetAttr => set_table!("__setattr__"),
-                OpCode::SetItem => set_table!("__setitem__"),
+                OpCode::SetAttr => set_table!("__setattr__", code),
+                OpCode::SetItem => set_table!("__setitem__", code),
                 OpCode::SetMeta => {
                     let mut tos = try_stack!(self.operate_stack.pop());
                     let tos1 = try_stack!(self.operate_stack.pop());
-                    let t = try_convert!(lvm, tos, as_table_mut, Table);
-                    if tos1.is_table() || tos1.is_null() {
-                        t.metatable = tos1;
+                    if let Some(t) = tos.as_table_mut() {
+                        if tos1.is_table() || tos1.is_null() {
+                            t.metatable = tos1;
+                        } else {
+                            return_error!(operator_error!(code.clone(), tos, tos1));
+                        }
                     } else {
-                        return_error!(type_convert_error!(tos1.value_type(), ValueType::Table));
+                        return_error!(operator_error!(code.clone(), tos, tos1));
                     }
                 }
                 OpCode::Neg => {
@@ -481,8 +499,11 @@ impl Frame {
                 }
                 OpCode::Not => {
                     let tos = try_stack!(self.operate_stack.pop());
-                    self.operate_stack
-                        .push(Value::Bool(!try_convert!(lvm, tos, as_bool, Bool)));
+                    if let Some(v) = tos.as_bool() {
+                        self.operate_stack.push(Value::Bool(v));
+                    } else {
+                        return_error!(operator_error!(code.clone(), tos));
+                    }
                 }
                 OpCode::Add => {
                     let tos = try_stack!(self.operate_stack.pop());
