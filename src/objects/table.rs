@@ -149,19 +149,21 @@ impl Debug for Table {
             }
         }
 
-        f.debug_map()
-            .entries(
-                self.array
-                    .iter()
-                    .map(|(k, v)| (ValueDebug(k), ValueDebug(v))),
-            )
-            .entries(
-                self.mapping
-                    .iter()
-                    .map(|(k, v)| (ValueDebug(k), ValueDebug(v))),
-            )
-            .entry(&DebugMetaSign {}, &self.metatable)
-            .finish()
+        let mut t = f.debug_map();
+        t.entries(
+            self.array
+                .iter()
+                .map(|(k, v)| (ValueDebug(k), ValueDebug(v))),
+        )
+        .entries(
+            self.mapping
+                .iter()
+                .map(|(k, v)| (ValueDebug(k), ValueDebug(v))),
+        );
+        if !self.metatable.is_null() {
+            t.entry(&DebugMetaSign {}, &self.metatable);
+        }
+        t.finish()
     }
 }
 
