@@ -101,26 +101,26 @@ impl Display for StmtKind {
                 alternate,
             } => {
                 if let Some(alternate) = alternate {
-                    writeln!(f, "if {test} {consequent} else {alternate}")
+                    write!(f, "if {test} {consequent} else {alternate}")
                 } else {
-                    writeln!(f, "if {test} {consequent}")
+                    write!(f, "if {test} {consequent}")
                 }
             }
-            StmtKind::Loop { body } => writeln!(f, "loop {body}"),
-            StmtKind::While { test, body } => writeln!(f, "while {test} {body}"),
+            StmtKind::Loop { body } => write!(f, "loop {body}"),
+            StmtKind::While { test, body } => write!(f, "while {test} {body}"),
             StmtKind::For { left, right, body } => {
-                writeln!(f, "for {} in {right} {body}", left.iter().join(", "))
+                write!(f, "for {} in {right} {body}", left.iter().join(", "))
             }
-            StmtKind::Break => writeln!(f, "break"),
-            StmtKind::Continue => writeln!(f, "continue"),
-            StmtKind::Return { argument } => writeln!(f, "return {argument}"),
-            StmtKind::Throw { argument } => writeln!(f, "throw {argument}"),
-            StmtKind::Global { arguments } => writeln!(f, "global {}", arguments.iter().join(", ")),
+            StmtKind::Break => write!(f, "break"),
+            StmtKind::Continue => write!(f, "continue"),
+            StmtKind::Return { argument } => write!(f, "return {argument}"),
+            StmtKind::Throw { argument } => write!(f, "throw {argument}"),
+            StmtKind::Global { arguments } => write!(f, "global {}", arguments.iter().join(", ")),
             StmtKind::Import { path, kind } => match kind {
                 ImportKind::Simple(alias) => {
-                    writeln!(f, "import {} as {alias}", path.iter().join("::"))
+                    write!(f, "import {} as {alias}", path.iter().join("::"))
                 }
-                ImportKind::Nested(v) => writeln!(
+                ImportKind::Nested(v) => write!(
                     f,
                     "import {}::{{{}}}",
                     path.iter().join("::"),
@@ -128,27 +128,27 @@ impl Display for StmtKind {
                         .map(|(name, alias)| format!("{name} as {alias}"))
                         .join(", ")
                 ),
-                ImportKind::Glob => writeln!(f, "import {}::*", path.iter().join("::")),
+                ImportKind::Glob => write!(f, "import {}::*", path.iter().join("::")),
             },
-            StmtKind::Assign { left, right } => writeln!(f, "{left} = {right}"),
+            StmtKind::Assign { left, right } => write!(f, "{left} = {right}"),
             StmtKind::AssignOp {
                 operator,
                 left,
                 right,
-            } => writeln!(f, "{left} {operator}= {right}"),
+            } => write!(f, "{left} {operator}= {right}"),
             StmtKind::AssignUnpack { left, right } => {
-                writeln!(f, "{} = {right}", left.iter().join(", "))
+                write!(f, "{} = {right}", left.iter().join(", "))
             }
             StmtKind::AssignMulti { left, right } => {
-                writeln!(
+                write!(
                     f,
                     "{} = {}",
                     left.iter().join(", "),
                     right.iter().join(", ")
                 )
             }
-            StmtKind::Block(block) => writeln!(f, "{}", block),
-            StmtKind::Expr(expr) => writeln!(f, "{}", expr),
+            StmtKind::Block(block) => write!(f, "{}", block),
+            StmtKind::Expr(expr) => write!(f, "{}", expr),
         }
     }
 }
@@ -165,7 +165,14 @@ impl Display for Block {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{{")?;
         for stmt in &self.body {
-            write!(f, "{}", stmt)?;
+            writeln!(
+                f,
+                "{}",
+                format!("{}", stmt)
+                    .split('\n')
+                    .map(|x| format!("    {x}"))
+                    .join("\n")
+            )?;
         }
         write!(f, "}}")
     }
@@ -280,7 +287,16 @@ impl Display for ExprKind {
                 if properties.is_empty() {
                     write!(f, "{{}}")
                 } else {
-                    write!(f, "{{\n{},\n}}", properties.iter().join(",\n"))
+                    write!(
+                        f,
+                        "{{\n{}\n}}",
+                        properties
+                            .iter()
+                            .join(",\n")
+                            .split('\n')
+                            .map(|x| format!("    {x}"))
+                            .join("\n")
+                    )
                 }
             }
             ExprKind::Unary { operator, argument } => write!(f, "{operator} {argument}"),
