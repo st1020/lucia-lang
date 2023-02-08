@@ -232,8 +232,6 @@ pub enum TypeError {
         required: CallArgumentsErrorKind,
         given: usize,
     },
-    #[error("build table error ({0} value can't be table key)")]
-    BuildTableError(ValueType),
 }
 
 /// Kind of CallArgumentsError.
@@ -335,14 +333,5 @@ macro_rules! call_arguments_error {
             required: $crate::errors::CallArgumentsErrorKind::$require_ident($require_value),
             given: $give,
         })
-    };
-}
-
-#[macro_export]
-macro_rules! build_table_error {
-    ($value:expr) => {
-        $crate::errors::BuiltinError::TypeError($crate::errors::TypeError::BuildTableError(
-            $value.value_type(),
-        ))
     };
 }

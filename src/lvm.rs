@@ -12,7 +12,7 @@ use crate::errors::{
 use crate::libs;
 use crate::objects::*;
 use crate::opcode::{JumpTarget, OpCode};
-use crate::{build_table_error, call_arguments_error, not_callable_error, operator_error};
+use crate::{call_arguments_error, not_callable_error, operator_error};
 
 #[macro_export]
 macro_rules! error {
@@ -448,11 +448,6 @@ impl Frame {
                             .split_off(self.operate_stack.len() - *i * 2);
                         let mut table: Table = Table::new();
                         for i in temp.chunks(2) {
-                            if let Value::GCObject(_) = i[0] {
-                                if !i[0].is_str() {
-                                    return_error!(build_table_error!(i[0]));
-                                }
-                            }
                             table.set(&i[0], i[1]);
                         }
                         self.operate_stack.push(lvm.new_table_value(table));
