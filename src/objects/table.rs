@@ -429,3 +429,39 @@ impl ExactSizeIterator for IntoValues {
 }
 
 impl FusedIterator for IntoValues {}
+
+/// Helper macro for creating instances of `Table`.
+#[macro_export]
+macro_rules! table {
+    () => {
+        $crate::objects::table::Table::new()
+    };
+    [$($x:expr),* $(,)?] => {
+        {
+            let mut temp_vec = Vec::with_capacity(0 $( + {let _ = &$x; 1} )*);
+            let mut count = -1;
+            $(
+                count += 1;
+                temp_vec.push(($crate::objects::Value::Int(count), $x));
+            )*
+            $crate::objects::table::Table {
+                array: temp_vec,
+                mapping: std::collections::HashMap::new(),
+                metatable: $crate::objects::Value::Null,
+            }
+        }
+    };
+    {$($k:expr => $v:expr),* $(,)?} => {
+        {
+            let mut temp_map = std::collections::HashMap::with_capacity(0 $( + {let _ = &$k; 1} )*);
+            $(
+                temp_map.insert($k, $v);
+            )*
+            $crate::objects::table::Table {
+                array: std::vec::Vec::new(),
+                mapping: temp_map,
+                metatable: $crate::objects::Value::Null,
+            }
+        }
+    };
+}
