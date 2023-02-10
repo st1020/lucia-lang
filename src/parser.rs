@@ -128,6 +128,8 @@ impl<'a> Parser<'a> {
                 let mut temp = Vec::new();
                 while !self.is_eof {
                     temp.push(self.parse_stmt()?);
+                    self.expect(&TokenKind::EOL)?;
+                    self.eat_eol();
                 }
                 temp
             },
@@ -360,8 +362,6 @@ impl<'a> Parser<'a> {
                 }
             }
         };
-        self.expect(&TokenKind::EOL)?;
-        self.eat_eol();
         Ok(ast_node)
     }
 
@@ -375,6 +375,11 @@ impl<'a> Parser<'a> {
                 let mut temp = Vec::new();
                 while !self.eat_noexpect(&TokenKind::CloseBrace) {
                     temp.push(self.parse_stmt()?);
+                    if self.eat(&TokenKind::CloseBrace) {
+                        break;
+                    }
+                    self.expect(&TokenKind::EOL)?;
+                    self.eat_eol();
                 }
                 temp
             },
