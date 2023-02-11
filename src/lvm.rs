@@ -10,9 +10,10 @@ use crate::errors::{
     BuiltinError, Error, ProgramError, Result, RuntimeError, RuntimeErrorKind, TracebackFrame,
 };
 use crate::libs;
+use crate::objects::table::Iter;
 use crate::objects::*;
 use crate::opcode::{JumpTarget, OpCode};
-use crate::{call_arguments_error, not_callable_error, operator_error};
+use crate::{call_arguments_error, check_arguments_num, not_callable_error, operator_error, table};
 
 #[macro_export]
 macro_rules! error {
@@ -534,8 +535,21 @@ impl Frame {
                     self.operate_stack.push(Value::Bool(tos1.is(&tos)));
                 }
                 OpCode::For(JumpTarget(i)) => {
-                    let return_value =
-                        lvm.call(*try_stack!(self.operate_stack.last()), Vec::new())?;
+                    let mut tos = *try_stack!(self.operate_stack.last());
+                    if let Some(v) = get_metamethod!(lvm, tos, "__iter__") {
+                        if !v.is(&tos) {
+                            let v = lvm.call(v, vec![tos])?;
+                            try_stack!(self.operate_stack.pop());
+                            self.operate_stack.push(v);
+                            tos = v;
+                        }
+                    } else if tos.is_table() && get_metamethod!(lvm, tos, "__call__").is_none() {
+                        let v = lvm.iter_table(tos)?;
+                        try_stack!(self.operate_stack.pop());
+                        self.operate_stack.push(v);
+                        tos = v;
+                    };
+                    let return_value = lvm.call(tos, Vec::new())?;
                     if return_value.is_null() {
                         self.pc = *i;
                         continue;
@@ -768,6 +782,32 @@ impl Lvm {
                 t
             }
         })
+    }
+
+    pub fn iter_table(&mut self, table_value: Value) -> Result<Value> {
+        let table = try_convert!(self, table_value, as_table, Table);
+        let mut userdata_table = Table::new();
+        userdata_table.set(&self.get_builtin_str("_marker"), table_value);
+        userdata_table.set(
+            &self.get_builtin_str("__call__"),
+            Value::ExtFunction(|mut args, lvm| {
+                check_arguments_num!(lvm, args, None, Eq(1));
+                let t = try_convert!(lvm, args[0], as_userdata_mut, UserData);
+                let iter = unsafe { (t.ptr as *mut Iter).as_mut().unwrap() };
+                Ok(iter
+                    .next()
+                    .map(|(k, v)| lvm.new_table_value(table![*k, *v]))
+                    .unwrap_or(Value::Null))
+            }),
+        );
+        Ok(self.new_userdata_value(UserData::new(
+            Box::into_raw(Box::new(table.iter())) as *mut u8,
+            userdata_table,
+            |userdata| unsafe {
+                userdata.ptr.drop_in_place();
+                dealloc(userdata.ptr as *mut u8, Layout::new::<Iter>());
+            },
+        )))
     }
 
     pub fn new_gc_object(&mut self, value: GCObjectKind) -> *mut GCObject {
