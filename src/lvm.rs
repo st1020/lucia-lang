@@ -772,8 +772,8 @@ impl Lvm {
 
     pub fn new_gc_object(&mut self, value: GCObjectKind) -> *mut GCObject {
         if self.heap.len() > self.last_heap_len * 2 {
-            self.last_heap_len = self.heap.len();
             self.gc();
+            self.last_heap_len = self.heap.len();
         }
         let value = GCObject::new(value);
         unsafe {
@@ -899,6 +899,9 @@ impl Lvm {
             };
         }
         unsafe {
+            if !(*ptr).gc_state {
+                return;
+            }
             (*ptr).gc_state = false;
             match &(*ptr).kind {
                 GCObjectKind::Str(_) => (),
