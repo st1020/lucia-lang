@@ -10,8 +10,8 @@ pub fn builtin_variables() -> HashMap<String, Value> {
         "id".to_string(),
         Value::ExtFunction(|args, lvm| {
             check_arguments_num!(lvm, args, None, Eq(1));
-            Ok(match args.first().unwrap() {
-                Value::GCObject(v) => Value::Int((*v as usize).try_into().unwrap()),
+            Ok(match args[0] {
+                Value::GCObject(v) => Value::Int((v as usize).try_into().unwrap()),
                 _ => Value::Null,
             })
         }),
@@ -20,14 +20,14 @@ pub fn builtin_variables() -> HashMap<String, Value> {
         "type".to_string(),
         Value::ExtFunction(|args, lvm| {
             check_arguments_num!(lvm, args, None, Eq(1));
-            Ok(lvm.new_str_value(args.first().unwrap().value_type().to_string()))
+            Ok(lvm.new_str_value(args[0].value_type().to_string()))
         }),
     );
     t.insert(
         "is_error".to_string(),
         Value::ExtFunction(|args, lvm| {
             check_arguments_num!(lvm, args, None, Eq(1));
-            Ok(Value::Bool(args.first().unwrap().is_error()))
+            Ok(Value::Bool(args[0].is_error()))
         }),
     );
     t.insert(
@@ -35,7 +35,7 @@ pub fn builtin_variables() -> HashMap<String, Value> {
         Value::ExtFunction(|args, lvm| {
             check_arguments_num!(lvm, args, None, Eq(1));
             Err(Error::RuntimeError(RuntimeError {
-                kind: RuntimeErrorKind::UserPanic(*args.first().unwrap()),
+                kind: RuntimeErrorKind::UserPanic(args[0]),
                 traceback: lvm.traceback(),
             }))
         }),
