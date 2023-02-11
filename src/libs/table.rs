@@ -46,30 +46,25 @@ pub fn libs(lvm: &mut Lvm) -> Table {
         &lvm.new_str_value("raw_len".to_string()),
         Value::ExtFunction(|args, lvm| {
             check_arguments_num!(lvm, args, None, Eq(1));
-            let table = args.first().unwrap().as_table().unwrap();
+            let table = try_convert!(lvm, args[0], as_table, Table);
             Ok(Value::Int(table.len().try_into().unwrap()))
         }),
     );
     t.set(
         &lvm.new_str_value("raw_get".to_string()),
         Value::ExtFunction(|args, lvm| {
-            check_arguments_num!(lvm, args, None, Eq(1));
-            let table = args.first().unwrap().as_table().unwrap();
-            Ok(match table.raw_get(args.last().unwrap()) {
-                Some(v) => *v,
-                None => Value::Null,
-            })
+            check_arguments_num!(lvm, args, None, Eq(2));
+            let table = try_convert!(lvm, args[0], as_table, Table);
+            Ok(table.get(&args[1]).copied().unwrap_or(Value::Null))
         }),
     );
     t.set(
         &lvm.new_str_value("raw_set".to_string()),
         Value::ExtFunction(|args, lvm| {
             check_arguments_num!(lvm, args, None, Eq(3));
-            let mut arg1 = *args.first().unwrap();
-            let table = arg1.as_table_mut().unwrap();
-            let key = args.get(1).unwrap();
-            let value = args.get(2).unwrap();
-            table.set(key, *value);
+            let mut t = args[0];
+            let table = try_convert!(lvm, t, as_table_mut, Table);
+            table.set(&args[1], args[2]);
             Ok(Value::Null)
         }),
     );

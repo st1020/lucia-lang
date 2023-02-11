@@ -419,7 +419,7 @@ impl Frame {
                         ) {
                             self.operate_stack.push(
                                 module
-                                    .raw_get(&lvm.get_builtin_str(t))
+                                    .get(&lvm.get_builtin_str(t))
                                     .copied()
                                     .unwrap_or(Value::Null),
                             );
