@@ -570,33 +570,27 @@ impl Frame {
                 }
                 OpCode::JumpPopIfFalse(JumpTarget(i)) => {
                     let tos = try_stack!(self.operate_stack.pop());
-                    if let Some(v) = tos.as_bool() {
-                        if !v {
-                            self.pc = *i;
-                            continue;
-                        }
+                    if !bool::from(tos) {
+                        self.pc = *i;
+                        continue;
                     }
                 }
                 OpCode::JumpIfTureOrPop(JumpTarget(i)) => {
                     let tos = try_stack!(self.operate_stack.last());
-                    if let Some(v) = tos.as_bool() {
-                        if v {
-                            self.pc = *i;
-                            continue;
-                        } else {
-                            try_stack!(self.operate_stack.pop());
-                        }
+                    if bool::from(*tos) {
+                        self.pc = *i;
+                        continue;
+                    } else {
+                        try_stack!(self.operate_stack.pop());
                     }
                 }
                 OpCode::JumpIfFalseOrPop(JumpTarget(i)) => {
                     let tos = try_stack!(self.operate_stack.last());
-                    if let Some(v) = tos.as_bool() {
-                        if !v {
-                            self.pc = *i;
-                            continue;
-                        } else {
-                            try_stack!(self.operate_stack.pop());
-                        }
+                    if !bool::from(*tos) {
+                        self.pc = *i;
+                        continue;
+                    } else {
+                        try_stack!(self.operate_stack.pop());
                     }
                 }
                 OpCode::Call(i) => {
