@@ -68,5 +68,12 @@ pub fn libs(lvm: &mut Lvm) -> Table {
             Ok(Value::Null)
         }),
     );
+    t.set(
+        &lvm.new_str_value("raw_iter".to_string()),
+        Value::ExtFunction(|args, lvm| {
+            check_arguments_num!(lvm, args, None, Eq(1));
+            lvm.iter_table(args[0])
+        }),
+    );
     t
 }
