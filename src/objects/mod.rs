@@ -455,3 +455,70 @@ impl Display for GCObjectKind {
         }
     }
 }
+
+#[macro_export]
+macro_rules! iter_to_value {
+    ($lvm:expr, $iter:expr, $ty:ty) => {{
+        let mut userdata_table = $crate::objects::Table::new();
+        userdata_table.set(
+            &$lvm.get_builtin_str("__call__"),
+            $crate::objects::Value::ExtFunction(|mut args, lvm| {
+                $crate::check_arguments_num!(lvm, args, None, Eq(1));
+                let t = try_convert!(lvm, args[0], as_userdata_mut, UserData);
+                let iter = unsafe { (t.ptr as *mut $ty).as_mut().unwrap() };
+                Ok(iter.next().copied().unwrap_or($crate::objects::Value::Null))
+            }),
+        );
+        $lvm.new_userdata_value($crate::objects::UserData::new(
+            Box::into_raw(Box::new($iter)) as *mut u8,
+            userdata_table,
+            |userdata| unsafe {
+                userdata.ptr.drop_in_place();
+                std::alloc::dealloc(userdata.ptr as *mut u8, std::alloc::Layout::new::<$ty>());
+            },
+        ))
+    }};
+    ($lvm:expr, $iter:expr, $ty:ty, $marker_value:expr) => {{
+        let mut userdata_table = $crate::table![$marker_value];
+        userdata_table.set(
+            &$lvm.get_builtin_str("__call__"),
+            $crate::objects::Value::ExtFunction(|mut args, lvm| {
+                $crate::check_arguments_num!(lvm, args, None, Eq(1));
+                let t = try_convert!(lvm, args[0], as_userdata_mut, UserData);
+                let iter = unsafe { (t.ptr as *mut $ty).as_mut().unwrap() };
+                Ok(iter.next().copied().unwrap_or($crate::objects::Value::Null))
+            }),
+        );
+        $lvm.new_userdata_value($crate::objects::UserData::new(
+            Box::into_raw(Box::new($iter)) as *mut u8,
+            userdata_table,
+            |userdata| unsafe {
+                userdata.ptr.drop_in_place();
+                std::alloc::dealloc(userdata.ptr as *mut u8, std::alloc::Layout::new::<$ty>());
+            },
+        ))
+    }};
+    ($lvm:expr, $iter:expr, $ty:ty, $marker_value:expr, $map_fn:expr) => {{
+        let mut userdata_table = $crate::table![$marker_value];
+        userdata_table.set(
+            &$lvm.get_builtin_str("__call__"),
+            $crate::objects::Value::ExtFunction(|mut args, lvm| {
+                $crate::check_arguments_num!(lvm, args, None, Eq(1));
+                let t = try_convert!(lvm, args[0], as_userdata_mut, UserData);
+                let iter = unsafe { (t.ptr as *mut $ty).as_mut().unwrap() };
+                Ok(iter
+                    .next()
+                    .map(|x| $map_fn(x, lvm))
+                    .unwrap_or($crate::objects::Value::Null))
+            }),
+        );
+        $lvm.new_userdata_value($crate::objects::UserData::new(
+            Box::into_raw(Box::new($iter)) as *mut u8,
+            userdata_table,
+            |userdata| unsafe {
+                userdata.ptr.drop_in_place();
+                std::alloc::dealloc(userdata.ptr as *mut u8, std::alloc::Layout::new::<$ty>());
+            },
+        ))
+    }};
+}
