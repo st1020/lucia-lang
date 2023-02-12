@@ -1012,7 +1012,7 @@ fn set_closure_args(
             } else {
                 let t = args.split_off(params_num);
                 v.variables[..params_num].copy_from_slice(&args[..]);
-                v.variables[params_num] = lvm.new_table_value(t.into());
+                v.variables[params_num] = lvm.new_table_value(Table::from_iter(t));
             }
         }
     }

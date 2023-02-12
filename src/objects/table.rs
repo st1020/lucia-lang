@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::iter::FusedIterator;
+use std::ops::Index;
 
 use crate::utils::{Join, ValueDebug};
 
@@ -174,17 +175,23 @@ impl Display for Table {
     }
 }
 
-impl From<Vec<Value>> for Table {
-    fn from(value: Vec<Value>) -> Self {
-        let mut temp = Vec::new();
-        for (i, t) in value.into_iter().enumerate() {
-            temp.push((Value::Int(i.try_into().unwrap()), t));
-        }
-        Table {
-            array: temp,
-            mapping: HashMap::new(),
-            metatable: Value::Null,
-        }
+impl<const N: usize> From<[Value; N]> for Table {
+    fn from(arr: [Value; N]) -> Self {
+        Self::from_iter(arr)
+    }
+}
+
+impl<const N: usize> From<[(Value, Value); N]> for Table {
+    fn from(arr: [(Value, Value); N]) -> Self {
+        Self::from_iter(arr)
+    }
+}
+
+impl Index<&Value> for Table {
+    type Output = Value;
+
+    fn index(&self, index: &Value) -> &Self::Output {
+        self.get(index).expect("no entry found for key")
     }
 }
 
@@ -197,6 +204,26 @@ impl IntoIterator for Table {
             array: self.array.into_iter(),
             mapping: self.mapping.into_iter(),
         }
+    }
+}
+
+impl<'a> IntoIterator for &'a Table {
+    type Item = (&'a Value, &'a Value);
+
+    type IntoIter = Iter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut Table {
+    type Item = (&'a Value, &'a mut Value);
+
+    type IntoIter = IterMut<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
     }
 }
 
@@ -432,6 +459,40 @@ impl ExactSizeIterator for IntoValues {
 }
 
 impl FusedIterator for IntoValues {}
+
+impl FromIterator<Value> for Table {
+    fn from_iter<T: IntoIterator<Item = Value>>(iter: T) -> Self {
+        let mut table = Table::new();
+        table.extend(iter);
+        table
+    }
+}
+
+impl FromIterator<(Value, Value)> for Table {
+    fn from_iter<T: IntoIterator<Item = (Value, Value)>>(iter: T) -> Self {
+        let mut table = Table::new();
+        table.extend(iter);
+        table
+    }
+}
+
+impl Extend<Value> for Table {
+    fn extend<T: IntoIterator<Item = Value>>(&mut self, iter: T) {
+        self.array.extend(
+            iter.into_iter()
+                .enumerate()
+                .map(|(k, v)| (Value::Int(k.try_into().unwrap()), v)),
+        )
+    }
+}
+
+impl Extend<(Value, Value)> for Table {
+    fn extend<T: IntoIterator<Item = (Value, Value)>>(&mut self, iter: T) {
+        for (k, v) in iter {
+            self.set(&k, v);
+        }
+    }
+}
 
 /// Helper macro for creating instances of `Table`.
 #[macro_export]
