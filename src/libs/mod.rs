@@ -1,5 +1,6 @@
 pub mod builtin;
 pub mod io;
+pub mod string;
 pub mod table;
 
 use std::collections::HashMap;
@@ -130,6 +131,7 @@ pub fn std_libs(lvm: &mut Lvm) -> HashMap<String, Value> {
         };
     }
     add_std_module!("std::io", io::libs);
+    add_std_module!("std::string", string::libs);
     add_std_module!("std::table", table::libs);
     std_libs
 }
