@@ -13,7 +13,9 @@ use crate::libs;
 use crate::objects::table::Iter;
 use crate::objects::*;
 use crate::opcode::{JumpTarget, OpCode};
-use crate::{call_arguments_error, check_arguments_num, not_callable_error, operator_error, table};
+use crate::{
+    call_arguments_error, check_args, not_callable_error, operator_error, table, try_as_value_type,
+};
 
 #[macro_export]
 macro_rules! error {
@@ -33,22 +35,6 @@ macro_rules! error {
 macro_rules! return_error {
     ($lvm:expr, $value:expr) => {
         return Ok($value.into_table_value($lvm))
-    };
-}
-
-#[macro_export]
-macro_rules! try_convert {
-    ($lvm:expr, $expr:expr, $as:tt, $to:tt) => {
-        match $expr.$as() {
-            Some(val) => val,
-            None => $crate::return_error!(
-                $lvm,
-                $crate::unexpect_type_error!(
-                    $expr.value_type(),
-                    vec![$crate::objects::ValueType::$to]
-                )
-            ),
-        }
     };
 }
 
@@ -779,14 +765,13 @@ impl Lvm {
     }
 
     pub fn iter_table(&mut self, table_value: Value) -> Result<Value> {
-        let table = try_convert!(self, table_value, as_table, Table);
+        let table = try_as_value_type!(self, table_value, Table);
         let mut userdata_table = Table::new();
         userdata_table.set(&self.get_builtin_str("_marker"), table_value);
         userdata_table.set(
             &self.get_builtin_str("__call__"),
             Value::ExtFunction(|mut args, lvm| {
-                check_arguments_num!(lvm, args, None, Eq(1));
-                let t = try_convert!(lvm, args[0], as_userdata_mut, UserData);
+                let (t,) = check_args!(lvm, args, mut UserData);
                 let iter = unsafe { (t.ptr as *mut Iter).as_mut().unwrap() };
                 Ok(iter
                     .next()
@@ -985,13 +970,13 @@ fn set_closure_args(
             if v.function.variadic.is_none() {
                 return Err(call_arguments_error!(
                     Some(Box::new(v.clone())),
-                    Eq(params_num),
+                    params_num,
                     args.len()
                 ));
             } else {
                 return Err(call_arguments_error!(
                     Some(Box::new(v.clone())),
-                    RangeFrom(params_num..),
+                    (params_num, None),
                     args.len()
                 ));
             }
@@ -1006,7 +991,7 @@ fn set_closure_args(
             if v.function.variadic.is_none() {
                 return Err(call_arguments_error!(
                     Some(Box::new(v.clone())),
-                    Eq(params_num),
+                    params_num,
                     args.len()
                 ));
             } else {

@@ -457,14 +457,72 @@ impl Display for GCObjectKind {
 }
 
 #[macro_export]
+macro_rules! as_value_type {
+    ($value:expr, Null) => {
+        $value.as_null()
+    };
+    ($value:expr, Int) => {
+        $value.as_int()
+    };
+    ($value:expr, Float) => {
+        $value.as_float()
+    };
+    ($value:expr, ExtFunction) => {
+        $value.as_ext_function()
+    };
+    ($value:expr, LightUserData) => {
+        $value.as_light_userdata()
+    };
+    ($value:expr, Str) => {
+        $value.as_str()
+    };
+    ($value:expr, Table) => {
+        $value.as_table()
+    };
+    ($value:expr, Table, mut) => {
+        $value.as_table_mut()
+    };
+    ($value:expr, UserData) => {
+        $value.as_userdata()
+    };
+    ($value:expr, UserData, mut) => {
+        $value.as_userdata_mut()
+    };
+    ($value:expr, Closure) => {
+        $value.as_closure()
+    };
+    ($value:expr, Closure, mut) => {
+        $value.as_closure_mut()
+    };
+    ($value:expr, ExtClosure) => {
+        $value.as_ext_closure()
+    };
+    ($value:expr, ExtClosure, mut) => {
+        $value.as_ext_closure_mut()
+    };
+}
+
+#[macro_export]
+macro_rules! try_as_value_type {
+    ($lvm:ident, $value:ident, $ty:tt $(, $is_mut:tt)?) => {{
+        match $crate::as_value_type!($value, $ty $(, $is_mut)?) {
+            Some(val) => val,
+            None => $crate::return_error!(
+                $lvm,
+                $crate::unexpect_type_error!($value.value_type(), vec![$crate::objects::ValueType::$ty])
+            ),
+        }
+    }};
+}
+
+#[macro_export]
 macro_rules! iter_to_value {
     ($lvm:expr, $iter:expr, $ty:ty) => {{
         let mut userdata_table = $crate::objects::Table::new();
         userdata_table.set(
             &$lvm.get_builtin_str("__call__"),
             $crate::objects::Value::ExtFunction(|mut args, lvm| {
-                $crate::check_arguments_num!(lvm, args, None, Eq(1));
-                let t = try_convert!(lvm, args[0], as_userdata_mut, UserData);
+                let (t,) = $crate::check_args!(lvm, args, mut UserData);
                 let iter = unsafe { (t.ptr as *mut $ty).as_mut().unwrap() };
                 Ok(iter.next().copied().unwrap_or($crate::objects::Value::Null))
             }),
@@ -483,8 +541,7 @@ macro_rules! iter_to_value {
         userdata_table.set(
             &$lvm.get_builtin_str("__call__"),
             $crate::objects::Value::ExtFunction(|mut args, lvm| {
-                $crate::check_arguments_num!(lvm, args, None, Eq(1));
-                let t = try_convert!(lvm, args[0], as_userdata_mut, UserData);
+                let (t,) = $crate::check_args!(lvm, args, mut UserData);
                 let iter = unsafe { (t.ptr as *mut $ty).as_mut().unwrap() };
                 Ok(iter.next().copied().unwrap_or($crate::objects::Value::Null))
             }),
@@ -503,8 +560,7 @@ macro_rules! iter_to_value {
         userdata_table.set(
             &$lvm.get_builtin_str("__call__"),
             $crate::objects::Value::ExtFunction(|mut args, lvm| {
-                $crate::check_arguments_num!(lvm, args, None, Eq(1));
-                let t = try_convert!(lvm, args[0], as_userdata_mut, UserData);
+                let (t,) = $crate::check_args!(lvm, args, mut UserData);
                 let iter = unsafe { (t.ptr as *mut $ty).as_mut().unwrap() };
                 Ok(iter
                     .next()

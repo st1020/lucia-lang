@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Display};
 use std::num::{ParseFloatError, ParseIntError};
-use std::ops::{Bound, Range, RangeBounds, RangeFrom, RangeInclusive};
+use std::ops::{Bound, RangeBounds};
 use std::result;
 
 use thiserror::Error;
@@ -236,29 +236,58 @@ pub enum TypeError {
 
 /// Kind of CallArgumentsError.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CallArgumentsErrorKind {
-    Eq(usize),
-    Range(Range<usize>),
-    RangeFrom(RangeFrom<usize>),
-    RangeInclusive(RangeInclusive<usize>),
+pub struct CallArgumentsErrorKind {
+    pub start: usize,
+    pub end: Option<usize>,
+}
+
+impl CallArgumentsErrorKind {
+    pub fn new(start: usize, end: Option<usize>) -> Self {
+        Self { start, end }
+    }
+
+    pub fn more_then(start: usize) -> Self {
+        Self { start, end: None }
+    }
+}
+
+impl From<usize> for CallArgumentsErrorKind {
+    fn from(value: usize) -> Self {
+        CallArgumentsErrorKind {
+            start: value,
+            end: Some(value),
+        }
+    }
+}
+
+impl From<(usize, usize)> for CallArgumentsErrorKind {
+    fn from(value: (usize, usize)) -> Self {
+        CallArgumentsErrorKind {
+            start: value.0,
+            end: Some(value.1),
+        }
+    }
+}
+
+impl From<(usize, Option<usize>)> for CallArgumentsErrorKind {
+    fn from(value: (usize, Option<usize>)) -> Self {
+        CallArgumentsErrorKind {
+            start: value.0,
+            end: value.1,
+        }
+    }
 }
 
 impl RangeBounds<usize> for CallArgumentsErrorKind {
     fn start_bound(&self) -> Bound<&usize> {
-        match self {
-            CallArgumentsErrorKind::Eq(v) => Bound::Included(v),
-            CallArgumentsErrorKind::Range(v) => v.start_bound(),
-            CallArgumentsErrorKind::RangeFrom(v) => v.start_bound(),
-            CallArgumentsErrorKind::RangeInclusive(v) => v.start_bound(),
-        }
+        Bound::Included(&self.start)
     }
 
     fn end_bound(&self) -> Bound<&usize> {
-        match self {
-            CallArgumentsErrorKind::Eq(v) => Bound::Included(v),
-            CallArgumentsErrorKind::Range(v) => v.end_bound(),
-            CallArgumentsErrorKind::RangeFrom(v) => v.end_bound(),
-            CallArgumentsErrorKind::RangeInclusive(v) => v.end_bound(),
+        if let Some(end) = &self.end {
+            Bound::Included(end)
+        } else {
+            Bound::Unbounded
         }
     }
 }
@@ -271,11 +300,14 @@ impl CallArgumentsErrorKind {
 
 impl Display for CallArgumentsErrorKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CallArgumentsErrorKind::Eq(v) => write!(f, "{}", v),
-            CallArgumentsErrorKind::Range(v) => write!(f, "[{}, {})", v.start, v.end),
-            CallArgumentsErrorKind::RangeFrom(v) => write!(f, "at least {}", v.start),
-            CallArgumentsErrorKind::RangeInclusive(v) => write!(f, "[{}, {}]", v.start(), v.end()),
+        if let Some(end) = self.end {
+            if self.start == end {
+                write!(f, "{}", end)
+            } else {
+                write!(f, "[{}, {}]", self.start, end)
+            }
+        } else {
+            write!(f, "at least {}", self.start)
         }
     }
 }
@@ -327,10 +359,10 @@ macro_rules! not_callable_error {
 
 #[macro_export]
 macro_rules! call_arguments_error {
-    ($value:expr, $require_ident:ident($require_value:expr), $give:expr) => {
+    ($value:expr, $require:expr, $give:expr) => {
         $crate::errors::BuiltinError::TypeError($crate::errors::TypeError::CallArgumentsError {
             value: $value,
-            required: $crate::errors::CallArgumentsErrorKind::$require_ident($require_value),
+            required: $crate::errors::CallArgumentsErrorKind::from($require),
             given: $give,
         })
     };

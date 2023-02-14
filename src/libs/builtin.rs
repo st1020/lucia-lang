@@ -2,15 +2,15 @@ use std::collections::HashMap;
 
 use crate::errors::{Error, RuntimeError, RuntimeErrorKind};
 use crate::objects::{Value, ValueType};
-use crate::{check_arguments_num, error, get_metamethod, return_error, unexpect_type_error};
+use crate::{check_args, error, get_metamethod, return_error, unexpect_type_error};
 
 pub fn builtin_variables() -> HashMap<String, Value> {
     let mut t = HashMap::new();
     t.insert(
         "id".to_string(),
         Value::ExtFunction(|args, lvm| {
-            check_arguments_num!(lvm, args, None, Eq(1));
-            Ok(match args[0] {
+            let (v,) = check_args!(lvm, args, Value);
+            Ok(match v {
                 Value::GCObject(v) => Value::Int((v as usize).try_into().unwrap()),
                 _ => Value::Null,
             })
@@ -19,23 +19,23 @@ pub fn builtin_variables() -> HashMap<String, Value> {
     t.insert(
         "type".to_string(),
         Value::ExtFunction(|args, lvm| {
-            check_arguments_num!(lvm, args, None, Eq(1));
-            Ok(lvm.new_str_value(args[0].value_type().to_string()))
+            let (v,) = check_args!(lvm, args, Value);
+            Ok(lvm.new_str_value(v.value_type().to_string()))
         }),
     );
     t.insert(
         "is_error".to_string(),
         Value::ExtFunction(|args, lvm| {
-            check_arguments_num!(lvm, args, None, Eq(1));
-            Ok(Value::Bool(args[0].is_error()))
+            let (v,) = check_args!(lvm, args, Value);
+            Ok(Value::Bool(v.is_error()))
         }),
     );
     t.insert(
         "panic".to_string(),
         Value::ExtFunction(|args, lvm| {
-            check_arguments_num!(lvm, args, None, Eq(1));
+            let (v,) = check_args!(lvm, args, Value);
             Err(Error::RuntimeError(RuntimeError {
-                kind: RuntimeErrorKind::UserPanic(args[0]),
+                kind: RuntimeErrorKind::UserPanic(v),
                 traceback: lvm.traceback(),
             }))
         }),
@@ -43,34 +43,33 @@ pub fn builtin_variables() -> HashMap<String, Value> {
     t.insert(
         "assert".to_string(),
         Value::ExtFunction(|args, lvm| {
-            check_arguments_num!(lvm, args, None, RangeInclusive(1..=2));
-            let value = args[0];
-            if value.is_error() || !(bool::from(value)) {
-                if args.len() == 2 {
-                    Ok(error!(args[1]))
+            let (v, msg) = check_args!(lvm, args, Value | Value);
+            if v.is_error() || !(bool::from(v)) {
+                if let Some(msg) = msg {
+                    Ok(error!(msg))
                 } else {
                     Ok(error!(lvm.new_str_value("assertion_error".to_string())))
                 }
             } else {
-                Ok(value)
+                Ok(v)
             }
         }),
     );
     t.insert(
         "len".to_string(),
         Value::ExtFunction(|args, lvm| {
-            check_arguments_num!(lvm, args, None, Eq(1));
-            if let Some(v) = get_metamethod!(lvm, args[0], "__len__") {
-                lvm.call(v, vec![args[0]])
-            } else if let Some(v) = args[0].as_str() {
+            let (value,) = check_args!(lvm, args, Value);
+            if let Some(v) = get_metamethod!(lvm, value, "__len__") {
+                lvm.call(v, vec![value])
+            } else if let Some(v) = value.as_str() {
                 Ok(Value::Int(v.len().try_into().unwrap()))
-            } else if let Some(v) = args[0].as_table() {
+            } else if let Some(v) = value.as_table() {
                 Ok(Value::Int(v.len().try_into().unwrap()))
             } else {
                 return_error!(
                     lvm,
                     unexpect_type_error!(
-                        args[0].value_type(),
+                        value.value_type(),
                         vec![ValueType::Str, ValueType::Table]
                     )
                 );
@@ -80,22 +79,22 @@ pub fn builtin_variables() -> HashMap<String, Value> {
     t.insert(
         "bool".to_string(),
         Value::ExtFunction(|args, lvm| {
-            check_arguments_num!(lvm, args, None, Eq(1));
-            if let Some(v) = get_metamethod!(lvm, args[0], "__bool__") {
-                lvm.call(v, vec![args[0]])
+            let (value,) = check_args!(lvm, args, Value);
+            if let Some(v) = get_metamethod!(lvm, value, "__bool__") {
+                lvm.call(v, vec![value])
             } else {
-                Ok(Value::Bool(args[0].into()))
+                Ok(Value::Bool(value.into()))
             }
         }),
     );
     t.insert(
         "int".to_string(),
         Value::ExtFunction(|args, lvm| {
-            check_arguments_num!(lvm, args, None, Eq(1));
-            if let Some(v) = get_metamethod!(lvm, args[0], "__int__") {
-                lvm.call(v, vec![args[0]])
+            let (value,) = check_args!(lvm, args, Value);
+            if let Some(v) = get_metamethod!(lvm, value, "__int__") {
+                lvm.call(v, vec![value])
             } else {
-                Ok(match args[0].try_into() {
+                Ok(match value.try_into() {
                     Ok(v) => Value::Int(v),
                     Err(v) => v.into_table_value(lvm),
                 })
@@ -105,11 +104,11 @@ pub fn builtin_variables() -> HashMap<String, Value> {
     t.insert(
         "float".to_string(),
         Value::ExtFunction(|args, lvm| {
-            check_arguments_num!(lvm, args, None, Eq(1));
-            if let Some(v) = get_metamethod!(lvm, args[0], "__float__") {
-                lvm.call(v, vec![args[0]])
+            let (value,) = check_args!(lvm, args, Value);
+            if let Some(v) = get_metamethod!(lvm, value, "__float__") {
+                lvm.call(v, vec![value])
             } else {
-                Ok(match args[0].try_into() {
+                Ok(match value.try_into() {
                     Ok(v) => Value::Float(v),
                     Err(v) => v.into_table_value(lvm),
                 })
@@ -119,22 +118,22 @@ pub fn builtin_variables() -> HashMap<String, Value> {
     t.insert(
         "str".to_string(),
         Value::ExtFunction(|args, lvm| {
-            check_arguments_num!(lvm, args, None, Eq(1));
-            if let Some(v) = get_metamethod!(lvm, args[0], "__str__") {
-                lvm.call(v, vec![args[0]])
+            let (value,) = check_args!(lvm, args, Value);
+            if let Some(v) = get_metamethod!(lvm, value, "__str__") {
+                lvm.call(v, vec![value])
             } else {
-                Ok(lvm.new_str_value(args[0].into()))
+                Ok(lvm.new_str_value(value.into()))
             }
         }),
     );
     t.insert(
         "repr".to_string(),
         Value::ExtFunction(|args, lvm| {
-            check_arguments_num!(lvm, args, None, Eq(1));
-            if let Some(v) = get_metamethod!(lvm, args[0], "__repr__") {
-                lvm.call(v, vec![args[0]])
+            let (value,) = check_args!(lvm, args, Value);
+            if let Some(v) = get_metamethod!(lvm, value, "__repr__") {
+                lvm.call(v, vec![value])
             } else {
-                Ok(lvm.new_str_value(args[0].repr()))
+                Ok(lvm.new_str_value(value.repr()))
             }
         }),
     );
