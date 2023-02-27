@@ -94,9 +94,10 @@ impl Table {
     pub fn set(&mut self, key: &Value, value: Value) {
         if let Some(k) = key.as_int() {
             if let Ok(k) = usize::try_from(k) {
-                if k == self.array.len() {
-                    self.array.push((*key, value));
-                    return;
+                match k.cmp(&self.array.len()) {
+                    std::cmp::Ordering::Less => return self.array[k] = (*key, value),
+                    std::cmp::Ordering::Equal => return self.array.push((*key, value)),
+                    std::cmp::Ordering::Greater => (),
                 }
             }
         }
