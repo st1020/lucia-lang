@@ -1,5 +1,7 @@
 use std::fmt::{Debug, Display};
 
+use crate::gc::Trace;
+
 use super::Table;
 
 #[derive(Clone)]
@@ -7,6 +9,13 @@ pub struct UserData {
     pub ptr: *mut u8,
     pub metatable: Table,
     pub drop_func: fn(&mut UserData),
+}
+
+unsafe impl Trace for UserData {
+    #[inline]
+    unsafe fn trace(&self) {
+        self.metatable.trace();
+    }
 }
 
 impl Debug for UserData {

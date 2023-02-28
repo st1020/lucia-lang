@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::errors::{Error, RuntimeError, RuntimeErrorKind};
 use crate::objects::{Value, ValueType};
-use crate::{check_args, error, get_metamethod, return_error, unexpect_type_error};
+use crate::{check_args, get_metamethod, return_error, unexpect_type_error};
 
 pub fn builtin_variables() -> HashMap<String, Value> {
     let mut t = HashMap::new();
@@ -10,10 +10,10 @@ pub fn builtin_variables() -> HashMap<String, Value> {
         "id".to_string(),
         Value::ExtFunction(|args, lvm| {
             let (v,) = check_args!(lvm, args, Value);
-            Ok(match v {
-                Value::GCObject(v) => Value::Int((v as usize).try_into().unwrap()),
-                _ => Value::Null,
-            })
+            Ok(v.id().map_or_else(
+                || Value::Null,
+                |x| Value::Int(usize::from(x).try_into().unwrap()),
+            ))
         }),
     );
     t.insert(
@@ -45,11 +45,13 @@ pub fn builtin_variables() -> HashMap<String, Value> {
         Value::ExtFunction(|args, lvm| {
             let (v, msg) = check_args!(lvm, args, Value | Value);
             if v.is_error() || !(bool::from(v)) {
-                if let Some(msg) = msg {
-                    Ok(error!(msg))
+                let mut msg = if let Some(msg) = msg {
+                    msg
                 } else {
-                    Ok(error!(lvm.new_str_value("assertion_error".to_string())))
-                }
+                    lvm.new_str_value("assertion_error".to_string())
+                };
+                msg.set_error();
+                Ok(msg)
             } else {
                 Ok(v)
             }

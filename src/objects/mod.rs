@@ -5,8 +5,10 @@ pub mod userdata;
 
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
+use std::num::NonZeroUsize;
 
 use crate::errors::{BuiltinError, Result};
+use crate::gc::{Gc, Ref, RefCell, RefMut, Trace};
 use crate::lvm::Lvm;
 use crate::type_convert_error;
 use crate::utils::escape_str;
@@ -31,7 +33,25 @@ pub enum Value {
     Float(f64),
     ExtFunction(ExtFunction),
     LightUserData(*mut u8),
-    GCObject(*mut GCObject),
+    Str(Gc<String>),
+    Table(Gc<RefCell<Table>>),
+    UserData(Gc<RefCell<UserData>>),
+    Closure(Gc<RefCell<Closure>>),
+    ExtClosure(Gc<RefCell<ExtClosure>>),
+}
+
+unsafe impl Trace for Value {
+    #[inline]
+    unsafe fn trace(&self) {
+        match self {
+            Value::Str(v) => v.trace(),
+            Value::Table(v) => v.trace(),
+            Value::UserData(v) => v.trace(),
+            Value::Closure(v) => v.trace(),
+            Value::ExtClosure(v) => v.trace(),
+            _ => (),
+        }
+    }
 }
 
 impl Debug for Value {
@@ -43,7 +63,11 @@ impl Debug for Value {
             Self::Float(arg0) => f.debug_tuple("Float").field(arg0).finish(),
             Self::ExtFunction(_) => f.debug_tuple("ExtFunction").finish(),
             Self::LightUserData(_) => f.debug_tuple("LightUserData").finish(),
-            Self::GCObject(arg0) => unsafe { Debug::fmt(&(**arg0).kind, f) },
+            Self::Str(arg0) => f.debug_tuple("Str").field(arg0).finish(),
+            Self::Table(arg0) => f.debug_tuple("Table").field(&arg0.borrow()).finish(),
+            Self::UserData(arg0) => f.debug_tuple("UserData").field(&arg0.borrow()).finish(),
+            Self::Closure(arg0) => f.debug_tuple("Closure").field(&arg0.borrow()).finish(),
+            Self::ExtClosure(arg0) => f.debug_tuple("ExtClosure").field(&arg0.borrow()).finish(),
         }
     }
 }
@@ -62,7 +86,11 @@ impl PartialEq for Value {
                 }
             }
             (Self::ExtFunction(_), Self::ExtFunction(_)) => false,
-            (Self::GCObject(l0), Self::GCObject(r0)) => unsafe { **l0 == **r0 },
+            (Self::Str(l0), Self::Str(r0)) => l0 == r0,
+            (Self::Table(l0), Self::Table(r0)) => l0 == r0,
+            (Self::UserData(l0), Self::UserData(r0)) => l0 == r0,
+            (Self::Closure(l0), Self::Closure(r0)) => l0 == r0,
+            (Self::ExtClosure(l0), Self::ExtClosure(r0)) => l0 == r0,
             _ => false,
         }
     }
@@ -87,15 +115,11 @@ impl Hash for Value {
             }
             Value::ExtFunction(_) => 0.hash(state),
             Value::LightUserData(ptr) => ptr.hash(state),
-            Value::GCObject(ptr) => unsafe {
-                match &(**ptr).kind {
-                    GCObjectKind::Str(v) => v.hash(state),
-                    GCObjectKind::Table(_) => ptr.hash(state),
-                    GCObjectKind::UserData(_) => ptr.hash(state),
-                    GCObjectKind::Closure(_) => ptr.hash(state),
-                    GCObjectKind::ExtClosure(_) => ptr.hash(state),
-                }
-            },
+            Value::Str(v) => (**v).hash(state),
+            Value::Table(_v) => 0.hash(state),
+            Value::UserData(_v) => 0.hash(state),
+            Value::Closure(_v) => 0.hash(state),
+            Value::ExtClosure(_v) => 0.hash(state),
         }
     }
 }
@@ -109,7 +133,11 @@ impl Display for Value {
             Value::Float(v) => write!(f, "{}", v),
             Value::ExtFunction(_) => write!(f, "<function(ext_function)>"),
             Value::LightUserData(_) => write!(f, "<userdata>"),
-            Value::GCObject(v) => unsafe { write!(f, "{}", **v) },
+            Value::Str(v) => write!(f, "{}", v),
+            Value::Table(v) => write!(f, "{}", v.borrow()),
+            Value::UserData(v) => write!(f, "{}", v.borrow()),
+            Value::Closure(v) => write!(f, "{}", v.borrow()),
+            Value::ExtClosure(v) => write!(f, "{}", v.borrow()),
         }
     }
 }
@@ -117,10 +145,12 @@ impl Display for Value {
 macro_rules! impl_value {
     ((), Null, $is_ident:ident, $as_ident:ident) => {
         impl Value {
+            #[inline]
             pub fn $is_ident(&self) -> bool {
                 self.$as_ident().is_some()
             }
 
+            #[inline]
             pub fn $as_ident(&self) -> Option<()> {
                 match *self {
                     Value::Null => Some(()),
@@ -132,20 +162,16 @@ macro_rules! impl_value {
 
     (str, Str, $is_ident:ident, $as_ident:ident) => {
         impl Value {
+            #[inline]
             pub fn $is_ident(&self) -> bool {
                 self.$as_ident().is_some()
             }
 
+            #[inline]
             pub fn $as_ident(&self) -> Option<&str> {
-                if let Value::GCObject(v) = self {
-                    unsafe {
-                        match &(**v).kind {
-                            GCObjectKind::Str(v) => Some(v),
-                            _ => None,
-                        }
-                    }
-                } else {
-                    None
+                match self {
+                    Value::Str(v) => Some((**v).as_str()),
+                    _ => None,
                 }
             }
         }
@@ -153,10 +179,12 @@ macro_rules! impl_value {
 
     ($ty:ty, $kind:tt, $is_ident:ident, $as_ident:ident) => {
         impl Value {
+            #[inline]
             pub fn $is_ident(&self) -> bool {
                 self.$as_ident().is_some()
             }
 
+            #[inline]
             pub fn $as_ident(&self) -> Option<$ty> {
                 match *self {
                     Value::$kind(v) => Some(v),
@@ -168,33 +196,24 @@ macro_rules! impl_value {
 
     ($ty:ty, $kind:tt, $is_ident:ident, $as_ident:ident, $as_mut_ident:ident) => {
         impl Value {
+            #[inline]
             pub fn $is_ident(&self) -> bool {
                 self.$as_ident().is_some()
             }
 
-            pub fn $as_ident(&self) -> Option<&$ty> {
-                if let Value::GCObject(v) = self {
-                    unsafe {
-                        match &(**v).kind {
-                            GCObjectKind::$kind(v) => Some(v),
-                            _ => None,
-                        }
-                    }
-                } else {
-                    None
+            #[inline]
+            pub fn $as_ident(&self) -> Option<Ref<$ty>> {
+                match self {
+                    Value::$kind(v) => Some(v.borrow()),
+                    _ => None,
                 }
             }
 
-            pub fn $as_mut_ident(&mut self) -> Option<&mut $ty> {
-                if let Value::GCObject(v) = self {
-                    unsafe {
-                        match &mut (**v).kind {
-                            GCObjectKind::$kind(v) => Some(v),
-                            _ => None,
-                        }
-                    }
-                } else {
-                    None
+            #[inline]
+            pub fn $as_mut_ident(&self) -> Option<RefMut<$ty>> {
+                match self {
+                    Value::$kind(v) => Some(v.borrow_mut()),
+                    _ => None,
                 }
             }
         }
@@ -238,9 +257,7 @@ impl From<Value> for bool {
             Value::Bool(v) => v,
             Value::Int(v) => v != 0,
             Value::Float(v) => v != 0.0,
-            Value::ExtFunction(_) => true,
-            Value::LightUserData(_) => true,
-            Value::GCObject(_) => true,
+            _ => true,
         }
     }
 }
@@ -254,21 +271,10 @@ impl TryFrom<Value> for i64 {
             Value::Bool(v) => Ok(i64::from(v)),
             Value::Int(v) => Ok(v),
             Value::Float(v) => Ok(v as i64),
-            Value::ExtFunction(_) => {
-                Err(type_convert_error!(ValueType::ExtFunction, ValueType::Int))
-            }
-            Value::LightUserData(_) => Err(type_convert_error!(
-                ValueType::LightUserData,
-                ValueType::Int
-            )),
-            Value::GCObject(_) => {
-                if let Some(v) = value.as_str() {
-                    v.parse()
-                        .map_err(|_| type_convert_error!(ValueType::Str, ValueType::Int))
-                } else {
-                    Err(type_convert_error!(value.value_type(), ValueType::Int))
-                }
-            }
+            Value::Str(v) => v
+                .parse()
+                .map_err(|_| type_convert_error!(ValueType::Str, ValueType::Int)),
+            _ => Err(type_convert_error!(value.value_type(), ValueType::Int)),
         }
     }
 }
@@ -282,22 +288,10 @@ impl TryFrom<Value> for f64 {
             Value::Bool(v) => Ok(if v { 1.0 } else { 0.0 }),
             Value::Int(v) => Ok(v as f64),
             Value::Float(v) => Ok(v),
-            Value::ExtFunction(_) => Err(type_convert_error!(
-                ValueType::ExtFunction,
-                ValueType::Float
-            )),
-            Value::LightUserData(_) => Err(type_convert_error!(
-                ValueType::LightUserData,
-                ValueType::Float
-            )),
-            Value::GCObject(_) => {
-                if let Some(v) = value.as_str() {
-                    v.parse()
-                        .map_err(|_| type_convert_error!(ValueType::Str, ValueType::Float))
-                } else {
-                    Err(type_convert_error!(value.value_type(), ValueType::Float))
-                }
-            }
+            Value::Str(v) => v
+                .parse()
+                .map_err(|_| type_convert_error!(ValueType::Str, ValueType::Int)),
+            _ => Err(type_convert_error!(value.value_type(), ValueType::Float)),
         }
     }
 }
@@ -312,34 +306,47 @@ impl Value {
             Value::Float(_) => ValueType::Float,
             Value::ExtFunction(_) => ValueType::ExtFunction,
             Value::LightUserData(_) => ValueType::LightUserData,
-            Value::GCObject(v) => match unsafe { v.as_ref() } {
-                Some(v) => match v.kind {
-                    GCObjectKind::Str(_) => ValueType::Str,
-                    GCObjectKind::Table(_) => ValueType::Table,
-                    GCObjectKind::UserData(_) => ValueType::UserData,
-                    GCObjectKind::Closure(_) => ValueType::Closure,
-                    GCObjectKind::ExtClosure(_) => ValueType::ExtClosure,
-                },
-                None => ValueType::UnknownGCObject,
-            },
+            Value::Str(_) => ValueType::Str,
+            Value::Table(_) => ValueType::Table,
+            Value::UserData(_) => ValueType::UserData,
+            Value::Closure(_) => ValueType::Closure,
+            Value::ExtClosure(_) => ValueType::ExtClosure,
         }
     }
 
     #[inline]
-    pub fn metatable(&self) -> Option<&Table> {
-        if let Some(t) = self.as_table() {
-            t.metatable.as_table()
-        } else if let Some(t) = self.as_userdata() {
-            Some(&t.metatable)
-        } else {
-            None
+    pub fn id(&self) -> Option<NonZeroUsize> {
+        match self {
+            Value::Str(v) => Some(v.addr()),
+            Value::Table(v) => Some(v.addr()),
+            Value::UserData(v) => Some(v.addr()),
+            Value::Closure(v) => Some(v.addr()),
+            Value::ExtClosure(v) => Some(v.addr()),
+            _ => None,
         }
+    }
+
+    #[inline]
+    pub fn set_error(&mut self) -> bool {
+        match self {
+            Value::Str(v) => v.set_error(),
+            Value::Table(v) => v.set_error(),
+            Value::UserData(v) => v.set_error(),
+            Value::Closure(v) => v.set_error(),
+            Value::ExtClosure(v) => v.set_error(),
+            _ => return false,
+        }
+        true
     }
 
     #[inline]
     pub fn is_error(&self) -> bool {
         match self {
-            Value::GCObject(v) => unsafe { (**v).is_error },
+            Value::Str(v) => v.is_error(),
+            Value::Table(v) => v.is_error(),
+            Value::UserData(v) => v.is_error(),
+            Value::Closure(v) => v.is_error(),
+            Value::ExtClosure(v) => v.is_error(),
             _ => false,
         }
     }
@@ -347,7 +354,11 @@ impl Value {
     #[inline]
     pub fn is(&self, other: &Value) -> bool {
         match (self, other) {
-            (Value::GCObject(v1), Value::GCObject(v2)) => v1 == v2,
+            (Value::Str(v1), Value::Str(v2)) => v1.addr() == v2.addr(),
+            (Value::Table(v1), Value::Table(v2)) => v1.addr() == v2.addr(),
+            (Value::UserData(v1), Value::UserData(v2)) => v1.addr() == v2.addr(),
+            (Value::Closure(v1), Value::Closure(v2)) => v1.addr() == v2.addr(),
+            (Value::ExtClosure(v1), Value::ExtClosure(v2)) => v1.addr() == v2.addr(),
             _ => self == other,
         }
     }
@@ -373,7 +384,6 @@ pub enum ValueType {
     Float,
     ExtFunction,
     LightUserData,
-    UnknownGCObject,
     Str,
     Table,
     UserData,
@@ -393,7 +403,6 @@ impl Display for ValueType {
                 ValueType::Float => "float",
                 ValueType::ExtFunction => "function",
                 ValueType::LightUserData => "userdata",
-                ValueType::UnknownGCObject => "unknown_object",
                 ValueType::Str => "str",
                 ValueType::Table => "table",
                 ValueType::UserData => "userdata",
@@ -401,58 +410,6 @@ impl Display for ValueType {
                 ValueType::ExtClosure => "function",
             }
         )
-    }
-}
-
-/// All collectable objects.
-#[derive(Debug)]
-pub struct GCObject {
-    pub kind: GCObjectKind,
-    pub gc_state: bool,
-    pub is_error: bool,
-}
-
-impl PartialEq for GCObject {
-    fn eq(&self, other: &Self) -> bool {
-        self.kind == other.kind
-    }
-}
-
-impl Display for GCObject {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.kind)
-    }
-}
-
-impl GCObject {
-    pub fn new(kind: GCObjectKind) -> Self {
-        Self {
-            kind,
-            gc_state: false,
-            is_error: false,
-        }
-    }
-}
-
-/// Enum of all collectable objects.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum GCObjectKind {
-    Str(String),
-    Table(Table),
-    UserData(UserData),
-    Closure(Closure),
-    ExtClosure(ExtClosure),
-}
-
-impl Display for GCObjectKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            GCObjectKind::Str(v) => write!(f, "{}", v),
-            GCObjectKind::Table(v) => write!(f, "{}", v),
-            GCObjectKind::Closure(v) => write!(f, "{}", v),
-            GCObjectKind::ExtClosure(v) => write!(f, "{}", v),
-            GCObjectKind::UserData(v) => write!(f, "{}", v),
-        }
     }
 }
 
@@ -504,12 +461,26 @@ macro_rules! as_value_type {
 
 #[macro_export]
 macro_rules! try_as_value_type {
-    ($lvm:ident, $value:ident, $ty:tt $(, $is_mut:tt)?) => {{
-        match $crate::as_value_type!($value, $ty $(, $is_mut)?) {
+    ($lvm:ident, $value:ident, $ty:tt, mut) => {{
+        let t = $value.clone();
+        match $crate::as_value_type!($value, $ty, mut) {
             Some(val) => val,
             None => $crate::return_error!(
                 $lvm,
-                $crate::unexpect_type_error!($value.value_type(), vec![$crate::objects::ValueType::$ty])
+                $crate::unexpect_type_error!(t.value_type(), vec![$crate::objects::ValueType::$ty])
+            ),
+        }
+    }};
+
+    ($lvm:ident, $value:ident, $ty:tt) => {{
+        match $crate::as_value_type!($value, $ty) {
+            Some(val) => val,
+            None => $crate::return_error!(
+                $lvm,
+                $crate::unexpect_type_error!(
+                    $value.value_type(),
+                    vec![$crate::objects::ValueType::$ty]
+                )
             ),
         }
     }};

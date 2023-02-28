@@ -3,6 +3,7 @@ use std::fmt::{Debug, Display};
 use std::iter::FusedIterator;
 use std::ops::Index;
 
+use crate::gc::Trace;
 use crate::utils::{Join, ValueDebug};
 
 use super::Value;
@@ -133,6 +134,17 @@ impl Table {
                 })
                 .join(", ")
         )
+    }
+}
+
+unsafe impl Trace for Table {
+    #[inline]
+    unsafe fn trace(&self) {
+        self.metatable.trace();
+        for (k, v) in self {
+            k.trace();
+            v.trace();
+        }
     }
 }
 

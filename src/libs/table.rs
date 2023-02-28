@@ -36,7 +36,7 @@ pub fn libs(lvm: &mut Lvm) -> Table {
     t.set(
         &lvm.new_str_value("raw_set".to_string()),
         Value::ExtFunction(|mut args, lvm| {
-            let (table, k, v) = check_args!(lvm, args, mut Table, Value, Value);
+            let (mut table, k, v) = check_args!(lvm, args, mut Table, Value, Value);
             table.set(&k, v);
             Ok(Value::Null)
         }),

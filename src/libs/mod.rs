@@ -104,7 +104,6 @@ macro_rules! check_args {
     ($lvm:ident, $args:ident $(,)?) => {{
         let args_len = $args.len();
         let required = $crate::errors::CallArgumentsErrorKind::from(0);
-        println!("{:?}", required);
         if !required.contains(&args_len) {
             $crate::return_error!($lvm, $crate::call_arguments_error!(None, required, args_len));
         }

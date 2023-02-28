@@ -1,6 +1,7 @@
 use std::fmt::{Debug, Display};
 
 use crate::errors::Result;
+use crate::gc::Trace;
 use crate::lvm::Lvm;
 use crate::utils::ValueVecDebug;
 
@@ -12,6 +13,15 @@ pub type ExtClosureFunc = fn(Vec<Value>, &mut Vec<Value>, &mut Lvm) -> Result<Va
 pub struct ExtClosure {
     pub func: ExtClosureFunc,
     pub upvalues: Vec<Value>,
+}
+
+unsafe impl Trace for ExtClosure {
+    #[inline]
+    unsafe fn trace(&self) {
+        for i in &self.upvalues {
+            i.trace();
+        }
+    }
 }
 
 impl Debug for ExtClosure {
