@@ -2,8 +2,6 @@ use core::ptr::NonNull;
 use std::alloc::{dealloc, Layout};
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::fs;
-use std::path::PathBuf;
 
 use crate::code::{Code, ConstlValue, FunctionKind};
 use crate::errors::{
@@ -63,21 +61,24 @@ macro_rules! get_metamethod {
 pub struct Frame {
     pc: usize,
     closure: Gc<RefCell<Closure>>,
-    operate_stack: Vec<Value>,
     prev_frame: Option<NonNull<Frame>>,
+    locals: Vec<Value>,
+    operate_stack: Vec<Value>,
 }
 
 impl Frame {
     pub fn new(
         closure: Gc<RefCell<Closure>>,
         prev_frame: Option<NonNull<Frame>>,
+        locals_count: usize,
         stack_size: usize,
     ) -> Self {
         Frame {
             pc: 0,
             closure,
-            operate_stack: Vec::with_capacity(stack_size),
             prev_frame,
+            locals: vec![Value::Null; locals_count],
+            operate_stack: Vec::with_capacity(stack_size),
         }
     }
 
@@ -245,7 +246,7 @@ impl Frame {
                 }
                 OpCode::LoadLocal(i) => {
                     self.operate_stack.push(*try_get!(
-                        (closure.variables)[i],
+                        (self.locals)[i],
                         program_error!(ProgramError::LocalNameError(i))
                     ));
                 }
@@ -264,20 +265,28 @@ impl Frame {
                         (closure.function.upvalue_names)[i],
                         program_error!(ProgramError::UpvalueError(i))
                     );
-                    let mut base_closure = closure.base_closure;
-                    for _ in 0..*func_count {
-                        base_closure = base_closure
-                            .ok_or_else(|| program_error!(ProgramError::UpvalueError(i)))?
-                            .borrow()
-                            .base_closure;
+                    let (func_count, upvalue_id) = (*func_count, *upvalue_id);
+                    if func_count == 0 {
+                        self.operate_stack.push(*try_get!(
+                            (closure.upvalues)[upvalue_id],
+                            program_error!(ProgramError::UpvalueError(i))
+                        ));
+                    } else {
+                        let mut base_closure = closure.base_closure;
+                        for _ in 0..(func_count - 1) {
+                            base_closure = base_closure
+                                .ok_or_else(|| program_error!(ProgramError::UpvalueError(i)))?
+                                .borrow()
+                                .base_closure;
+                        }
+                        self.operate_stack.push(*try_get!(
+                            (base_closure
+                                .ok_or_else(|| program_error!(ProgramError::UpvalueError(i)))?
+                                .borrow()
+                                .upvalues)[upvalue_id],
+                            program_error!(ProgramError::UpvalueError(i))
+                        ));
                     }
-                    self.operate_stack.push(*try_get!(
-                        (base_closure
-                            .ok_or_else(|| program_error!(ProgramError::UpvalueError(i)))?
-                            .borrow()
-                            .variables)[*upvalue_id],
-                        program_error!(ProgramError::UpvalueError(i))
-                    ));
                 }
                 OpCode::LoadConst(i) => {
                     self.operate_stack.push(
@@ -303,7 +312,7 @@ impl Frame {
                 }
                 OpCode::StoreLocal(i) => {
                     try_set!(
-                        (closure.variables)[i] = try_stack!(self.operate_stack.pop()),
+                        (self.locals)[i] = try_stack!(self.operate_stack.pop()),
                         program_error!(ProgramError::LocalNameError(i))
                     );
                 }
@@ -322,17 +331,22 @@ impl Frame {
                         (closure.function.upvalue_names)[i],
                         program_error!(ProgramError::UpvalueError(i))
                     );
-                    let mut base_closure = closure.base_closure;
-                    for _ in 0..*func_count {
-                        base_closure = base_closure
+                    let (func_count, upvalue_id) = (*func_count, *upvalue_id);
+                    if func_count == 0 {
+                        closure.upvalues[upvalue_id] = try_stack!(self.operate_stack.pop());
+                    } else {
+                        let mut base_closure = closure.base_closure;
+                        for _ in 0..(func_count - 1) {
+                            base_closure = base_closure
+                                .ok_or_else(|| program_error!(ProgramError::UpvalueError(i)))?
+                                .borrow()
+                                .base_closure;
+                        }
+                        base_closure
                             .ok_or_else(|| program_error!(ProgramError::UpvalueError(i)))?
-                            .borrow()
-                            .base_closure;
+                            .borrow_mut()
+                            .upvalues[upvalue_id] = try_stack!(self.operate_stack.pop());
                     }
-                    base_closure
-                        .ok_or_else(|| program_error!(ProgramError::UpvalueError(i)))?
-                        .borrow_mut()
-                        .variables[*upvalue_id] = try_stack!(self.operate_stack.pop());
                 }
                 OpCode::Import(i) => {
                     if let ConstlValue::Str(v) = try_get!(
@@ -342,23 +356,7 @@ impl Frame {
                         if let Some(module) = lvm.libs.get(v) {
                             self.operate_stack.push(*module);
                         } else {
-                            let mut path = PathBuf::new();
-                            if let Some(v) = lvm.get_global_variable("__module_path__") {
-                                if let Some(v) = v.as_str() {
-                                    path.push(v);
-                                }
-                            }
-                            path.push(v);
-                            path.set_extension("lucia");
-                            self.operate_stack
-                                .push(match fs::read_to_string(path.clone()) {
-                                    Ok(input_file) => lvm.run(Code::try_from(&input_file)?)?,
-                                    Err(_) => BuiltinError::ImportError(format!(
-                                        "can not read file: {}",
-                                        path.to_str().unwrap_or("unknown")
-                                    ))
-                                    .into_table_value(lvm),
-                                });
+                            return Err(program_error!(ProgramError::ConstError(i)));
                         }
                     } else {
                         return Err(program_error!(ProgramError::ConstError(i)));
@@ -548,8 +546,10 @@ impl Frame {
                     }
                 }
                 OpCode::Call(i) => {
+                    drop(closure);
                     let return_value = call!(i)?;
                     self.operate_stack.push(return_value);
+                    closure = unsafe { self.closure.ptr.as_ref().data.borrow_mut() };
                 }
                 OpCode::TryCall(i) => {
                     let return_value = call!(i)?;
@@ -564,7 +564,7 @@ impl Frame {
                         for i in 0..closure.function.local_names.len() {
                             temp.set(
                                 &lvm.new_str_value(closure.function.local_names[i].clone()),
-                                closure.variables[i],
+                                self.locals[i],
                             )
                         }
                         return Ok(lvm.new_table_value(temp));
@@ -581,6 +581,7 @@ impl Frame {
                     }
                 }
                 OpCode::ReturnCall(i) => {
+                    drop(closure);
                     let mut args = self.operate_stack.split_off(self.operate_stack.len() - i);
                     let mut callee = try_stack!(self.operate_stack.pop());
                     if let Some(v) = get_metamethod!(lvm, callee, "__call__") {
@@ -592,8 +593,8 @@ impl Frame {
                         return f(args, lvm);
                     } else if let Some(mut c) = callee.as_ext_closure_mut() {
                         return (c.func)(args, &mut c.upvalues, lvm);
-                    } else if let Some(mut v) = callee.as_closure_mut() {
-                        if let Err(e) = set_closure_args(lvm, &mut v, args) {
+                    } else if let Some(v) = callee.as_closure() {
+                        if let Err(e) = self.set_args(lvm, &v, args) {
                             return_error!(e);
                         }
                         drop(v);
@@ -602,7 +603,6 @@ impl Frame {
                             _ => panic!("unexpect error"),
                         };
                         closure = unsafe { self.closure.ptr.as_ref().data.borrow_mut() };
-                        self.operate_stack = Vec::with_capacity(closure.function.stack_size);
                         self.pc = 0;
                         continue;
                     } else {
@@ -615,12 +615,57 @@ impl Frame {
             }
             self.pc += 1;
             if lvm.gc_status {
-                println!("start: {}", lvm.heap.len());
                 unsafe { lvm.gc() }
                 lvm.gc_status = false;
-                println!("end: {}", lvm.heap.len());
             }
         }
+    }
+    fn set_args(
+        &mut self,
+        lvm: &mut Lvm,
+        closure: &Closure,
+        mut args: Vec<Value>,
+    ) -> std::result::Result<(), BuiltinError> {
+        let params_num = closure.function.params.len();
+        self.operate_stack = vec![Value::Null; params_num];
+        match args.len().cmp(&params_num) {
+            Ordering::Less => {
+                if closure.function.variadic.is_none() {
+                    return Err(call_arguments_error!(
+                        Some(Box::new(closure.clone())),
+                        params_num,
+                        args.len()
+                    ));
+                } else {
+                    return Err(call_arguments_error!(
+                        Some(Box::new(closure.clone())),
+                        (params_num, None),
+                        args.len()
+                    ));
+                }
+            }
+            Ordering::Equal => {
+                self.operate_stack[..params_num].copy_from_slice(&args[..]);
+                if closure.function.variadic.is_some() {
+                    self.operate_stack.push(lvm.new_table_value(Table::new()));
+                }
+            }
+            Ordering::Greater => {
+                if closure.function.variadic.is_none() {
+                    return Err(call_arguments_error!(
+                        Some(Box::new(closure.clone())),
+                        params_num,
+                        args.len()
+                    ));
+                } else {
+                    let t = args.split_off(params_num);
+                    self.operate_stack[..params_num].copy_from_slice(&args[..]);
+                    self.operate_stack
+                        .push(lvm.new_table_value(Table::from_iter(t)));
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -673,11 +718,7 @@ impl Lvm {
             f(args, self)
         } else if let Some(mut c) = callee.as_ext_closure_mut() {
             (c.func)(args, &mut c.upvalues, self)
-        } else if let Some(mut v) = callee.as_closure_mut() {
-            if let Err(e) = set_closure_args(self, &mut v, args) {
-                return_error!(e);
-            }
-
+        } else if let Some(v) = callee.as_closure() {
             let current_frame = self.current_frame;
 
             let mut frame = Frame::new(
@@ -686,8 +727,12 @@ impl Lvm {
                     _ => panic!("unexpect error"),
                 },
                 self.current_frame,
+                v.function.local_names.len(),
                 v.function.stack_size,
             );
+            if let Err(e) = frame.set_args(self, &v, args) {
+                return_error!(e);
+            }
 
             drop(v);
 
@@ -794,7 +839,7 @@ impl Lvm {
             traceback_frames.push(TracebackFrame {
                 pc: f.pc,
                 operate_stack: f.operate_stack.clone(),
-                closure: f.closure.borrow().clone(),
+                closure: unsafe { f.closure.as_ptr().as_ref().unwrap().clone() },
             });
             frame = f.prev_frame;
         }
@@ -838,47 +883,47 @@ impl Default for Lvm {
     }
 }
 
-fn set_closure_args(
-    lvm: &mut Lvm,
-    v: &mut Closure,
-    mut args: Vec<Value>,
-) -> std::result::Result<(), BuiltinError> {
-    let params_num = v.function.params.len();
-    match args.len().cmp(&params_num) {
-        Ordering::Less => {
-            if v.function.variadic.is_none() {
-                return Err(call_arguments_error!(
-                    Some(Box::new(v.clone())),
-                    params_num,
-                    args.len()
-                ));
-            } else {
-                return Err(call_arguments_error!(
-                    Some(Box::new(v.clone())),
-                    (params_num, None),
-                    args.len()
-                ));
-            }
-        }
-        Ordering::Equal => {
-            v.variables[..params_num].copy_from_slice(&args[..]);
-            if v.function.variadic.is_some() {
-                v.variables[params_num] = lvm.new_table_value(Table::new());
-            }
-        }
-        Ordering::Greater => {
-            if v.function.variadic.is_none() {
-                return Err(call_arguments_error!(
-                    Some(Box::new(v.clone())),
-                    params_num,
-                    args.len()
-                ));
-            } else {
-                let t = args.split_off(params_num);
-                v.variables[..params_num].copy_from_slice(&args[..]);
-                v.variables[params_num] = lvm.new_table_value(Table::from_iter(t));
-            }
-        }
-    }
-    Ok(())
-}
+// fn set_closure_args(
+//     lvm: &mut Lvm,
+//     v: &mut Closure,
+//     mut args: Vec<Value>,
+// ) -> std::result::Result<(), BuiltinError> {
+//     let params_num = v.function.params.len();
+//     match args.len().cmp(&params_num) {
+//         Ordering::Less => {
+//             if v.function.variadic.is_none() {
+//                 return Err(call_arguments_error!(
+//                     Some(Box::new(v.clone())),
+//                     params_num,
+//                     args.len()
+//                 ));
+//             } else {
+//                 return Err(call_arguments_error!(
+//                     Some(Box::new(v.clone())),
+//                     (params_num, None),
+//                     args.len()
+//                 ));
+//             }
+//         }
+//         Ordering::Equal => {
+//             v.upvalues[..params_num].copy_from_slice(&args[..]);
+//             if v.function.variadic.is_some() {
+//                 v.upvalues[params_num] = lvm.new_table_value(Table::new());
+//             }
+//         }
+//         Ordering::Greater => {
+//             if v.function.variadic.is_none() {
+//                 return Err(call_arguments_error!(
+//                     Some(Box::new(v.clone())),
+//                     params_num,
+//                     args.len()
+//                 ));
+//             } else {
+//                 let t = args.split_off(params_num);
+//                 v.upvalues[..params_num].copy_from_slice(&args[..]);
+//                 v.upvalues[params_num] = lvm.new_table_value(Table::from_iter(t));
+//             }
+//         }
+//     }
+//     Ok(())
+// }

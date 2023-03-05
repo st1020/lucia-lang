@@ -11,13 +11,13 @@ use super::Value;
 pub struct Closure {
     pub function: Code,
     pub base_closure: Option<Gc<RefCell<Closure>>>,
-    pub variables: Vec<Value>,
+    pub upvalues: Vec<Value>,
 }
 
 unsafe impl Trace for Closure {
     #[inline]
     unsafe fn trace(&self) {
-        for i in &self.variables {
+        for i in &self.upvalues {
             i.trace();
         }
     }
@@ -31,7 +31,7 @@ impl Debug for Closure {
                 "base_closure",
                 &self.base_closure.as_ref().map(|v| v.borrow()),
             )
-            .field("variables", &ValueVecDebug(&self.variables))
+            .field("variables", &ValueVecDebug(&self.upvalues))
             .finish()
     }
 }
@@ -58,13 +58,7 @@ impl Closure {
     pub fn new(function: Code, base_closure: Option<Gc<RefCell<Closure>>>) -> Self {
         Closure {
             base_closure,
-            variables: {
-                let mut temp: Vec<Value> = Vec::with_capacity(function.local_names.len());
-                for _ in 0..function.local_names.len() {
-                    temp.push(Value::Null);
-                }
-                temp
-            },
+            upvalues: vec![Value::Null; function.def_upvalue_count],
             function,
         }
     }

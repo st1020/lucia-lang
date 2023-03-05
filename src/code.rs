@@ -1,5 +1,6 @@
 use std::fmt::Display;
 
+pub use crate::ast::FunctionKind;
 use crate::opcode::OpCode;
 
 /// A function.
@@ -15,6 +16,7 @@ pub struct Code {
     pub global_names: Vec<String>,
     pub upvalue_names: Vec<(String, usize, usize)>,
 
+    pub def_upvalue_count: usize,
     pub stack_size: usize,
 }
 
@@ -56,30 +58,6 @@ impl PartialEq for Code {
     fn eq(&self, _: &Self) -> bool {
         false
     }
-}
-
-impl Code {
-    pub fn dummy() -> Self {
-        Code {
-            params: Vec::new(),
-            variadic: None,
-            kind: FunctionKind::Funciton,
-            code: Vec::new(),
-            consts: Vec::new(),
-            local_names: Vec::new(),
-            global_names: Vec::new(),
-            upvalue_names: Vec::new(),
-            stack_size: 0,
-        }
-    }
-}
-
-/// Kind of function.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FunctionKind {
-    Funciton,
-    Closure,
-    Do,
 }
 
 impl Display for FunctionKind {

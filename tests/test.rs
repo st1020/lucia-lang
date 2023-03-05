@@ -24,7 +24,7 @@ fn temp() -> errors::Result<()> {
     ";
     let ast = parser::Parser::new(&mut lexer::tokenize(input)).parse()?;
     // println!("{}", ast);
-    let code = codegen::CodeGen::from(ast).gen_code()?;
+    let code = codegen::gen_code(analyzer::analyze(ast))?;
     // println!("{}", code);
     let mut lvm = lvm::Lvm::new();
     println!("{:?}", lvm.run(code));

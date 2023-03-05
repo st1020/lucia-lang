@@ -1,3 +1,4 @@
+pub mod analyzer;
 pub mod ast;
 pub mod code;
 pub mod codegen;
@@ -14,8 +15,9 @@ pub mod utils;
 
 use std::convert::TryFrom;
 
+use analyzer::analyze;
 use code::Code;
-use codegen::CodeGen;
+use codegen::gen_code;
 use errors::{Error, Result};
 use lexer::tokenize;
 use parser::Parser;
@@ -24,7 +26,7 @@ impl TryFrom<&str> for Code {
     type Error = Error;
 
     fn try_from(value: &str) -> Result<Self> {
-        CodeGen::from(Parser::new(&mut tokenize(value)).parse()?).gen_code()
+        gen_code(analyze(Parser::new(&mut tokenize(value)).parse()?))
     }
 }
 
@@ -32,6 +34,6 @@ impl TryFrom<&String> for Code {
     type Error = Error;
 
     fn try_from(value: &String) -> Result<Self> {
-        CodeGen::from(Parser::new(&mut tokenize(value)).parse()?).gen_code()
+        gen_code(analyze(Parser::new(&mut tokenize(value)).parse()?))
     }
 }

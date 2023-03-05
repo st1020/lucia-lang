@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 unicode-xid = "0.2.4"
 thiserror = "1.0"
+indexmap = "1.9.2"

@@ -615,7 +615,12 @@ impl<'a> Parser<'a> {
         } else if self.eat(&TokenKind::Do) {
             Ok(Box::new(Expr {
                 start: self.prev_token.start,
-                kind: ExprKind::Do(self.parse_block()?),
+                kind: ExprKind::Function {
+                    kind: FunctionKind::Do,
+                    params: Vec::new(),
+                    variadic: None,
+                    body: self.parse_block()?,
+                },
                 end: self.prev_token.end,
             }))
         } else {
@@ -684,7 +689,11 @@ impl<'a> Parser<'a> {
         Ok(Box::new(Expr {
             start,
             kind: ExprKind::Function {
-                is_closure,
+                kind: if is_closure {
+                    FunctionKind::Closure
+                } else {
+                    FunctionKind::Funciton
+                },
                 params: {
                     let mut temp = Vec::new();
                     while !self.eat_noexpect(&end_token) {

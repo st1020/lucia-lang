@@ -2,6 +2,14 @@ use std::fmt::Display;
 
 use crate::utils::{escape_str, Join, Location};
 
+/// Kind of function.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FunctionKind {
+    Funciton,
+    Closure,
+    Do,
+}
+
 /// A statement.
 #[derive(Debug, Clone)]
 pub struct Stmt {
@@ -217,13 +225,13 @@ impl From<Ident> for Expr {
 pub enum ExprKind {
     Lit(Box<Lit>),
     Ident(Box<Ident>),
-    Do(Box<Block>),
     Function {
+        kind: FunctionKind,
         params: Vec<Ident>,
         variadic: Option<Box<Ident>>,
         body: Box<Block>,
-        is_closure: bool,
     },
+    FunctionId(usize),
     Table {
         properties: Vec<TableProperty>,
     },
@@ -258,31 +266,39 @@ impl Display for ExprKind {
         match self {
             ExprKind::Lit(lit) => write!(f, "{lit}"),
             ExprKind::Ident(ident) => write!(f, "{ident}"),
-            ExprKind::Do(block) => write!(f, "do {block}"),
             ExprKind::Function {
+                kind,
                 params,
                 variadic,
                 body,
-                is_closure,
             } => {
                 if let Some(variadic) = variadic {
-                    if *is_closure {
-                        write!(f, "|{}, {}| {}", params.iter().join(", "), variadic, body)
-                    } else {
-                        write!(
+                    match kind {
+                        FunctionKind::Funciton => write!(
                             f,
                             "fn ({}, {}) {}",
                             params.iter().join(", "),
                             variadic,
                             body
-                        )
+                        ),
+                        FunctionKind::Closure => {
+                            write!(f, "|{}, {}| {}", params.iter().join(", "), variadic, body)
+                        }
+                        FunctionKind::Do => panic!(),
                     }
-                } else if *is_closure {
-                    write!(f, "|{}| {}", params.iter().join(", "), body)
                 } else {
-                    write!(f, "fn ({}) {}", params.iter().join(", "), body)
+                    match kind {
+                        FunctionKind::Funciton => {
+                            write!(f, "fn ({}) {}", params.iter().join(", "), body)
+                        }
+                        FunctionKind::Closure => {
+                            write!(f, "|{}| {}", params.iter().join(", "), body)
+                        }
+                        FunctionKind::Do => write!(f, "do {body}"),
+                    }
                 }
             }
+            ExprKind::FunctionId(id) => write!(f, "<function: {id}>"),
             ExprKind::Table { properties } => {
                 if properties.is_empty() {
                     write!(f, "{{}}")
