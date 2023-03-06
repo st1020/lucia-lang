@@ -843,6 +843,9 @@ impl Lvm {
                 for value in &frame.operate_stack {
                     value.trace();
                 }
+                for value in &frame.locals {
+                    value.trace();
+                }
                 match frame.prev_frame {
                     Some(t) => frame = t.as_ref(),
                     None => break,
