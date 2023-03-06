@@ -202,7 +202,13 @@ impl Frame {
             }};
         }
 
-        let mut closure = unsafe { self.closure.ptr.as_ref().data.borrow_mut() };
+        macro_rules! closure {
+            () => {
+                unsafe { self.closure.ptr.as_ref().data.borrow_mut() }
+            };
+        }
+
+        let mut closure = closure!();
         loop {
             let code = try_get!(
                 (closure.function.code)[self.pc],
@@ -545,7 +551,7 @@ impl Frame {
                     drop(closure);
                     let return_value = call!(i)?;
                     self.operate_stack.push(return_value);
-                    closure = unsafe { self.closure.ptr.as_ref().data.borrow_mut() };
+                    closure = closure!();
                 }
                 OpCode::TryCall(i) => {
                     let return_value = call!(i)?;
@@ -598,7 +604,7 @@ impl Frame {
                             Value::Closure(c) => c,
                             _ => panic!("unexpect error"),
                         };
-                        closure = unsafe { self.closure.ptr.as_ref().data.borrow_mut() };
+                        closure = closure!();
                         self.pc = 0;
                         continue;
                     } else {
