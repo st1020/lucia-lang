@@ -1,7 +1,8 @@
-use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::iter::FusedIterator;
 use std::ops::Index;
+
+use indexmap::IndexMap;
 
 use crate::gc::Trace;
 use crate::utils::{Join, ValueDebug};
@@ -12,7 +13,7 @@ use super::Value;
 #[derive(Clone, PartialEq, Eq)]
 pub struct Table {
     pub array: Vec<(Value, Value)>,
-    pub mapping: HashMap<Value, Value>,
+    pub mapping: IndexMap<Value, Value>,
     pub metatable: Value,
 }
 
@@ -21,7 +22,7 @@ impl Table {
     pub fn new() -> Self {
         Table {
             array: Vec::new(),
-            mapping: HashMap::new(),
+            mapping: IndexMap::new(),
             metatable: Value::Null,
         }
     }
@@ -81,6 +82,14 @@ impl Table {
         self.array.clear();
         self.mapping.clear();
         self.metatable = Value::Null;
+    }
+
+    pub fn get_index(&self, index: usize) -> Option<(&Value, &Value)> {
+        if index < self.array.len() {
+            self.array.get(index).map(|(k, v)| (k, v))
+        } else {
+            self.mapping.get_index(index - self.array.len() + 1)
+        }
     }
 
     pub fn get(&self, key: &Value) -> Option<&Value> {
@@ -243,7 +252,7 @@ impl<'a> IntoIterator for &'a mut Table {
 #[derive(Clone)]
 pub struct Iter<'a> {
     array: std::slice::Iter<'a, (Value, Value)>,
-    mapping: std::collections::hash_map::Iter<'a, Value, Value>,
+    mapping: indexmap::map::Iter<'a, Value, Value>,
 }
 
 impl<'a> Iterator for Iter<'a> {
@@ -276,7 +285,7 @@ impl FusedIterator for Iter<'_> {}
 
 pub struct IterMut<'a> {
     array: std::slice::IterMut<'a, (Value, Value)>,
-    mapping: std::collections::hash_map::IterMut<'a, Value, Value>,
+    mapping: indexmap::map::IterMut<'a, Value, Value>,
 }
 
 impl<'a> Iterator for IterMut<'a> {
@@ -309,7 +318,7 @@ impl FusedIterator for IterMut<'_> {}
 
 pub struct IntoIter {
     array: std::vec::IntoIter<(Value, Value)>,
-    mapping: std::collections::hash_map::IntoIter<Value, Value>,
+    mapping: indexmap::map::IntoIter<Value, Value>,
 }
 
 impl Iterator for IntoIter {
@@ -513,32 +522,28 @@ macro_rules! table {
     () => {
         $crate::objects::table::Table::new()
     };
-    [$($x:expr),* $(,)?] => {
-        {
-            let mut temp_vec = Vec::with_capacity(0 $( + {let _ = &$x; 1} )*);
-            let mut count = -1;
-            $(
-                count += 1;
-                temp_vec.push(($crate::objects::Value::Int(count), $x));
-            )*
-            $crate::objects::table::Table {
-                array: temp_vec,
-                mapping: std::collections::HashMap::new(),
-                metatable: $crate::objects::Value::Null,
-            }
+    [$($x:expr),* $(,)?] => {{
+        let mut temp_vec = Vec::with_capacity(0 $( + {let _ = &$x; 1} )*);
+        let mut count = -1;
+        $(
+            count += 1;
+            temp_vec.push(($crate::objects::Value::Int(count), $x));
+        )*
+        $crate::objects::table::Table {
+            array: temp_vec,
+            mapping: indexmap::IndexMap::new(),
+            metatable: $crate::objects::Value::Null,
         }
-    };
-    {$($k:expr => $v:expr),* $(,)?} => {
-        {
-            let mut temp_map = std::collections::HashMap::with_capacity(0 $( + {let _ = &$k; 1} )*);
-            $(
-                temp_map.insert($k, $v);
-            )*
-            $crate::objects::table::Table {
-                array: std::vec::Vec::new(),
-                mapping: temp_map,
-                metatable: $crate::objects::Value::Null,
-            }
+    }};
+    {$($k:expr => $v:expr),* $(,)?} => {{
+        let mut temp_map = indexmap::IndexMap::with_capacity(0 $( + {let _ = &$k; 1} )*);
+        $(
+            temp_map.insert($k, $v);
+        )*
+        $crate::objects::table::Table {
+            array: std::vec::Vec::new(),
+            mapping: temp_map,
+            metatable: $crate::objects::Value::Null,
         }
-    };
+    }};
 }

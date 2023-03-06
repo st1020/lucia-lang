@@ -1,8 +1,34 @@
 use std::str::{Chars, Lines};
 
+use crate::check_args;
 use crate::lvm::Lvm;
 use crate::objects::{Table, Value};
-use crate::{check_args, iter_to_value};
+
+#[macro_export]
+macro_rules! iter_to_value {
+    ($lvm:expr, $marker_value:expr, $iter:expr, $ty:ty) => {{
+        let mut userdata_table = $crate::table![$marker_value];
+        userdata_table.set(
+            &$lvm.get_builtin_str("__call__"),
+            $crate::objects::Value::ExtFunction(|mut args, lvm| {
+                let (t,) = $crate::check_args!(lvm, args, mut UserData);
+                let iter = unsafe { (t.ptr as *mut $ty).as_mut().unwrap() };
+                Ok(iter
+                    .next()
+                    .map(|x| lvm.new_str_value(x.to_string()))
+                    .unwrap_or($crate::objects::Value::Null))
+            }),
+        );
+        $lvm.new_userdata_value($crate::objects::UserData::new(
+            Box::into_raw(Box::new($iter)) as *mut u8,
+            userdata_table,
+            |userdata| unsafe {
+                userdata.ptr.drop_in_place();
+                std::alloc::dealloc(userdata.ptr as *mut u8, std::alloc::Layout::new::<$ty>());
+            },
+        ))
+    }};
+}
 
 pub fn libs(lvm: &mut Lvm) -> Table {
     let mut t = Table::new();
@@ -27,13 +53,7 @@ pub fn libs(lvm: &mut Lvm) -> Table {
         &lvm.new_str_value("chars_iter".to_string()),
         Value::ExtFunction(|args, lvm| {
             let (s,) = check_args!(lvm, args, Str);
-            Ok(iter_to_value!(
-                lvm,
-                s.chars(),
-                Chars,
-                args[0],
-                |x: char, lvm: &mut Lvm| lvm.new_str_value(x.to_string())
-            ))
+            Ok(iter_to_value!(lvm, args[0], s.chars(), Chars))
         }),
     );
     t.set(
@@ -48,13 +68,7 @@ pub fn libs(lvm: &mut Lvm) -> Table {
         &lvm.new_str_value("lines_iter".to_string()),
         Value::ExtFunction(|args, lvm| {
             let (s,) = check_args!(lvm, args, Str);
-            Ok(iter_to_value!(
-                lvm,
-                s.lines(),
-                Lines,
-                args[0],
-                |x: &str, lvm: &mut Lvm| lvm.new_str_value(x.to_string())
-            ))
+            Ok(iter_to_value!(lvm, args[0], s.lines(), Lines))
         }),
     );
     t.set(

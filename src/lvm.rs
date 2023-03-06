@@ -1,5 +1,4 @@
 use core::ptr::NonNull;
-use std::alloc::{dealloc, Layout};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
@@ -9,12 +8,9 @@ use crate::errors::{
 };
 use crate::gc::{Gc, Heap, RefCell, Trace};
 use crate::libs;
-use crate::objects::table::Iter;
 use crate::objects::*;
 use crate::opcode::{JumpTarget, OpCode};
-use crate::{
-    call_arguments_error, check_args, not_callable_error, operator_error, table, try_as_value_type,
-};
+use crate::{call_arguments_error, check_args, not_callable_error, operator_error, table};
 
 #[macro_export]
 macro_rules! return_error {
@@ -496,7 +492,7 @@ impl Frame {
                             tos = v;
                         }
                     } else if tos.is_table() && get_metamethod!(lvm, tos, "__call__").is_none() {
-                        let v = lvm.iter_table(tos)?;
+                        let v = lvm.iter_table(tos);
                         try_stack!(self.operate_stack.pop());
                         self.operate_stack.push(v);
                         tos = v;
@@ -773,29 +769,20 @@ impl Lvm {
         }
     }
 
-    pub fn iter_table(&mut self, table_value: Value) -> Result<Value> {
-        let table = try_as_value_type!(self, table_value, Table);
-        let mut userdata_table = Table::new();
-        userdata_table.set(&self.get_builtin_str("_marker"), table_value);
-        userdata_table.set(
-            &self.get_builtin_str("__call__"),
-            Value::ExtFunction(|mut args, lvm| {
-                let (t,) = check_args!(lvm, args, mut UserData);
-                let iter = unsafe { (t.ptr as *mut Iter).as_mut().unwrap() };
-                Ok(iter
-                    .next()
-                    .map(|(k, v)| lvm.new_table_value(table![*k, *v]))
-                    .unwrap_or(Value::Null))
-            }),
-        );
-        Ok(self.new_userdata_value(UserData::new(
-            Box::into_raw(Box::new(table.iter())) as *mut u8,
-            userdata_table,
-            |userdata| unsafe {
-                userdata.ptr.drop_in_place();
-                dealloc(userdata.ptr as *mut u8, Layout::new::<Iter>());
+    pub fn iter_table(&mut self, table_value: Value) -> Value {
+        self.new_ext_closure_value(ExtClosure::new(
+            |args, upvalues, lvm| {
+                check_args!(lvm, args);
+                let (table, index) = check_args!(lvm, upvalues, Table, Int);
+                let t = table
+                    .get_index(index.try_into().unwrap())
+                    .map_or_else(|| Value::Null, |(k, v)| lvm.new_table_value(table![*k, *v]));
+                drop(table);
+                upvalues[1] = Value::Int(index + 1);
+                Ok(t)
             },
-        )))
+            vec![table_value, Value::Int(0)],
+        ))
     }
 
     #[inline]
@@ -882,48 +869,3 @@ impl Default for Lvm {
         Self::new()
     }
 }
-
-// fn set_closure_args(
-//     lvm: &mut Lvm,
-//     v: &mut Closure,
-//     mut args: Vec<Value>,
-// ) -> std::result::Result<(), BuiltinError> {
-//     let params_num = v.function.params.len();
-//     match args.len().cmp(&params_num) {
-//         Ordering::Less => {
-//             if v.function.variadic.is_none() {
-//                 return Err(call_arguments_error!(
-//                     Some(Box::new(v.clone())),
-//                     params_num,
-//                     args.len()
-//                 ));
-//             } else {
-//                 return Err(call_arguments_error!(
-//                     Some(Box::new(v.clone())),
-//                     (params_num, None),
-//                     args.len()
-//                 ));
-//             }
-//         }
-//         Ordering::Equal => {
-//             v.upvalues[..params_num].copy_from_slice(&args[..]);
-//             if v.function.variadic.is_some() {
-//                 v.upvalues[params_num] = lvm.new_table_value(Table::new());
-//             }
-//         }
-//         Ordering::Greater => {
-//             if v.function.variadic.is_none() {
-//                 return Err(call_arguments_error!(
-//                     Some(Box::new(v.clone())),
-//                     params_num,
-//                     args.len()
-//                 ));
-//             } else {
-//                 let t = args.split_off(params_num);
-//                 v.upvalues[..params_num].copy_from_slice(&args[..]);
-//                 v.upvalues[params_num] = lvm.new_table_value(Table::from_iter(t));
-//             }
-//         }
-//     }
-//     Ok(())
-// }

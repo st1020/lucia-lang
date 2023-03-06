@@ -1,22 +1,45 @@
+use crate::check_args;
 use crate::lvm::Lvm;
-use crate::objects::table::{Keys, Values};
-use crate::objects::{Table, Value};
-use crate::{check_args, iter_to_value};
+use crate::objects::{ExtClosure, Table, Value};
 
 pub fn libs(lvm: &mut Lvm) -> Table {
     let mut t = Table::new();
     t.set(
         &lvm.new_str_value("keys".to_string()),
         Value::ExtFunction(|args, lvm| {
-            let (table,) = check_args!(lvm, args, Table);
-            Ok(iter_to_value!(lvm, table.keys(), Keys, args[0]))
+            let (table_value,) = check_args!(lvm, args, Value);
+            Ok(lvm.new_ext_closure_value(ExtClosure::new(
+                |args, upvalues, lvm| {
+                    check_args!(lvm, args);
+                    let (table, index) = check_args!(lvm, upvalues, Table, Int);
+                    let t = table
+                        .get_index(index.try_into().unwrap())
+                        .map_or_else(|| Value::Null, |(k, _)| *k);
+                    drop(table);
+                    upvalues[1] = Value::Int(index + 1);
+                    Ok(t)
+                },
+                vec![table_value, Value::Int(0)],
+            )))
         }),
     );
     t.set(
         &lvm.new_str_value("values".to_string()),
         Value::ExtFunction(|args, lvm| {
-            let (table,) = check_args!(lvm, args, Table);
-            Ok(iter_to_value!(lvm, table.values(), Values, args[0]))
+            let (table_value,) = check_args!(lvm, args, Value);
+            Ok(lvm.new_ext_closure_value(ExtClosure::new(
+                |args, upvalues, lvm| {
+                    check_args!(lvm, args);
+                    let (table, index) = check_args!(lvm, upvalues, Table, Int);
+                    let t = table
+                        .get_index(index.try_into().unwrap())
+                        .map_or_else(|| Value::Null, |(_, v)| *v);
+                    drop(table);
+                    upvalues[1] = Value::Int(index + 1);
+                    Ok(t)
+                },
+                vec![table_value, Value::Int(0)],
+            )))
         }),
     );
     t.set(
@@ -45,7 +68,7 @@ pub fn libs(lvm: &mut Lvm) -> Table {
         &lvm.new_str_value("raw_iter".to_string()),
         Value::ExtFunction(|args, lvm| {
             let (table_value,) = check_args!(lvm, args, Value);
-            lvm.iter_table(table_value)
+            Ok(lvm.iter_table(table_value))
         }),
     );
     t
