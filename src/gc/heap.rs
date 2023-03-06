@@ -1,4 +1,3 @@
-use std::alloc::{dealloc, Layout};
 use std::fmt::Debug;
 use std::ptr::NonNull;
 
@@ -26,11 +25,7 @@ impl Heap {
             if ptr.as_ref().marked.get() {
                 new_heap.push(*ptr);
             } else {
-                ptr.as_ptr().drop_in_place();
-                dealloc(
-                    ptr.as_ptr() as *mut u8,
-                    Layout::for_value::<GcBox<_>>(ptr.as_ref()),
-                );
+                drop(Box::from_raw(ptr.as_ptr()));
             }
         }
         self.0 = new_heap;

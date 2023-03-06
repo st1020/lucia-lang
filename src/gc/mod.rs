@@ -5,7 +5,6 @@ mod gc_box;
 mod heap;
 mod trace;
 
-use std::alloc::{alloc, dealloc, Layout};
 use std::borrow::Borrow;
 use std::convert::AsRef;
 use std::fmt::{Debug, Display, Pointer};
@@ -28,10 +27,8 @@ impl<T: Trace> Gc<T> {
     #[inline]
     pub(crate) fn new(value: T) -> Self {
         unsafe {
-            let ptr = alloc(Layout::new::<GcBox<T>>()) as *mut GcBox<T>;
-            ptr.write(GcBox::new(value));
             Gc {
-                ptr: NonNull::new_unchecked(ptr),
+                ptr: NonNull::new_unchecked(Box::into_raw(Box::new(GcBox::new(value)))),
             }
         }
     }
@@ -39,13 +36,6 @@ impl<T: Trace> Gc<T> {
     #[inline]
     pub fn addr(&self) -> NonZeroUsize {
         unsafe { NonZeroUsize::new_unchecked(mem::transmute(self.ptr)) }
-    }
-
-    #[inline]
-    pub unsafe fn drop(self) {
-        let ptr = self.ptr.as_ptr();
-        ptr.drop_in_place();
-        dealloc(ptr as *mut u8, Layout::new::<GcBox<T>>());
     }
 }
 

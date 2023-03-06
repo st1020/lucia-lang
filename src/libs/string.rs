@@ -22,10 +22,7 @@ macro_rules! iter_to_value {
         $lvm.new_userdata_value($crate::objects::UserData::new(
             Box::into_raw(Box::new($iter)) as *mut u8,
             userdata_table,
-            |userdata| unsafe {
-                userdata.ptr.drop_in_place();
-                std::alloc::dealloc(userdata.ptr as *mut u8, std::alloc::Layout::new::<$ty>());
-            },
+            |userdata| unsafe { drop(Box::from_raw(userdata.ptr as *mut $ty)) },
         ))
     }};
 }
