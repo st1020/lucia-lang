@@ -202,16 +202,10 @@ impl Frame {
             }};
         }
 
-        macro_rules! closure {
-            () => {
-                unsafe { self.closure.ptr.as_ref().data.borrow_mut() }
-            };
-        }
-
-        let mut closure = closure!();
+        let mut function = self.closure.borrow().function.clone();
         loop {
             let code = try_get!(
-                (closure.function.code)[self.pc],
+                (function.code)[self.pc],
                 program_error!(ProgramError::CodeIndexError(self.pc))
             )
             .clone();
@@ -254,7 +248,7 @@ impl Frame {
                 }
                 OpCode::LoadGlobal(i) => {
                     let t = try_get!(
-                        (closure.function.global_names)[i],
+                        (function.global_names)[i],
                         program_error!(ProgramError::GlobalNameError(i))
                     );
                     self.operate_stack.push(
@@ -264,17 +258,17 @@ impl Frame {
                 }
                 OpCode::LoadUpvalue(i) => {
                     let (_, func_count, upvalue_id) = try_get!(
-                        (closure.function.upvalue_names)[i],
+                        (function.upvalue_names)[i],
                         program_error!(ProgramError::UpvalueError(i))
                     );
                     let (func_count, upvalue_id) = (*func_count, *upvalue_id);
                     if func_count == 0 {
                         self.operate_stack.push(*try_get!(
-                            (closure.upvalues)[upvalue_id],
+                            (self.closure.borrow().upvalues)[upvalue_id],
                             program_error!(ProgramError::UpvalueError(i))
                         ));
                     } else {
-                        let mut base_closure = closure.base_closure;
+                        let mut base_closure = self.closure.borrow().base_closure;
                         for _ in 0..(func_count - 1) {
                             base_closure = base_closure
                                 .ok_or_else(|| program_error!(ProgramError::UpvalueError(i)))?
@@ -293,7 +287,7 @@ impl Frame {
                 OpCode::LoadConst(i) => {
                     self.operate_stack.push(
                         match try_get!(
-                            (closure.function.consts)[i],
+                            (function.consts)[i],
                             program_error!(ProgramError::ConstError(i))
                         ) {
                             ConstlValue::Null => Value::Null,
@@ -321,7 +315,7 @@ impl Frame {
                 OpCode::StoreGlobal(i) => {
                     lvm.set_global_variable(
                         try_get!(
-                            (closure.function.global_names)[i],
+                            (function.global_names)[i],
                             program_error!(ProgramError::GlobalNameError(i))
                         )
                         .clone(),
@@ -330,14 +324,15 @@ impl Frame {
                 }
                 OpCode::StoreUpvalue(i) => {
                     let (_, func_count, upvalue_id) = try_get!(
-                        (closure.function.upvalue_names)[i],
+                        (function.upvalue_names)[i],
                         program_error!(ProgramError::UpvalueError(i))
                     );
                     let (func_count, upvalue_id) = (*func_count, *upvalue_id);
                     if func_count == 0 {
-                        closure.upvalues[upvalue_id] = try_stack!(self.operate_stack.pop());
+                        self.closure.borrow_mut().upvalues[upvalue_id] =
+                            try_stack!(self.operate_stack.pop());
                     } else {
-                        let mut base_closure = closure.base_closure;
+                        let mut base_closure = self.closure.borrow().base_closure;
                         for _ in 0..(func_count - 1) {
                             base_closure = base_closure
                                 .ok_or_else(|| program_error!(ProgramError::UpvalueError(i)))?
@@ -352,7 +347,7 @@ impl Frame {
                 }
                 OpCode::Import(i) => {
                     if let ConstlValue::Str(v) = try_get!(
-                        (closure.function.consts)[i],
+                        (function.consts)[i],
                         program_error!(ProgramError::ConstError(i))
                     ) {
                         if let Some(module) = lvm.libs.get(v) {
@@ -368,7 +363,7 @@ impl Frame {
                     let tos = *try_stack!(self.operate_stack.last());
                     if let Some(module) = tos.as_table() {
                         if let ConstlValue::Str(t) = try_get!(
-                            (closure.function.consts)[i],
+                            (function.consts)[i],
                             program_error!(ProgramError::ConstError(i))
                         ) {
                             self.operate_stack.push(
@@ -548,10 +543,8 @@ impl Frame {
                     }
                 }
                 OpCode::Call(i) => {
-                    drop(closure);
                     let return_value = call!(i)?;
                     self.operate_stack.push(return_value);
-                    closure = closure!();
                 }
                 OpCode::TryCall(i) => {
                     let return_value = call!(i)?;
@@ -561,11 +554,11 @@ impl Frame {
                     self.operate_stack.push(return_value);
                 }
                 OpCode::Return => {
-                    if closure.function.kind == FunctionKind::Do {
+                    if function.kind == FunctionKind::Do {
                         let mut temp = Table::new();
-                        for i in 0..closure.function.local_names.len() {
+                        for i in 0..function.local_names.len() {
                             temp.set(
-                                &lvm.new_str_value(closure.function.local_names[i].clone()),
+                                &lvm.new_str_value(function.local_names[i].clone()),
                                 self.locals[i],
                             )
                         }
@@ -583,7 +576,6 @@ impl Frame {
                     }
                 }
                 OpCode::ReturnCall(i) => {
-                    drop(closure);
                     let mut args = self.operate_stack.split_off(self.operate_stack.len() - i);
                     let mut callee = try_stack!(self.operate_stack.pop());
                     if let Some(v) = get_metamethod!(lvm, callee, "__call__") {
@@ -604,7 +596,7 @@ impl Frame {
                             Value::Closure(c) => c,
                             _ => panic!("unexpect error"),
                         };
-                        closure = closure!();
+                        function = self.closure.borrow().function.clone();
                         self.pc = 0;
                         continue;
                     } else {
@@ -618,7 +610,6 @@ impl Frame {
             self.pc += 1;
             if lvm.gc_status {
                 unsafe { lvm.gc() }
-                lvm.gc_status = false;
             }
         }
     }
@@ -841,6 +832,7 @@ impl Lvm {
 
     #[allow(clippy::missing_safety_doc)]
     pub unsafe fn gc(&mut self) {
+        self.gc_status = false;
         // mark
         if let Some(frame) = self.current_frame {
             let mut frame = frame.as_ref();
