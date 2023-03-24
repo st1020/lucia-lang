@@ -41,6 +41,8 @@ pub enum TokenKind {
     And,
     /// "or"
     Or,
+    /// "try"
+    Try,
     /// "fn"
     Fn,
     /// "do"
@@ -156,6 +158,7 @@ impl Display for TokenKind {
             Self::Not => write!(f, "Not (not)"),
             Self::And => write!(f, "And (and)"),
             Self::Or => write!(f, "Or (or)"),
+            Self::Try => write!(f, "Try (try)"),
             Self::Fn => write!(f, "Fn (fn)"),
             Self::Do => write!(f, "Do (do)"),
             Self::Null => write!(f, "Null (null)"),

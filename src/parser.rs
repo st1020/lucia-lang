@@ -551,7 +551,7 @@ impl<'a> Parser<'a> {
                             }
                             temp
                         },
-                        propagating_error: self.eat_noexpect(&TokenKind::Question),
+                        propagating_error: false,
                     },
                     start,
                     end: self.prev_token.end,
@@ -625,6 +625,17 @@ impl<'a> Parser<'a> {
                 },
                 end: self.prev_token.end,
             }))
+        } else if self.eat(&TokenKind::Try) {
+            let mut temp = self.parse_expr_primary()?;
+            if let ExprKind::Call {
+                propagating_error, ..
+            } = &mut temp.kind
+            {
+                *propagating_error = true;
+            } else {
+                return Err(SyntaxError::ParseTryExprError.into());
+            }
+            Ok(temp)
         } else {
             Ok(Box::new(self.parse_ident()?.into()))
         }

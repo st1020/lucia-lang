@@ -353,6 +353,7 @@ impl Cursor<'_> {
             "not" => Not,
             "and" => And,
             "or" => Or,
+            "try" => Try,
             "fn" => Fn,
             "do" => Do,
             "null" => Null,

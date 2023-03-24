@@ -47,6 +47,8 @@ pub enum SyntaxError {
     UnexpectEOF,
     #[error("parse assign statement error")]
     ParseAssignStmtError,
+    #[error("parse try expression error")]
+    ParseTryExprError,
 
     // codegen error
     #[error("illegal ast")]
