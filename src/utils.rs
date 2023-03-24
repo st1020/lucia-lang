@@ -28,7 +28,7 @@ pub fn escape_str(value: &str, ascii_only: bool) -> String {
         match c {
             '\0' => ans.push_str("\\0"),
             '\t' => ans.push_str("\\t"),
-            '\r' => ans.push_str("\\t"),
+            '\r' => ans.push_str("\\r"),
             '\n' => ans.push_str("\\n"),
             '\\' => ans.push_str("\\\\"),
             '"' => ans.push_str("\\\""),
