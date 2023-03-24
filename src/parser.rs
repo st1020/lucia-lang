@@ -608,6 +608,8 @@ impl<'a> Parser<'a> {
             })
         } else if self.eat(&TokenKind::OpenBrace) {
             self.parse_expr_table()
+        } else if self.eat(&TokenKind::OpenBracket) {
+            self.parse_expr_list()
         } else if self.eat(&TokenKind::Fn) {
             self.parse_expr_func(false)
         } else if self.eat(&TokenKind::VBar) {
@@ -635,27 +637,12 @@ impl<'a> Parser<'a> {
             kind: ExprKind::Table {
                 properties: {
                     let mut temp = Vec::new();
-                    let mut c = 0;
                     self.eat_eol();
                     while !self.eat_noexpect(&TokenKind::CloseBrace) {
                         let start = self.token.start;
-                        let temp_expr = self.parse_expr(1)?;
-                        let (key, value) = if self.eat_noexpect(&TokenKind::Colon) {
-                            (temp_expr, self.parse_expr(1)?)
-                        } else {
-                            (
-                                Box::new(
-                                    Lit {
-                                        value: LitKind::Int(c),
-                                        start: self.token.start,
-                                        end: self.token.end,
-                                    }
-                                    .into(),
-                                ),
-                                temp_expr,
-                            )
-                        };
-                        c += 1;
+                        let key = self.parse_expr(1)?;
+                        self.expect(&TokenKind::Colon)?;
+                        let value = self.parse_expr(1)?;
                         temp.push(TableProperty {
                             key,
                             value,
@@ -664,6 +651,30 @@ impl<'a> Parser<'a> {
                         });
                         self.eat_eol();
                         if self.eat(&TokenKind::CloseBrace) {
+                            break;
+                        }
+                        self.expect(&TokenKind::Comma)?;
+                        self.eat_eol();
+                    }
+                    temp
+                },
+            },
+            end: self.prev_token.end,
+        }))
+    }
+
+    /// Parse table expression.
+    fn parse_expr_list(&mut self) -> Result<Box<Expr>> {
+        Ok(Box::new(Expr {
+            start: self.prev_token.start,
+            kind: ExprKind::List {
+                items: {
+                    let mut temp = Vec::new();
+                    self.eat_eol();
+                    while !self.eat_noexpect(&TokenKind::CloseBracket) {
+                        temp.push(*self.parse_expr(1)?);
+                        self.eat_eol();
+                        if self.eat(&TokenKind::CloseBracket) {
                             break;
                         }
                         self.expect(&TokenKind::Comma)?;

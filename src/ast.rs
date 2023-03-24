@@ -235,6 +235,9 @@ pub enum ExprKind {
     Table {
         properties: Vec<TableProperty>,
     },
+    List {
+        items: Vec<Expr>,
+    },
     Unary {
         operator: UnOp,
         argument: Box<Expr>,
@@ -307,6 +310,22 @@ impl Display for ExprKind {
                         f,
                         "{{\n{}\n}}",
                         properties
+                            .iter()
+                            .join(",\n")
+                            .split('\n')
+                            .map(|x| format!("    {x}"))
+                            .join("\n")
+                    )
+                }
+            }
+            ExprKind::List { items } => {
+                if items.is_empty() {
+                    write!(f, "[]")
+                } else {
+                    write!(
+                        f,
+                        "[\n{}\n]",
+                        items
                             .iter()
                             .join(",\n")
                             .split('\n')

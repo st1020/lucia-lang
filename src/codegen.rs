@@ -225,6 +225,13 @@ impl CodeGen {
                 }
                 self.func_list[func_id].code.push(OpCode::BuildTable(temp));
             }
+            ExprKind::List { items } => {
+                let temp = items.len();
+                for item in items {
+                    self.gen_expr(func_id, item)?;
+                }
+                self.func_list[func_id].code.push(OpCode::BuildList(temp));
+            }
             ExprKind::Unary { operator, argument } => {
                 self.gen_expr(func_id, argument)?;
                 self.func_list[func_id].code.push(match operator {
@@ -731,6 +738,7 @@ fn get_stack_size(code: &Vec<OpCode>, mut offset: usize, init_size: usize) -> us
             OpCode::ImportFrom(_) => t += 1,
             OpCode::ImportGlob => (),
             OpCode::BuildTable(i) => t = t - i * 2 + 1,
+            OpCode::BuildList(i) => t = t - i + 1,
             OpCode::GetAttr | OpCode::GetItem => t -= 1,
             OpCode::GetMeta => (),
             OpCode::SetAttr | OpCode::SetItem => t -= 2,

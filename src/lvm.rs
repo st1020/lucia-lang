@@ -405,6 +405,15 @@ impl Frame {
                         return Err(stack_error!());
                     }
                 }
+                OpCode::BuildList(i) => {
+                    if self.operate_stack.len() >= i {
+                        let temp = self.operate_stack.split_off(self.operate_stack.len() - i);
+                        self.operate_stack
+                            .push(lvm.new_table_value(Table::from_iter(temp.into_iter())));
+                    } else {
+                        return Err(stack_error!());
+                    }
+                }
                 OpCode::GetAttr => get_table!("__getattr__", code),
                 OpCode::GetItem => get_table!("__getitem__", code),
                 OpCode::GetMeta => {

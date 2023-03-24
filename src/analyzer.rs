@@ -266,6 +266,11 @@ impl SemanticAnalyzer {
                     self.build_expr(value);
                 }
             }
+            ExprKind::List { items } => {
+                for item in items {
+                    self.build_expr(item);
+                }
+            }
             ExprKind::Unary {
                 operator: _,
                 argument,
@@ -447,6 +452,11 @@ impl SemanticAnalyzer {
                 for TableProperty { key, value, .. } in properties {
                     self.analyze_name_expr(func_id, key);
                     self.analyze_name_expr(func_id, value);
+                }
+            }
+            ExprKind::List { items } => {
+                for item in items {
+                    self.analyze_name_expr(func_id, item);
                 }
             }
             ExprKind::Unary {

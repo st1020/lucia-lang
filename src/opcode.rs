@@ -42,6 +42,8 @@ pub enum OpCode {
 
     /// Pushes a new table onto the stack. Pops `2 * count` items to build table.
     BuildTable(usize),
+    /// Pushes a new list onto the stack. Pops `count` items to build list.
+    BuildList(usize),
     /// Implements `TOS = TOS1::TOS`.
     GetAttr,
     /// Implements `TOS = TOS1[TOS]`.
@@ -134,6 +136,7 @@ impl Display for OpCode {
             Self::ImportFrom(i) => write!(f, "{:width$}{}", "ImportFrom", i),
             Self::ImportGlob => write!(f, "ImportGlob"),
             Self::BuildTable(i) => write!(f, "{:width$}{}", "BuildTable", i),
+            Self::BuildList(i) => write!(f, "{:width$}{}", "BuildList", i),
             Self::GetAttr => write!(f, "GetAttr"),
             Self::GetItem => write!(f, "GetItem"),
             Self::GetMeta => write!(f, "GetMeta"),
