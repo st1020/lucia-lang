@@ -1,9 +1,14 @@
 [package]
 name = "lucia-lang"
 version = "0.1.0"
+authors = ["st1020 <stone_1020@qq.com>"]
 edition = "2021"
-description = "A programming language inspired by Lua and Python."
+description = "Lucia programming language"
+readme = "README.md"
+repository = "https://github.com/st1020/lucia-lang"
 license = "MIT OR Apache-2.0"
+keywords = ["language", "compiler", "lexer", "parser", "lucia"]
+categories = ["compilers", "parser-implementations"]
 
 [dependencies]
 unicode-xid = "0.2.4"
