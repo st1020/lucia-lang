@@ -137,7 +137,7 @@ pub enum TokenKind {
     /// "12", "1.0e-40", ""123"". See `LiteralKind` for more details.
     Literal(LiteralKind),
     /// Unknown token, not expected by the lexer, e.g. "№"
-    Unknown,
+    Unknown(char),
 }
 
 impl Display for TokenKind {
@@ -202,7 +202,7 @@ impl Display for TokenKind {
             Self::Whitespace => write!(f, "Whitespace ( )"),
             Self::Ident(v) => write!(f, "Ident ({})", v),
             Self::Literal(v) => write!(f, "Literal ({})", v),
-            Self::Unknown => write!(f, "Unknown"),
+            Self::Unknown(v) => write!(f, "Unknown({})", v),
         }
     }
 }
@@ -257,7 +257,7 @@ impl Token {
     /// Constructs a fake Token.
     pub fn dummy() -> Self {
         Token {
-            kind: TokenKind::Unknown,
+            kind: TokenKind::Unknown(' '),
             start: Location {
                 lineno: 1,
                 column: 1,

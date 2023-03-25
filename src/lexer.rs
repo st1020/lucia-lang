@@ -280,7 +280,7 @@ impl Cursor<'_> {
             '-' => Sub,
             '*' => Mul,
             '%' => Mod,
-            _ => Unknown,
+            c => Unknown(c),
         };
         Token::new(token_kind, start, self.location())
     }
