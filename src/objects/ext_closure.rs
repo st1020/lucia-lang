@@ -7,8 +7,10 @@ use crate::utils::ValueVecDebug;
 
 use super::Value;
 
+/// The ext closure function type.
 pub type ExtClosureFunc = fn(Vec<Value>, &mut Vec<Value>, &mut Lvm) -> Result<Value>;
 
+/// The ext closure object.
 #[derive(Clone)]
 pub struct ExtClosure {
     pub func: ExtClosureFunc,

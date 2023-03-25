@@ -1,3 +1,5 @@
+//! Errors of this crate.
+
 use std::fmt::{Debug, Display};
 use std::num::{ParseFloatError, ParseIntError};
 use std::ops::{Bound, RangeBounds};
@@ -11,6 +13,7 @@ use crate::opcode::OpCode;
 use crate::token::{Token, TokenType};
 use crate::utils::Join;
 
+/// Result type used by this crate.
 pub type Result<T> = result::Result<T, Error>;
 
 /// Enum representing any lucia error.
@@ -118,6 +121,7 @@ impl PartialEq for RuntimeError {
     }
 }
 
+/// Traceback info of stack frame.
 #[derive(Debug, Clone)]
 pub struct TracebackFrame {
     pub pc: usize,

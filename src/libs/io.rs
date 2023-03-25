@@ -5,7 +5,7 @@ use crate::lvm::Lvm;
 use crate::objects::{Table, Value};
 use crate::utils::Join;
 
-pub fn libs(lvm: &mut Lvm) -> Table {
+pub fn lib(lvm: &mut Lvm) -> Table {
     let mut t = Table::new();
     t.set(
         &lvm.new_str_value("print".to_string()),

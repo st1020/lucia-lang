@@ -9,9 +9,13 @@ use std::sync::atomic::{
     AtomicU64, AtomicU8, AtomicUsize,
 };
 
+/// The Trace trait, which needs to be implemented on garbage-collected objects.
+#[allow(clippy::missing_safety_doc)]
 pub unsafe trait Trace {
+    /// Marks all contained `Gc`s.
     unsafe fn trace(&self);
 
+    /// Is this object marked.
     #[inline]
     unsafe fn marked(&self) -> bool {
         false

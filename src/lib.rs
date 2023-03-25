@@ -1,3 +1,31 @@
+//! Lucia Language Compiler and VM.
+//!
+//! ```
+//!        +-------+             +--------+          +----------+
+//! str -> | lexer | - Tokens -> | parser | - AST -> | analyzer |
+//!        +-------+             +--------+          +----------+
+//!                                                        |
+//!             +----- AST with semantic information ------+
+//!             |
+//!             v
+//!        +---------+           +-----+
+//!        | codegen | - Code -> | LVM |
+//!        +---------+           +-----+
+//! ```
+//!
+//! # Examples
+//!
+//! ```
+//! use lucia_lang::{lvm::Lvm, code:: Code};
+//! let input = r#"
+//! import std::io::{println}
+//! println("Hello World!")
+//! "#;
+//! let code = Code::try_from(input).unwrap();
+//! let mut lvm = Lvm::new();
+//! lvm.run(code).unwrap();
+//! ```
+
 pub mod analyzer;
 pub mod ast;
 pub mod code;

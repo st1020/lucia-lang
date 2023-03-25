@@ -1,3 +1,5 @@
+//! The parser.
+
 use crate::ast::*;
 use crate::errors::{Error, Result, SyntaxError};
 use crate::token::{LiteralKind, Token, TokenKind, TokenType};
@@ -120,7 +122,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Parse token iter into AST `Box<Block>`.
+    /// Parse token iter into AST (`Box<Block>`).
     pub fn parse(&mut self) -> Result<Box<Block>> {
         Ok(Box::new(Block {
             start: self.token.start,

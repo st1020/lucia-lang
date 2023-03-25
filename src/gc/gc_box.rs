@@ -2,6 +2,8 @@ use std::cell::Cell;
 
 use super::Trace;
 
+/// A garbage collected allocation.
+#[derive(Debug)]
 pub(crate) struct GcBox<T: Trace + ?Sized> {
     pub(crate) marked: Cell<bool>,
     pub(crate) is_error: Cell<bool>,

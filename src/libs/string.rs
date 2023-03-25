@@ -4,7 +4,6 @@ use crate::check_args;
 use crate::lvm::Lvm;
 use crate::objects::{Table, Value};
 
-#[macro_export]
 macro_rules! iter_to_value {
     ($lvm:expr, $marker_value:expr, $iter:expr, $ty:ty) => {{
         let mut userdata_table = $crate::table![$marker_value];
@@ -27,7 +26,7 @@ macro_rules! iter_to_value {
     }};
 }
 
-pub fn libs(lvm: &mut Lvm) -> Table {
+pub fn lib(lvm: &mut Lvm) -> Table {
     let mut t = Table::new();
     t.set(
         &lvm.new_str_value("get".to_string()),

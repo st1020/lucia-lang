@@ -1,3 +1,5 @@
+//! The Lucia virtual machine.
+
 use core::ptr::NonNull;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -53,6 +55,7 @@ macro_rules! get_metamethod {
     }};
 }
 
+/// A stack frame.
 #[derive(Clone)]
 pub struct Frame {
     pc: usize,
@@ -63,6 +66,7 @@ pub struct Frame {
 }
 
 impl Frame {
+    /// Constructs a new `Frame`.
     pub fn new(
         closure: Gc<RefCell<Closure>>,
         prev_frame: Option<NonNull<Frame>>,
@@ -78,6 +82,7 @@ impl Frame {
         }
     }
 
+    /// Run this stack frame.
     pub fn run(&mut self, lvm: &mut Lvm) -> Result<Value> {
         macro_rules! call {
             ($arg_num:expr) => {{
@@ -671,6 +676,7 @@ impl Frame {
     }
 }
 
+/// The Lucia virtual machine.
 pub struct Lvm {
     pub global_variables: HashMap<String, Value>,
     pub builtin_variables: HashMap<String, Value>,
@@ -683,10 +689,11 @@ pub struct Lvm {
 }
 
 impl Lvm {
+    /// Constructs a new `Lvm`.
     pub fn new() -> Self {
         let mut t = Lvm {
             global_variables: HashMap::new(),
-            builtin_variables: libs::builtin::builtin_variables(),
+            builtin_variables: libs::builtin_variables(),
             libs: HashMap::new(),
             current_frame: None,
             heap: Heap::new(),
@@ -698,11 +705,13 @@ impl Lvm {
         t
     }
 
+    /// Execute a Code.
     pub fn run(&mut self, code: Code) -> Result<Value> {
         let callee = self.new_closure_value(Closure::new(code, None));
         self.call(callee, Vec::new())
     }
 
+    /// Call a callable Value with arguments.
     #[inline]
     pub fn call(&mut self, mut callee: Value, mut args: Vec<Value>) -> Result<Value> {
         macro_rules! return_error {
@@ -748,21 +757,25 @@ impl Lvm {
         }
     }
 
+    /// Set the value of global variable.
     #[inline]
     pub fn set_global_variable(&mut self, key: String, value: Value) {
         self.global_variables.insert(key, value);
     }
 
+    /// Get the value of global variable.
     #[inline]
     pub fn get_global_variable(&self, key: &str) -> Option<Value> {
         self.global_variables.get(key).copied()
     }
 
+    /// Get the value of builtin variable.
     #[inline]
-    pub fn get_builtin_variable(&self, key: &str) -> Option<Value> {
-        self.builtin_variables.get(key).copied()
+    pub fn get_builtin_variable(&self, name: &str) -> Option<Value> {
+        self.builtin_variables.get(name).copied()
     }
 
+    /// Get a builtin str.
     #[inline]
     pub fn get_builtin_str(&mut self, key: &str) -> Value {
         match self.builtin_str_value.get(key) {
@@ -775,6 +788,7 @@ impl Lvm {
         }
     }
 
+    /// Return an iterator Value from a Table Value.
     pub fn iter_table(&mut self, table_value: Value) -> Value {
         self.new_ext_closure_value(ExtClosure::new(
             |args, upvalues, lvm| {
@@ -791,6 +805,7 @@ impl Lvm {
         ))
     }
 
+    /// Constructs a new `Gc<T>`.
     #[inline]
     pub fn new_gc_object<T: Trace + 'static>(&mut self, value: T) -> Gc<T> {
         if self.heap.len() > self.last_heap_len * 2 && self.current_frame.is_some() {
@@ -824,6 +839,7 @@ impl Lvm {
         Value::ExtClosure(self.new_gc_object(RefCell::new(value)))
     }
 
+    /// Get the traceback info of current stack frame.
     pub fn traceback(&self) -> Vec<TracebackFrame> {
         let mut traceback_frames = Vec::new();
         let mut frame = self.current_frame;
@@ -839,7 +855,12 @@ impl Lvm {
         traceback_frames
     }
 
-    #[allow(clippy::missing_safety_doc)]
+    /// Run the garbage collection.
+    ///
+    /// # Safety
+    ///
+    /// When calling this method, you have to ensure that all of `Gc<T>`
+    /// can be traced by the root on stack frame.
     pub unsafe fn gc(&mut self) {
         self.gc_status = false;
         // mark

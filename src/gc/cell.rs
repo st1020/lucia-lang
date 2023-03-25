@@ -7,9 +7,7 @@ use std::ptr::NonNull;
 
 use super::Trace;
 
-/// A mutable memory location with dynamically checked borrow rules
-///
-/// See the [module-level documentation](self) for more.
+/// A mutable memory location with dynamically checked borrow rules.
 pub struct RefCell<T: ?Sized> {
     borrow: Cell<BorrowFlag>,
     value: UnsafeCell<T>,
@@ -313,8 +311,6 @@ impl Clone for BorrowRef<'_> {
 
 /// Wraps a borrowed reference to a value in a `RefCell` box.
 /// A wrapper type for an immutably borrowed value from a `RefCell<T>`.
-///
-/// See the [module-level documentation](self) for more.
 pub struct Ref<'a, T: ?Sized + 'a> {
     // NB: we use a pointer instead of `&'a T` to avoid `noalias` violations, because a
     // `Ref` argument doesn't hold immutability for its whole scope, only until it drops.
@@ -567,8 +563,6 @@ impl<'a> BorrowRefMut<'a> {
 }
 
 /// A wrapper type for a mutably borrowed value from a `RefCell<T>`.
-///
-/// See the [module-level documentation](self) for more.
 pub struct RefMut<'a, T: ?Sized + 'a> {
     // NB: we use a pointer instead of `&'a mut T` to avoid `noalias` violations, because a
     // `RefMut` argument doesn't hold exclusivity for its whole scope, only until it drops.

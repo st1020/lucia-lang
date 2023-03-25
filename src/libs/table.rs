@@ -2,7 +2,7 @@ use crate::check_args;
 use crate::lvm::Lvm;
 use crate::objects::{ExtClosure, Table, Value};
 
-pub fn libs(lvm: &mut Lvm) -> Table {
+pub fn lib(lvm: &mut Lvm) -> Table {
     let mut t = Table::new();
     t.set(
         &lvm.new_str_value("keys".to_string()),

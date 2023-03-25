@@ -1,6 +1,6 @@
-#![allow(clippy::missing_safety_doc)]
+//! The garbage-collected boxes.
 
-pub mod cell;
+mod cell;
 mod gc_box;
 mod heap;
 mod trace;
@@ -19,6 +19,7 @@ pub(crate) use gc_box::GcBox;
 pub(crate) use heap::Heap;
 pub use trace::Trace;
 
+/// A garbage-collected pointer type over an immutable value.
 pub struct Gc<T: Trace + ?Sized> {
     pub(crate) ptr: NonNull<GcBox<T>>,
 }

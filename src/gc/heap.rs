@@ -3,6 +3,7 @@ use std::ptr::NonNull;
 
 use super::{Gc, GcBox, Trace};
 
+// A Heap. All Gc<T> should allocate on a Heap.
 pub(crate) struct Heap(Vec<NonNull<GcBox<dyn Trace>>>);
 
 impl Heap {

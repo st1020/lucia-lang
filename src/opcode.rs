@@ -1,7 +1,8 @@
+//! The OpCodes for LVM.
+
 use std::fmt::{Debug, Display};
 
 /// The jump target.
-/// Note that this is only used during code generation and will not appear in the `Program`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct JumpTarget(pub usize);
 
@@ -88,7 +89,8 @@ pub enum OpCode {
     /// Implements `TOS = TOS1 is TOS`.
     Is,
 
-    ///
+    /// If TOS is iterable or callable, call TOS and get the return value, if the return value if null, jump to target,
+    /// else push the return value onto the stack. Used in `for` statement.
     For(JumpTarget),
     /// Sets the bytecode counter to target.
     Jump(JumpTarget),

@@ -1,3 +1,5 @@
+//! The Lucia Abstract Syntax Tree (AST).
+
 use std::fmt::Display;
 
 use crate::utils::{escape_str, Join, Location};
@@ -556,6 +558,7 @@ pub enum ImportKind {
     Glob,
 }
 
+/// A TableProperty.
 #[derive(Debug, Clone)]
 pub struct TableProperty {
     pub key: Box<Expr>,

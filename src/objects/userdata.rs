@@ -4,6 +4,7 @@ use crate::gc::Trace;
 
 use super::Table;
 
+/// The UserData.
 #[derive(Clone)]
 pub struct UserData {
     pub ptr: *mut u8,

@@ -1,3 +1,7 @@
+//! The Code Generator.
+//!
+//! Trun `Vec<Function>` build by analyzer into `Code`.
+
 use std::cmp::max;
 use std::convert::TryFrom;
 use std::vec;
@@ -31,6 +35,7 @@ impl TryFrom<BinOp> for OpCode {
     }
 }
 
+/// Generate code.
 pub fn gen_code(func_list: Vec<Function>) -> Result<Code> {
     CodeGen { func_list }.gen_code(0)
 }

@@ -18,6 +18,10 @@ pub struct Table {
 }
 
 impl Table {
+    /// Creates an empty Table.
+    ///
+    /// The table is initially created with a capacity of 0,
+    /// so it will not allocate until it is first inserted into.
     #[inline]
     pub fn new() -> Self {
         Table {
@@ -27,6 +31,7 @@ impl Table {
         }
     }
 
+    /// Return an iterator over the key-value pairs of the table, in their order.
     pub fn iter(&self) -> Iter<'_> {
         Iter {
             array: self.array.iter(),
@@ -34,6 +39,7 @@ impl Table {
         }
     }
 
+    /// Return an iterator over the key-value pairs of the table, in their order.
     pub fn iter_mut(&mut self) -> IterMut<'_> {
         IterMut {
             array: self.array.iter_mut(),
@@ -41,42 +47,56 @@ impl Table {
         }
     }
 
+    /// Return an iterator over the keys of the table, in their order.
     pub fn keys(&self) -> Keys<'_> {
         Keys { inner: self.iter() }
     }
 
+    /// Return an owning iterator over the keys of the table, in their order.
     pub fn into_keys(self) -> IntoKeys {
         IntoKeys {
             inner: self.into_iter(),
         }
     }
 
+    /// Return an iterator over the values of the table, in their order.
     pub fn values(&self) -> Values<'_> {
         Values { inner: self.iter() }
     }
 
+    /// Return an iterator over mutable references to the values of the table, in their order.
     pub fn values_mut(&mut self) -> ValuesMut<'_> {
         ValuesMut {
             inner: self.iter_mut(),
         }
     }
 
+    /// Return an owning iterator over the values of the table, in their order.
     pub fn into_values(self) -> IntoValues {
         IntoValues {
             inner: self.into_iter(),
         }
     }
 
+    /// Return the number of key-value pairs in the table.
+    ///
+    /// Computes in **O(1)** time.
     #[inline]
     pub fn len(&self) -> usize {
         self.array.len() + self.mapping.len()
     }
 
+    /// Returns true if the table contains no elements.
+    ///
+    /// Computes in **O(1)** time.
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.array.is_empty() && self.mapping.is_empty()
     }
 
+    /// Remove all key-value pairs in the table, while preserving its capacity.
+    ///
+    /// Computes in **O(n)** time.
     #[inline]
     pub fn clear(&mut self) {
         self.array.clear();
@@ -84,6 +104,11 @@ impl Table {
         self.metatable = Value::Null;
     }
 
+    /// Get a key-value pair by index.
+    ///
+    /// Valid indices are *0 <= index < self.len()*.
+    ///
+    /// Computes in **O(1)** time.
     pub fn get_index(&self, index: usize) -> Option<(&Value, &Value)> {
         if index < self.array.len() {
             self.array.get(index).map(|(k, v)| (k, v))
@@ -92,6 +117,10 @@ impl Table {
         }
     }
 
+    /// Return a reference to the value stored for `key`, if it is present,
+    /// else `None`.
+    ///
+    /// Computes in **O(1)** time (average).
     pub fn get(&self, key: &Value) -> Option<&Value> {
         if let Some(key) = key.as_int() {
             if let Ok(key) = usize::try_from(key) {
@@ -101,6 +130,9 @@ impl Table {
         self.mapping.get(key)
     }
 
+    /// Insert a key-value pair in the table.
+    ///
+    /// Computes in **O(1)** time (amortized average).
     pub fn set(&mut self, key: &Value, value: Value) {
         if let Some(k) = key.as_int() {
             if let Ok(k) = usize::try_from(k) {
@@ -118,6 +150,7 @@ impl Table {
         }
     }
 
+    /// Return the repr string fo the table.
     pub(crate) fn repr_table(&self, t: &Value) -> String {
         format!(
             "{{{}}}",
@@ -520,7 +553,7 @@ impl Extend<(Value, Value)> for Table {
 #[macro_export]
 macro_rules! table {
     () => {
-        $crate::objects::table::Table::new()
+        $crate::objects::Table::new()
     };
     [$($x:expr),* $(,)?] => {{
         let mut temp_vec = Vec::with_capacity(0 $( + {let _ = &$x; 1} )*);
@@ -529,7 +562,7 @@ macro_rules! table {
             count += 1;
             temp_vec.push(($crate::objects::Value::Int(count), $x));
         )*
-        $crate::objects::table::Table {
+        $crate::objects::Table {
             array: temp_vec,
             mapping: indexmap::IndexMap::new(),
             metatable: $crate::objects::Value::Null,
@@ -540,7 +573,7 @@ macro_rules! table {
         $(
             temp_map.insert($k, $v);
         )*
-        $crate::objects::table::Table {
+        $crate::objects::Table {
             array: std::vec::Vec::new(),
             mapping: temp_map,
             metatable: $crate::objects::Value::Null,

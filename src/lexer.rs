@@ -1,3 +1,5 @@
+//! The lexer.
+
 use std::str::Chars;
 
 use unicode_xid;

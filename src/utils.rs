@@ -1,3 +1,5 @@
+//! Utilities for lucia-lang.
+
 use std::fmt::{Debug, Display, Write};
 
 use crate::objects::Value;
@@ -5,8 +7,11 @@ use crate::objects::Value;
 /// Location of token in the code.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Location {
+    /// The lineno.
     pub lineno: u32,
+    /// The column.
     pub column: u32,
+    /// The character offset, counting from 0.
     pub offset: u32,
 }
 
@@ -22,6 +27,20 @@ impl Display for Location {
     }
 }
 
+/// Escape lucia str.
+///
+/// The exact rules are:
+///
+/// * Tab is escaped as `\t`.
+/// * Carriage return is escaped as `\r`.
+/// * Line feed is escaped as `\n`.
+/// * Backslash is escaped as `\\`.
+/// * Single quote is escaped as `\'`.
+/// * Double quote is escaped as `\"`.
+/// * Any character in the 'printable ASCII' range `0x20` .. `0x7e`
+///   inclusive is not escaped.
+/// * If `ascii_only` is true, all other characters are given
+///   hexadecimal Unicode escapes.
 pub fn escape_str(value: &str, ascii_only: bool) -> String {
     let mut ans = String::new();
     for c in value.chars() {

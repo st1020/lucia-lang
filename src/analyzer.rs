@@ -1,3 +1,10 @@
+//! The semantic analyzer.
+//!
+//! Lowers the AST to `Vec<Function>` and add semantic information.
+//!
+//! Functions in the AST will be identified and processed.
+//! The kind of names within the namespace will be determined.
+
 use std::fmt::Display;
 use std::hash::Hash;
 use std::mem;
@@ -8,6 +15,7 @@ use crate::ast::*;
 use crate::code::ConstlValue;
 use crate::opcode::{JumpTarget, OpCode};
 
+/// Global name information.
 #[derive(Debug, Clone)]
 pub struct GlobalNameInfo {
     pub name: String,
@@ -37,6 +45,7 @@ impl From<String> for GlobalNameInfo {
     }
 }
 
+/// Upvalue name information.
 #[derive(Debug, Clone)]
 pub struct UpvalueNameInfo {
     pub name: String,
@@ -74,19 +83,30 @@ impl From<UpvalueNameInfo> for (String, usize, usize) {
     }
 }
 
+/// A Function.
 #[derive(Debug, Clone)]
 pub struct Function {
+    /// Function id.
     pub func_id: usize,
+    /// Kind of Function.
     pub kind: FunctionKind,
+    /// Name of parameters.
     pub params: Vec<String>,
+    /// Name of variadic parameter.
     pub variadic: Option<String>,
+    /// AST of the function.
     pub body: Box<Block>,
+    /// The base function.
     pub base_function: Option<usize>,
 
+    /// Local names.
     pub local_names: IndexSet<String>,
+    /// Global names.
     pub global_names: IndexSet<GlobalNameInfo>,
+    /// Upvalue names.
     pub upvalue_names: IndexSet<UpvalueNameInfo>,
 
+    /// The count of upvalues defined in the funciton.
     pub def_upvalue_count: usize,
 
     // used by codegen
@@ -146,6 +166,7 @@ impl Function {
     }
 }
 
+/// Semantic Analyze. Lowers the AST to `Vec<Function>`.
 pub fn analyze(ast: Box<Block>) -> Vec<Function> {
     let mut func = Function::new(0, FunctionKind::Funciton, Vec::new(), None, ast, None);
     let mut analyzer = SemanticAnalyzer::new(&mut func);

@@ -1,12 +1,19 @@
-pub mod builtin;
-pub mod io;
-pub mod string;
-pub mod table;
+//! The Lucia Standard Library.
+
+mod builtin;
+mod io;
+mod string;
+mod table;
 
 use std::collections::HashMap;
 
 use crate::lvm::Lvm;
 use crate::objects::Value;
+
+pub use builtin::builtin_variables;
+pub use io::lib as io_lib;
+pub use string::lib as string_lib;
+pub use table::lib as table_lib;
 
 #[macro_export]
 macro_rules! check_args {
@@ -129,8 +136,8 @@ pub fn std_libs(lvm: &mut Lvm) -> HashMap<String, Value> {
             std_libs.insert(String::from($name), lvm.new_table_value(t));
         };
     }
-    add_std_module!("std::io", io::libs);
-    add_std_module!("std::string", string::libs);
-    add_std_module!("std::table", table::libs);
+    add_std_module!("std::io", io_lib);
+    add_std_module!("std::string", string_lib);
+    add_std_module!("std::table", table_lib);
     std_libs
 }

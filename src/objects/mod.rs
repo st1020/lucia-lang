@@ -1,7 +1,9 @@
-pub mod closure;
-pub mod ext_closure;
-pub mod table;
-pub mod userdata;
+//! The Lucai Objects.
+
+mod closure;
+mod ext_closure;
+mod table;
+mod userdata;
 
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
@@ -22,21 +24,33 @@ pub use self::userdata::UserData;
 const CANONICAL_NAN_BITS: u64 = 0x7ff8000000000000u64;
 const CANONICAL_ZERO_BITS: u64 = 0x0u64;
 
+/// The ext function type.
 pub type ExtFunction = fn(Vec<Value>, &mut Lvm) -> Result<Value>;
 
 /// Enum of all lucia values.
 #[derive(Clone, Copy)]
 pub enum Value {
+    /// `null` - A null value.
     Null,
+    /// `bool` - A `true` / `false` value.
     Bool(bool),
+    /// `int` - A 64-bit integer.
     Int(i64),
+    /// `float` - A 64-bit floating point number.
     Float(f64),
+    /// `ext_function` - A Rust function pointer.
     ExtFunction(ExtFunction),
+    /// `light_user_data` -  A raw pointer.
     LightUserData(*mut u8),
+    /// `str` - A UTF-8 string.
     Str(Gc<String>),
+    /// `table` - A table.
     Table(Gc<RefCell<Table>>),
+    /// `userdata` - A UserData.
     UserData(Gc<RefCell<UserData>>),
+    /// `closure` - A closure.
     Closure(Gc<RefCell<Closure>>),
+    /// `ext_closure` - A closure defined in Rust.
     ExtClosure(Gc<RefCell<ExtClosure>>),
 }
 
@@ -375,7 +389,7 @@ impl Value {
     }
 }
 
-/// The type of LuciaValue.
+/// The type of Value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValueType {
     Null,
