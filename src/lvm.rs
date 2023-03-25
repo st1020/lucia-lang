@@ -602,6 +602,8 @@ impl Frame {
                     } else if let Some(mut c) = callee.as_ext_closure_mut() {
                         return (c.func)(args, &mut c.upvalues, lvm);
                     } else if let Some(v) = callee.as_closure() {
+                        self.operate_stack = Vec::with_capacity(v.function.stack_size);
+                        self.locals = vec![Value::Null; v.function.local_names.len()];
                         if let Err(e) = self.set_args(lvm, &v, args) {
                             return_error!(e);
                         }
