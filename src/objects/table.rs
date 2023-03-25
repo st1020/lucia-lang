@@ -117,6 +117,19 @@ impl Table {
         }
     }
 
+    /// Get a key-value pair by index.
+    ///
+    /// Valid indices are *0 <= index < self.len()*.
+    ///
+    /// Computes in **O(1)** time.
+    pub fn get_index_mut(&mut self, index: usize) -> Option<(&mut Value, &mut Value)> {
+        if index < self.array.len() {
+            self.array.get_mut(index).map(|(k, v)| (k, v))
+        } else {
+            self.mapping.get_index_mut(index - self.array.len() + 1)
+        }
+    }
+
     /// Return a reference to the value stored for `key`, if it is present,
     /// else `None`.
     ///
@@ -128,6 +141,19 @@ impl Table {
             }
         }
         self.mapping.get(key)
+    }
+
+    /// Return a mutable reference to the value stored for `key`, if it is present,
+    /// else `None`.
+    ///
+    /// Computes in **O(1)** time (average).
+    pub fn get_mut(&mut self, key: &Value) -> Option<&mut Value> {
+        if let Some(key) = key.as_int() {
+            if let Ok(key) = usize::try_from(key) {
+                return self.array.get_mut(key).map(|(_k, v)| v);
+            }
+        }
+        self.mapping.get_mut(key)
     }
 
     /// Insert a key-value pair in the table.
