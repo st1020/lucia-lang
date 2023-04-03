@@ -20,6 +20,8 @@ pub use self::ext_closure::{ExtClosure, ExtClosureFunc};
 pub use self::table::Table;
 pub use self::userdata::UserData;
 
+pub extern crate indexmap;
+
 // canonical raw float bit
 const CANONICAL_NAN_BITS: u64 = 0x7ff8000000000000u64;
 const CANONICAL_ZERO_BITS: u64 = 0x0u64;

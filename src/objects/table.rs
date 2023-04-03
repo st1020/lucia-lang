@@ -31,6 +31,24 @@ impl Table {
         }
     }
 
+    /// Creates a Table from an array.
+    pub fn from_array(array: Vec<(Value, Value)>) -> Self {
+        Table {
+            array,
+            mapping: IndexMap::new(),
+            metatable: Value::Null,
+        }
+    }
+
+    /// Creates a Table from a mapping.
+    pub fn from_mapping(mapping: IndexMap<Value, Value>) -> Self {
+        Table {
+            array: Vec::new(),
+            mapping,
+            metatable: Value::Null,
+        }
+    }
+
     /// Return an iterator over the key-value pairs of the table, in their order.
     pub fn iter(&self) -> Iter<'_> {
         Iter {
@@ -588,21 +606,13 @@ macro_rules! table {
             count += 1;
             temp_vec.push(($crate::objects::Value::Int(count), $x));
         )*
-        $crate::objects::Table {
-            array: temp_vec,
-            mapping: indexmap::IndexMap::new(),
-            metatable: $crate::objects::Value::Null,
-        }
+        $crate::objects::Table::from_array(temp_vec)
     }};
     {$($k:expr => $v:expr),* $(,)?} => {{
-        let mut temp_map = indexmap::IndexMap::with_capacity(0 $( + {let _ = &$k; 1} )*);
+        let mut temp_map = $crate::objects::indexmap::IndexMap::with_capacity(0 $( + {let _ = &$k; 1} )*);
         $(
             temp_map.insert($k, $v);
         )*
-        $crate::objects::Table {
-            array: std::vec::Vec::new(),
-            mapping: temp_map,
-            metatable: $crate::objects::Value::Null,
-        }
+        $crate::objects::Table::from_mapping(temp_map)
     }};
 }
