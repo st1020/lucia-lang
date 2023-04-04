@@ -419,8 +419,8 @@ impl Frame {
                         return Err(stack_error!());
                     }
                 }
-                OpCode::GetAttr => get_table!("__getattr__", code),
-                OpCode::GetItem => get_table!("__getitem__", code),
+                OpCode::GetAttr => get_table!(GETATTR, code),
+                OpCode::GetItem => get_table!(GETITEM, code),
                 OpCode::GetMeta => {
                     let tos = try_stack!(self.operate_stack.pop());
                     if let Some(t) = tos.as_table() {
@@ -429,8 +429,8 @@ impl Frame {
                         return_error!(operator_error!(code, tos));
                     };
                 }
-                OpCode::SetAttr => set_table!("__setattr__", code),
-                OpCode::SetItem => set_table!("__setitem__", code),
+                OpCode::SetAttr => set_table!(SETATTR, code),
+                OpCode::SetItem => set_table!(SETITEM, code),
                 OpCode::SetMeta => {
                     let tos = try_stack!(self.operate_stack.pop());
                     let tos1 = try_stack!(self.operate_stack.pop());
@@ -446,7 +446,7 @@ impl Frame {
                 }
                 OpCode::Neg => {
                     let tos = try_stack!(self.operate_stack.pop());
-                    if let Some(v) = get_metamethod!(lvm, tos, "__neg__") {
+                    if let Some(v) = get_metamethod!(lvm, tos, NEG) {
                         self.operate_stack.push(lvm.call(v, vec![tos])?);
                     } else {
                         self.operate_stack.push(match tos {
@@ -467,7 +467,7 @@ impl Frame {
                 OpCode::Add => {
                     let tos = try_stack!(self.operate_stack.pop());
                     let tos1 = try_stack!(self.operate_stack.pop());
-                    if let Some(v) = get_metamethod!(lvm, tos1, "__add__") {
+                    if let Some(v) = get_metamethod!(lvm, tos1, ADD) {
                         self.operate_stack.push(lvm.call(v, vec![tos1, tos])?);
                     } else if let Some(v1) = tos1.as_str() {
                         if let Some(v2) = tos.as_str() {
@@ -482,16 +482,16 @@ impl Frame {
                         });
                     }
                 }
-                OpCode::Sub => bin_op!(-, "__sub__", code),
-                OpCode::Mul => bin_op!(*, "__mul__", code),
-                OpCode::Div => bin_op!(/, "__div__", code),
-                OpCode::Mod => bin_op!(%, "__mod__", code),
-                OpCode::Eq => eq_ne!(==, "__eq__"),
-                OpCode::Ne => eq_ne!(!=, "__ne__"),
-                OpCode::Gt => compare!(>, "__gt__", code),
-                OpCode::Ge => compare!(>=, "__ge__", code),
-                OpCode::Lt => compare!(<, "__lt__", code),
-                OpCode::Le => compare!(<=, "__le__", code),
+                OpCode::Sub => bin_op!(-, SUB, code),
+                OpCode::Mul => bin_op!(*, MUL, code),
+                OpCode::Div => bin_op!(/, DIV, code),
+                OpCode::Mod => bin_op!(%, MOD, code),
+                OpCode::Eq => eq_ne!(==, EQ),
+                OpCode::Ne => eq_ne!(!=, NE),
+                OpCode::Gt => compare!(>, GT, code),
+                OpCode::Ge => compare!(>=, GE, code),
+                OpCode::Lt => compare!(<, LT, code),
+                OpCode::Le => compare!(<=, LE, code),
                 OpCode::Is => {
                     let tos = try_stack!(self.operate_stack.pop());
                     let tos1 = try_stack!(self.operate_stack.pop());
@@ -499,14 +499,14 @@ impl Frame {
                 }
                 OpCode::For(JumpTarget(i)) => {
                     let mut tos = *try_stack!(self.operate_stack.last());
-                    if let Some(v) = get_metamethod!(lvm, tos, "__iter__") {
+                    if let Some(v) = get_metamethod!(lvm, tos, ITER) {
                         if !v.is(&tos) {
                             let v = lvm.call(v, vec![tos])?;
                             try_stack!(self.operate_stack.pop());
                             self.operate_stack.push(v);
                             tos = v;
                         }
-                    } else if tos.is_table() && get_metamethod!(lvm, tos, "__call__").is_none() {
+                    } else if tos.is_table() && get_metamethod!(lvm, tos, CALL).is_none() {
                         let v = lvm.iter_table(tos);
                         try_stack!(self.operate_stack.pop());
                         self.operate_stack.push(v);
@@ -592,7 +592,7 @@ impl Frame {
                 OpCode::ReturnCall(i) => {
                     let mut args = self.operate_stack.split_off(self.operate_stack.len() - i);
                     let mut callee = try_stack!(self.operate_stack.pop());
-                    if let Some(v) = get_metamethod!(lvm, callee, "__call__") {
+                    if let Some(v) = get_metamethod!(lvm, callee, CALL) {
                         args.insert(0, callee);
                         callee = v;
                     }
@@ -722,7 +722,7 @@ impl Lvm {
             };
         }
 
-        if let Some(v) = get_metamethod!(self, callee, "__call__") {
+        if let Some(v) = get_metamethod!(self, callee, CALL) {
             args.insert(0, callee);
             callee = v;
         }

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::errors::{Error, RuntimeError, RuntimeErrorKind};
-use crate::objects::{Value, ValueType};
+use crate::objects::{Value, ValueType, BOOL, FLOAT, INT, LEN, REPR, STR};
 use crate::{check_args, get_metamethod, return_error, unexpect_type_error};
 
 pub fn builtin_variables() -> HashMap<String, Value> {
@@ -61,7 +61,7 @@ pub fn builtin_variables() -> HashMap<String, Value> {
         "len".to_string(),
         Value::ExtFunction(|args, lvm| {
             let (value,) = check_args!(lvm, args, Value);
-            if let Some(v) = get_metamethod!(lvm, value, "__len__") {
+            if let Some(v) = get_metamethod!(lvm, value, LEN) {
                 lvm.call(v, vec![value])
             } else if let Some(v) = value.as_str() {
                 Ok(Value::Int(v.len().try_into().unwrap()))
@@ -82,7 +82,7 @@ pub fn builtin_variables() -> HashMap<String, Value> {
         "bool".to_string(),
         Value::ExtFunction(|args, lvm| {
             let (value,) = check_args!(lvm, args, Value);
-            if let Some(v) = get_metamethod!(lvm, value, "__bool__") {
+            if let Some(v) = get_metamethod!(lvm, value, BOOL) {
                 lvm.call(v, vec![value])
             } else {
                 Ok(Value::Bool(value.into()))
@@ -93,7 +93,7 @@ pub fn builtin_variables() -> HashMap<String, Value> {
         "int".to_string(),
         Value::ExtFunction(|args, lvm| {
             let (value,) = check_args!(lvm, args, Value);
-            if let Some(v) = get_metamethod!(lvm, value, "__int__") {
+            if let Some(v) = get_metamethod!(lvm, value, INT) {
                 lvm.call(v, vec![value])
             } else {
                 Ok(match value.try_into() {
@@ -107,7 +107,7 @@ pub fn builtin_variables() -> HashMap<String, Value> {
         "float".to_string(),
         Value::ExtFunction(|args, lvm| {
             let (value,) = check_args!(lvm, args, Value);
-            if let Some(v) = get_metamethod!(lvm, value, "__float__") {
+            if let Some(v) = get_metamethod!(lvm, value, FLOAT) {
                 lvm.call(v, vec![value])
             } else {
                 Ok(match value.try_into() {
@@ -121,7 +121,7 @@ pub fn builtin_variables() -> HashMap<String, Value> {
         "str".to_string(),
         Value::ExtFunction(|args, lvm| {
             let (value,) = check_args!(lvm, args, Value);
-            if let Some(v) = get_metamethod!(lvm, value, "__str__") {
+            if let Some(v) = get_metamethod!(lvm, value, STR) {
                 lvm.call(v, vec![value])
             } else {
                 Ok(lvm.new_str_value(value.into()))
@@ -132,7 +132,7 @@ pub fn builtin_variables() -> HashMap<String, Value> {
         "repr".to_string(),
         Value::ExtFunction(|args, lvm| {
             let (value,) = check_args!(lvm, args, Value);
-            if let Some(v) = get_metamethod!(lvm, value, "__repr__") {
+            if let Some(v) = get_metamethod!(lvm, value, REPR) {
                 lvm.call(v, vec![value])
             } else {
                 Ok(lvm.new_str_value(value.repr()))

@@ -26,6 +26,32 @@ pub extern crate indexmap;
 const CANONICAL_NAN_BITS: u64 = 0x7ff8000000000000u64;
 const CANONICAL_ZERO_BITS: u64 = 0x0u64;
 
+// metamethod
+pub const GETATTR: &str = "__getattr__";
+pub const GETITEM: &str = "__getitem__";
+pub const SETATTR: &str = "__setattr__";
+pub const SETITEM: &str = "__setitem__";
+pub const NEG: &str = "__neg__";
+pub const ADD: &str = "__add__";
+pub const SUB: &str = "__sub__";
+pub const MUL: &str = "__mul__";
+pub const DIV: &str = "__div__";
+pub const MOD: &str = "__mod__";
+pub const EQ: &str = "__eq__";
+pub const NE: &str = "__ne__";
+pub const GT: &str = "__gt__";
+pub const GE: &str = "__ge__";
+pub const LT: &str = "__lt__";
+pub const LE: &str = "__le__";
+pub const ITER: &str = "__iter__";
+pub const CALL: &str = "__call__";
+pub const LEN: &str = "__len__";
+pub const REPR: &str = "__repr__";
+pub const BOOL: &str = "__bool__";
+pub const INT: &str = "__int__";
+pub const FLOAT: &str = "__float__";
+pub const STR: &str = "__str__";
+
 /// The ext function type.
 pub type ExtFunction = fn(Vec<Value>, &mut Lvm) -> Result<Value>;
 

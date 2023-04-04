@@ -2,13 +2,13 @@ use std::str::{Chars, Lines};
 
 use crate::check_args;
 use crate::lvm::Lvm;
-use crate::objects::{Table, Value};
+use crate::objects::{Table, Value, CALL};
 
 macro_rules! iter_to_value {
     ($lvm:expr, $marker_value:expr, $iter:expr, $ty:ty) => {{
         let mut userdata_table = $crate::table![$marker_value];
         userdata_table.set(
-            &$lvm.get_builtin_str("__call__"),
+            &$lvm.get_builtin_str(CALL),
             $crate::objects::Value::ExtFunction(|mut args, lvm| {
                 let (t,) = $crate::check_args!(lvm, args, mut UserData);
                 let iter = unsafe { (t.ptr as *mut $ty).as_mut().unwrap() };
