@@ -38,6 +38,12 @@ impl Heap {
     }
 }
 
+impl Drop for Heap {
+    fn drop(&mut self) {
+        unsafe { self.sweep() }
+    }
+}
+
 impl Default for Heap {
     fn default() -> Self {
         Self::new()
