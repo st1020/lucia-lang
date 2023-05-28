@@ -459,7 +459,7 @@ impl Frame {
                 OpCode::Not => {
                     let tos = try_stack!(self.operate_stack.pop());
                     if let Some(v) = tos.as_bool() {
-                        self.operate_stack.push(Value::Bool(v));
+                        self.operate_stack.push(Value::Bool(!v));
                     } else {
                         return_error!(operator_error!(code, tos));
                     }
