@@ -191,7 +191,10 @@ impl Cursor<'_> {
             '/' => match self.first() {
                 '/' => self.line_comment(),
                 '*' => self.block_comment(),
-                '=' => DivAssign,
+                '=' => {
+                    self.bump();
+                    DivAssign
+                }
                 _ => Div,
             },
 
