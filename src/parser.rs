@@ -130,6 +130,9 @@ impl<'a> Parser<'a> {
                 let mut temp = Vec::new();
                 while !self.is_eof {
                     temp.push(self.parse_stmt()?);
+                    if self.is_eof {
+                        break;
+                    }
                     self.expect(&TokenKind::EOL)?;
                     self.eat_eol();
                 }
