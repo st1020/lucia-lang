@@ -45,13 +45,10 @@ pub fn builtin_variables() -> HashMap<String, Value> {
         Value::ExtFunction(|args, lvm| {
             let (v, msg) = check_args!(lvm, args, Value | Value);
             if v.is_error() || !(bool::from(v)) {
-                let mut msg = if let Some(msg) = msg {
-                    msg
-                } else {
-                    lvm.new_str_value("assertion_error".to_string())
-                };
-                msg.set_error();
-                Ok(msg)
+                Err(Error::RuntimeError(RuntimeError {
+                    kind: RuntimeErrorKind::AssertError(msg.unwrap_or(Value::Null)),
+                    traceback: lvm.traceback(),
+                }))
             } else {
                 Ok(v)
             }

@@ -140,6 +140,8 @@ pub enum RuntimeErrorKind {
     ThrowError(Value),
     #[error("user panic: {0}")]
     UserPanic(Value),
+    #[error("assert error: {0}")]
+    AssertError(Value),
 }
 
 /// Kind of ProgramError.
