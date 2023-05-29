@@ -21,6 +21,13 @@ impl<T: Trace> GcBox<T> {
     }
 }
 
+impl<T: Trace + ?Sized> GcBox<T> {
+    #[inline]
+    pub(crate) unsafe fn unmark(&self) {
+        self.marked.set(false);
+    }
+}
+
 unsafe impl<T: Trace + ?Sized> Trace for GcBox<T> {
     #[inline]
     unsafe fn trace(&self) {

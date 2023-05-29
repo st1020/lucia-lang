@@ -865,6 +865,7 @@ impl Lvm {
     /// can be traced by the root on stack frame.
     pub unsafe fn gc(&mut self) {
         self.gc_status = false;
+        self.heap.unmark();
         // mark
         if let Some(frame) = self.current_frame {
             let mut frame = frame.as_ref();
@@ -894,6 +895,11 @@ impl Lvm {
         // sweep
         self.heap.sweep();
         self.last_heap_len = self.heap.len();
+    }
+
+    /// Get the size of Heap.
+    pub fn get_heap_size(&self) -> usize {
+        self.heap.len()
     }
 }
 

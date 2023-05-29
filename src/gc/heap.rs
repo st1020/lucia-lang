@@ -20,6 +20,13 @@ impl Heap {
     }
 
     #[inline]
+    pub(crate) unsafe fn unmark(&mut self) {
+        for ptr in &self.0 {
+            ptr.as_ref().unmark()
+        }
+    }
+
+    #[inline]
     pub(crate) unsafe fn sweep(&mut self) {
         let mut new_heap = Vec::new();
         for ptr in &self.0 {
