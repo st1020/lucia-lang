@@ -1,6 +1,6 @@
 //! Lucia Language Compiler and VM.
 //!
-//! ```
+//! ```txt
 //!        +-------+             +--------+          +----------+
 //! str -> | lexer | - Tokens -> | parser | - AST -> | analyzer |
 //!        +-------+             +--------+          +----------+
