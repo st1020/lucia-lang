@@ -131,7 +131,7 @@ impl Table {
         if index < self.array.len() {
             self.array.get(index).map(|(k, v)| (k, v))
         } else {
-            self.mapping.get_index(index - self.array.len() + 1)
+            self.mapping.get_index(index - self.array.len())
         }
     }
 
@@ -144,7 +144,7 @@ impl Table {
         if index < self.array.len() {
             self.array.get_mut(index).map(|(k, v)| (k, v))
         } else {
-            self.mapping.get_index_mut(index - self.array.len() + 1)
+            self.mapping.get_index_mut(index - self.array.len())
         }
     }
 
