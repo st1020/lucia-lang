@@ -1,6 +1,589 @@
 use lucia_lang::*;
 use std::time::Instant;
 
+macro_rules! run {
+    ($lvm:expr, $input:expr $(,)?) => {
+        $lvm.run(code::Code::try_from($input).unwrap()).unwrap()
+    };
+}
+
+macro_rules! run_expect_error {
+    ($lvm:expr, $input:expr $(,)?) => {
+        $lvm.run(code::Code::try_from($input).unwrap()).unwrap_err()
+    };
+}
+
+macro_rules! run_to_str {
+    ($lvm:expr, $input:expr $(,)?) => {
+        run!($lvm, $input).as_str().unwrap()
+    };
+}
+
+macro_rules! run_to_bool {
+    ($lvm:expr, $input:expr $(,)?) => {
+        run!($lvm, $input).as_bool().unwrap()
+    };
+}
+
+macro_rules! run_to_int {
+    ($lvm:expr, $input:expr $(,)?) => {
+        run!($lvm, $input).as_int().unwrap()
+    };
+}
+
+macro_rules! run_to_float {
+    ($lvm:expr, $input:expr $(,)?) => {
+        run!($lvm, $input).as_float().unwrap()
+    };
+}
+
+#[test]
+fn test_return() {
+    let mut lvm = lvm::Lvm::new();
+    assert_eq!(run_to_int!(&mut lvm, r#"return 0"#), 0);
+}
+
+#[test]
+fn test_string_escape() {
+    let mut lvm = lvm::Lvm::new();
+    assert_eq!(run_to_str!(&mut lvm, r#"return "\""  "#), "\"");
+    assert_eq!(run_to_str!(&mut lvm, r#"return "\n"  "#), "\n");
+    assert_eq!(run_to_str!(&mut lvm, r#"return "\r"  "#), "\r");
+    assert_eq!(run_to_str!(&mut lvm, r#"return "\t"  "#), "\t");
+    assert_eq!(run_to_str!(&mut lvm, r#"return "\\"  "#), "\\");
+    assert_eq!(run_to_str!(&mut lvm, r#"return "\'"  "#), "\'");
+    assert_eq!(run_to_str!(&mut lvm, r#"return "\0"  "#), "\0");
+    assert_eq!(run_to_str!(&mut lvm, r#"return "\x21"  "#), "!"); // ASCII 0x21 is "!"
+    assert_eq!(
+        run_to_str!(&mut lvm, r#"return "\u{4F60}\u{597D}\u{2764}"  "#),
+        "你好❤"
+    );
+}
+
+#[test]
+fn test_number_int() {
+    let mut lvm = lvm::Lvm::new();
+    assert_eq!(run_to_int!(&mut lvm, r#"return 0"#), 0);
+    assert_eq!(run_to_int!(&mut lvm, r#"return 1"#), 1);
+    assert_eq!(run_to_int!(&mut lvm, r#"return -1"#), -1);
+    assert_eq!(run_to_int!(&mut lvm, r#"return 100_000_000"#), 100_000_000);
+    assert_eq!(run_to_int!(&mut lvm, r#"return 0b1010"#), 10);
+    assert_eq!(run_to_int!(&mut lvm, r#"return 0o1010"#), 520);
+    assert_eq!(run_to_int!(&mut lvm, r#"return 0xABCD"#), 43981);
+}
+
+#[test]
+fn test_number_float() {
+    let mut lvm = lvm::Lvm::new();
+    assert_eq!(run_to_float!(&mut lvm, r#"return 0.0"#), 0.);
+    assert_eq!(run_to_float!(&mut lvm, r#"return 1.0"#), 1.);
+    assert_eq!(run_to_float!(&mut lvm, r#"return -1.0"#), -1.);
+    assert_eq!(run_to_float!(&mut lvm, r#"return 1.0001"#), 1.0001);
+    assert_eq!(run_to_float!(&mut lvm, r#"return 1.2e2"#), 120.);
+    assert_eq!(run_to_float!(&mut lvm, r#"return 1.2E2"#), 120.);
+    assert_eq!(run_to_float!(&mut lvm, r#"return 12e1"#), 120.);
+}
+
+#[test]
+fn test_arithmetic_expr_int() {
+    let mut lvm = lvm::Lvm::new();
+    assert_eq!(run_to_int!(&mut lvm, r#"return 1 + 1"#), 2);
+    assert_eq!(run_to_int!(&mut lvm, r#"return 1 - 1"#), 0);
+    assert_eq!(run_to_int!(&mut lvm, r#"return 2 * 3"#), 6);
+    assert_eq!(run_to_int!(&mut lvm, r#"return 6 / 2"#), 3);
+    assert_eq!(run_to_int!(&mut lvm, r#"return 5 / 2"#), 2);
+    assert_eq!(run_to_int!(&mut lvm, r#"return 5 % 2"#), 1);
+}
+
+#[test]
+fn test_arithmetic_expr_float() {
+    let mut lvm = lvm::Lvm::new();
+    assert_eq!(run_to_float!(&mut lvm, r#"return 1.0 + 1.0"#), 2.);
+    assert_eq!(run_to_float!(&mut lvm, r#"return 1.0 - 1.0"#), 0.);
+    assert_eq!(run_to_float!(&mut lvm, r#"return 2.0 * 3.0"#), 6.);
+    assert_eq!(run_to_float!(&mut lvm, r#"return 6.0 / 2.0"#), 3.);
+    assert_eq!(run_to_float!(&mut lvm, r#"return 5.0 / 2.0"#), 2.5);
+    assert_eq!(run_to_float!(&mut lvm, r#"return 5.0 % 2.0"#), 1.);
+}
+
+#[test]
+fn test_complex_arithmetic_expr() {
+    let mut lvm = lvm::Lvm::new();
+    assert_eq!(run_to_int!(&mut lvm, r#"return 1 + 1 * 2"#), 3);
+    assert_eq!(run_to_int!(&mut lvm, r#"return (1 + 1) * 2"#), 4);
+    assert_eq!(run_to_int!(&mut lvm, r#"return (1 + 1) * 2 + 1 * 2"#), 6);
+    assert_eq!(run_to_int!(&mut lvm, r#"return ((1 + 1) * 2 + 1) * 2"#), 10);
+}
+
+#[test]
+fn test_logic_operation() {
+    let mut lvm = lvm::Lvm::new();
+    assert!(run_to_bool!(&mut lvm, r#"return true"#));
+    assert!(!run_to_bool!(&mut lvm, r#"return false"#));
+    assert!(!run_to_bool!(&mut lvm, r#"return true and false"#));
+    assert!(run_to_bool!(&mut lvm, r#"return true or false"#));
+    assert!(!run_to_bool!(&mut lvm, r#"return not true"#));
+    assert!(run_to_bool!(&mut lvm, r#"return true and false or true"#));
+    assert!(run_to_bool!(
+        &mut lvm,
+        r#"return true or true and not true"#
+    ));
+}
+
+#[test]
+fn test_compare_operation() {
+    let mut lvm = lvm::Lvm::new();
+    assert!(run_to_bool!(&mut lvm, r#"return 1 == 1"#));
+    assert!(run_to_bool!(&mut lvm, r#"return 1 != 2"#));
+    assert!(run_to_bool!(&mut lvm, r#"return 1 < 2"#));
+    assert!(run_to_bool!(&mut lvm, r#"return 2 > 1"#));
+    assert!(run_to_bool!(&mut lvm, r#"return 1 >= 1"#));
+    assert!(run_to_bool!(&mut lvm, r#"return 2 >= 1"#));
+    assert!(run_to_bool!(&mut lvm, r#"return 1 <= 1"#));
+    assert!(run_to_bool!(&mut lvm, r#"return 1 <= 2"#));
+}
+
+#[test]
+fn test_import_and_print() {
+    let mut lvm = lvm::Lvm::new();
+    run!(
+        &mut lvm,
+        r#"
+import std::io::{println}
+println("Hello World!")
+"#,
+    );
+}
+
+#[test]
+fn test_comment() {
+    let mut lvm = lvm::Lvm::new();
+    run!(
+        &mut lvm,
+        r#"
+import std::io::{println}
+println("01")
+// println("02")
+/*
+println("03")
+println("04")
+*/
+"#,
+    );
+}
+
+#[test]
+fn test_assert() {
+    let mut lvm = lvm::Lvm::new();
+    run!(&mut lvm, r#"assert(1 == 1)"#);
+    run_expect_error!(&mut lvm, r#"assert(1 != 1)"#);
+}
+
+#[test]
+fn test_assign() {
+    let mut lvm = lvm::Lvm::new();
+    run!(
+        &mut lvm,
+        r#"
+a = 1
+assert(a == 1)
+"#,
+    );
+    run!(
+        &mut lvm,
+        r#"
+a = 1
+a = 2
+assert(a == 2)
+"#,
+    );
+    run!(
+        &mut lvm,
+        r#"
+a = 1
+a = "1"
+assert(a == "1")
+"#,
+    );
+    run!(
+        &mut lvm,
+        r#"
+a = 1
+a += 1
+assert(a == 2)
+"#,
+    );
+    run!(
+        &mut lvm,
+        r#"
+a = 1
+a -= 1
+assert(a == 0)
+"#,
+    );
+    run!(
+        &mut lvm,
+        r#"
+a = 2
+a *= 3
+assert(a == 6)
+"#,
+    );
+    run!(
+        &mut lvm,
+        r#"
+a = 6
+a /= 2
+assert(a == 3)
+"#,
+    );
+    run!(
+        &mut lvm,
+        r#"
+a = 5
+a %= 2
+assert(a == 1)
+"#,
+    );
+}
+
+#[test]
+fn test_if_stmt() {
+    let mut lvm = lvm::Lvm::new();
+    run!(
+        &mut lvm,
+        r#"
+if 1 == 1 {
+    assert(true)
+} else {
+    assert(false)  // never reach
+}
+"#,
+    );
+    run!(
+        &mut lvm,
+        r#"
+if 1 != 1 {
+    assert(false)  // never reach
+} else {
+    assert(true)
+}
+"#,
+    );
+    run!(
+        &mut lvm,
+        r#"
+a = 1
+if a == 1 {
+    b = 1
+} else if a == 2 {
+    b = 2
+} else {
+    b = 3
+}
+assert(b == 1)
+"#,
+    );
+    run!(
+        &mut lvm,
+        r#"
+a = 2
+if a == 1 {
+    b = 1
+} else if a == 2 {
+    b = 2
+} else {
+    b = 3
+}
+assert(b == 2)
+"#,
+    );
+    run!(
+        &mut lvm,
+        r#"
+a = 3
+if a == 1 {
+    b = 1
+} else if a == 2 {
+    b = 2
+} else {
+    b = 3
+}
+assert(b == 3)
+"#,
+    );
+}
+
+#[test]
+fn test_while_stmt() {
+    let mut lvm = lvm::Lvm::new();
+    run!(
+        &mut lvm,
+        r#"
+a = 0
+while a < 10 {
+    a += 1
+}
+assert(a == 10)
+"#,
+    );
+    run!(
+        &mut lvm,
+        r#"
+a = 0
+while a < 10 {
+    a += 1
+    if a == 5 {
+        break
+    }
+}
+assert(a == 5)
+"#,
+    );
+    run!(
+        &mut lvm,
+        r#"
+a = 0
+b = 0
+while a < 10 {
+    a += 1
+    if a == 10 {
+        continue
+    }
+    b += 1
+}
+assert(b == 9)
+"#,
+    );
+}
+
+#[test]
+fn test_fn_call() {
+    let mut lvm = lvm::Lvm::new();
+    run!(
+        &mut lvm,
+        r#"
+fn add(a, b) {
+    return a + b
+}
+assert(add(1, 2) == 3)
+"#,
+    );
+    run!(
+        &mut lvm,
+        r#"
+add = fn(a, b) {
+    return a + b
+}
+assert(add(1, 2) == 3)
+"#,
+    );
+    run!(
+        &mut lvm,
+        r#"
+global gcd
+fn gcd(x, y) {
+    if y == 0 {
+        return x
+    } else {
+        return gcd(y, x % y)
+    }
+}
+assert(gcd(54, 24) == 6)
+"#,
+    );
+}
+
+#[test]
+fn test_table_expr() {
+    let mut lvm = lvm::Lvm::new();
+    run!(
+        &mut lvm,
+        r#"
+a = {
+    "a": 1,
+    "b": 2,
+}
+assert(a["a"] == 1)
+assert(a.a == 1)
+assert(a::a == 1)
+"#,
+    );
+    run!(
+        &mut lvm,
+        r#"
+a = {
+    "a": 1,
+    "get_a": fn (self) {
+        return self.a
+    }
+}
+other_a = {"a": 2}
+assert(a.get_a() == 1)
+assert(a::get_a(other_a) == 2)
+"#,
+    );
+}
+
+#[test]
+fn test_variadic_fn() {
+    let mut lvm = lvm::Lvm::new();
+    run!(
+        &mut lvm,
+        r#"
+fn f(a, *b) {
+    assert(a == 1)
+    assert(b == [2, 3])
+}
+f(1, 2, 3)
+"#,
+    );
+}
+
+#[test]
+fn test_type_convert_bool() {
+    let mut lvm = lvm::Lvm::new();
+    run!(
+        &mut lvm,
+        r#"
+assert(bool(null) == false)
+assert(bool(0) == false)
+assert(bool(1) == true)
+assert(bool(0.0) == false)
+assert(bool("") == true)
+assert(bool({}) == true)
+"#,
+    );
+    run!(
+        &mut lvm,
+        r#"
+assert(int(null) == 0)
+assert(int(true) == 1)
+assert(int(flase) == 0)
+assert(int(0.0) == 0)
+assert(int(0.5) == 0)
+assert(int(0.9) == 0)
+assert(int(1.0) == 1)
+assert(int(1.5) == 1)
+assert(int("1") == 1)
+assert(int("123") == 123)
+"#,
+    );
+    run!(
+        &mut lvm,
+        r#"
+assert(float(null) == 0.0)
+assert(float(true) == 1.0)
+assert(float(flase) == 0.0)
+assert(float(0) == 0.0)
+assert(float(1) == 1.0)
+assert(float("1.0") == 1.0)
+assert(float("1.23") == 1.23)
+"#,
+    );
+    run!(
+        &mut lvm,
+        r#"
+assert(str(null) == "null")
+assert(str(true) == "true")
+assert(str(false) == "false")
+assert(str(123) == "123")
+assert(str(0.123) == "0.123")
+"#,
+    );
+}
+
+#[test]
+fn test_for_table() {
+    let mut lvm = lvm::Lvm::new();
+    run!(
+        &mut lvm,
+        r#"
+import std::table::{keys, values}
+t = {1: 123, 2: 456}
+flag = 0
+for k in keys(t) {
+    if flag == 0 {
+        assert(k == 1)
+    } else if flag == 1 {
+        assert(k == 2)
+    } else {
+        assert(false)
+    }
+    flag += 1
+}
+flag = 0
+for v in values(t) {
+    if flag == 0 {
+        assert(v == 123)
+    } else if flag == 1 {
+        assert(v == 456)
+    } else {
+        assert(false)
+    }
+    flag += 1
+}
+flag = 0
+for k, v in t {
+    if flag == 0 {
+        assert(k == 1)
+        assert(v == 123)
+    } else if flag == 1 {
+        assert(k == 2)
+        assert(v == 456)
+    } else {
+        assert(false)
+    }
+    flag += 1
+}
+"#,
+    );
+}
+
+#[test]
+fn test_for() {
+    let mut lvm = lvm::Lvm::new();
+    run!(
+        &mut lvm,
+        r#"
+import std::io::{println}
+fn a() {
+    t = 0
+    return || {
+        t += 1
+        if t > 10 {
+            return null
+        }
+        return t * 2
+    }
+}
+l = {}
+for i in a() {
+    l[i] = i
+}
+assert(l, {2: 2, 4: 4, 6: 6, 8: 8, 10: 10, 12: 12, 14: 14, 16: 16, 18: 18, 20: 20})
+println(repr(l))
+"#,
+    );
+}
+
+#[test]
+fn test_do() -> errors::Result<()> {
+    let input = "
+    import std::io::{println}
+    l = do {
+        a = 1
+        b = 2
+    }
+    println(repr(l))
+    ";
+    let start = Instant::now();
+    lvm::Lvm::new().run(code::Code::try_from(input)?)?;
+    let duration = start.elapsed();
+    println!("Time: {:?}", duration);
+    Ok(())
+}
+
 #[test]
 fn temp() -> errors::Result<()> {
     let input = "
@@ -42,44 +625,6 @@ fn tail_call() -> errors::Result<()> {
         return f(n - 1, n + total)
     }
     return f(1_000_000, 1)
-    ";
-    lvm::Lvm::new().run(code::Code::try_from(input)?)?;
-    Ok(())
-}
-
-#[test]
-fn variadic() -> errors::Result<()> {
-    let input = "
-    import std::io::{println}
-    fn test(a, *b) {
-        println(a)
-        println(repr(b))
-    }
-    test(1, 2, 3)
-    ";
-    lvm::Lvm::new().run(code::Code::try_from(input)?)?;
-    Ok(())
-}
-
-#[test]
-fn import() -> errors::Result<()> {
-    let input = "
-    import std::io::{input, println}
-    println(bool(int(input())))
-    ";
-    lvm::Lvm::new().run(code::Code::try_from(input)?)?;
-    Ok(())
-}
-
-#[test]
-fn for_table() -> errors::Result<()> {
-    let input = "
-    import std::io::{println}
-    import std::table::{keys}
-    t = {1: 0, 2: 0}
-    for i in keys(t) {
-        println(i)
-    }
     ";
     lvm::Lvm::new().run(code::Code::try_from(input)?)?;
     Ok(())
@@ -132,50 +677,5 @@ fn gcd_pref() -> errors::Result<()> {
     }
     let duration = start.elapsed();
     println!("Time: {:?}", duration / 100);
-    Ok(())
-}
-
-#[test]
-fn for_test() -> errors::Result<()> {
-    let input = "
-    import std::io::{println}
-    fn a() {
-        t = 0
-        return || {
-            t += 1
-            if t > 10 {
-                return null
-            }
-            return t * 2
-        }
-    }
-    l = {}
-    for i in a() {
-        l[i] = i
-    }
-    println(repr(l))
-    return l
-    ";
-    let start = Instant::now();
-    lvm::Lvm::new().run(code::Code::try_from(input)?)?;
-    let duration = start.elapsed();
-    println!("Time: {:?}", duration);
-    Ok(())
-}
-
-#[test]
-fn do_test() -> errors::Result<()> {
-    let input = "
-    import std::io::{println}
-    l = do {
-        a = 1
-        b = 2
-    }
-    println(repr(l))
-    ";
-    let start = Instant::now();
-    lvm::Lvm::new().run(code::Code::try_from(input)?)?;
-    let duration = start.elapsed();
-    println!("Time: {:?}", duration);
     Ok(())
 }
