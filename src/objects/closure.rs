@@ -1,65 +1,44 @@
-use std::fmt::{Debug, Display};
+use std::hash::{Hash, Hasher};
 
-use crate::code::{Code, FunctionKind};
-use crate::gc::{Gc, RefCell, Trace};
-use crate::utils::ValueVecDebug;
+use gc_arena::{lock::Lock, Collect, Gc, Mutation};
 
-use super::Value;
+use crate::{compiler::code::Code, objects::Value};
 
-/// The closure object. Any function is a closure.
-#[derive(Clone)]
-pub struct Closure {
+#[derive(Debug, Clone, Copy, Collect)]
+#[collect(no_drop)]
+pub struct Closure<'gc>(pub Gc<'gc, ClosureState<'gc>>);
+
+impl<'gc> PartialEq for Closure<'gc> {
+    fn eq(&self, other: &Closure<'gc>) -> bool {
+        Gc::ptr_eq(self.0, other.0)
+    }
+}
+
+impl<'gc> Eq for Closure<'gc> {}
+
+impl<'gc> Hash for Closure<'gc> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        Gc::as_ptr(self.0).hash(state)
+    }
+}
+
+impl<'gc> Closure<'gc> {
+    pub fn new(mc: &Mutation<'gc>, function: Code, base_closure: Option<Closure<'gc>>) -> Self {
+        Closure(Gc::new(
+            mc,
+            ClosureState {
+                upvalues: vec![Gc::new(mc, Lock::new(Value::Null)); function.def_upvalue_count],
+                function,
+                base_closure,
+            },
+        ))
+    }
+}
+
+#[derive(Debug, Collect)]
+#[collect(no_drop)]
+pub struct ClosureState<'gc> {
     pub function: Code,
-    pub base_closure: Option<Gc<RefCell<Closure>>>,
-    pub upvalues: Vec<Value>,
-}
-
-unsafe impl Trace for Closure {
-    #[inline]
-    unsafe fn trace(&self) {
-        for i in &self.upvalues {
-            i.trace();
-        }
-    }
-}
-
-impl Debug for Closure {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Closure")
-            .field("function", &self.function)
-            .field(
-                "base_closure",
-                &self.base_closure.as_ref().map(|v| v.borrow()),
-            )
-            .field("variables", &ValueVecDebug(&self.upvalues))
-            .finish()
-    }
-}
-
-impl PartialEq for Closure {
-    fn eq(&self, _: &Self) -> bool {
-        false
-    }
-}
-
-impl Eq for Closure {}
-
-impl Display for Closure {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.function.kind {
-            FunctionKind::Funciton => write!(f, "<function>"),
-            FunctionKind::Closure => write!(f, "<function(closure)>"),
-            FunctionKind::Do => write!(f, "<function(do)>"),
-        }
-    }
-}
-
-impl Closure {
-    pub fn new(function: Code, base_closure: Option<Gc<RefCell<Closure>>>) -> Self {
-        Closure {
-            base_closure,
-            upvalues: vec![Value::Null; function.def_upvalue_count],
-            function,
-        }
-    }
+    pub base_closure: Option<Closure<'gc>>,
+    pub upvalues: Vec<Gc<'gc, Lock<Value<'gc>>>>,
 }

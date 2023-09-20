@@ -2,8 +2,6 @@
 
 use std::fmt::{Debug, Display, Write};
 
-use crate::objects::Value;
-
 /// Location of token in the code.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Location {
@@ -78,25 +76,3 @@ pub(crate) trait Join<Item: Display>: Iterator<Item = Item> {
 }
 
 impl<T: ?Sized, Item: Display> Join<Item> for T where T: Iterator<Item = Item> {}
-
-/// A wrap of `&Value`, which `fmt::Debug` is same as `fmt::Display`.
-#[derive(Clone)]
-pub(crate) struct ValueDebug<'a>(pub &'a Value);
-
-impl Debug for ValueDebug<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-/// A wrap of `&Vec<Value>`, avoid `fmt::Debug` infinite recursion when circular references occur.
-#[derive(Clone)]
-pub(crate) struct ValueVecDebug<'a>(pub &'a Vec<Value>);
-
-impl Debug for ValueVecDebug<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_list()
-            .entries(self.0.iter().map(ValueDebug))
-            .finish()
-    }
-}

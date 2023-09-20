@@ -1,22 +1,25 @@
 //! The Code Generator.
 //!
-//! Trun `Vec<Function>` build by analyzer into `Code`.
+//! Turn `Vec<Function>` build by analyzer into `Code`.
 
-use std::cmp::max;
-use std::convert::TryFrom;
-use std::vec;
+use std::{convert::TryFrom, vec};
 
-use crate::analyzer::{Function, GlobalNameInfo, UpvalueNameInfo};
-use crate::ast::*;
-use crate::code::{Code, ConstlValue, FunctionKind};
-use crate::errors::{Error, Result, SyntaxError};
-use crate::opcode::{JumpTarget, OpCode};
+use thiserror::Error;
+
 use crate::utils::Join;
 
-impl TryFrom<BinOp> for OpCode {
-    type Error = Error;
+use super::{
+    analyzer::{Function, GlobalNameInfo, UpvalueNameInfo},
+    ast::*,
+    code::{Code, ConstValue, FunctionKind},
+    opcode::{JumpTarget, OpCode},
+    parser::ParserError,
+};
 
-    fn try_from(value: BinOp) -> Result<Self> {
+impl TryFrom<BinOp> for OpCode {
+    type Error = SyntaxError;
+
+    fn try_from(value: BinOp) -> Result<Self, Self::Error> {
         Ok(match value {
             BinOp::Add => OpCode::Add,
             BinOp::Sub => OpCode::Sub,
@@ -30,13 +33,13 @@ impl TryFrom<BinOp> for OpCode {
             BinOp::Ge => OpCode::Ge,
             BinOp::Gt => OpCode::Gt,
             BinOp::Is => OpCode::Is,
-            _ => return Err(SyntaxError::IllegalAst.into()),
+            _ => return Err(SyntaxError::IllegalAst),
         })
     }
 }
 
 /// Generate code.
-pub fn gen_code(func_list: Vec<Function>) -> Result<Code> {
+pub fn gen_code(func_list: Vec<Function>) -> Result<Code, SyntaxError> {
     CodeGen { func_list }.gen_code(0)
 }
 
@@ -50,7 +53,7 @@ impl CodeGen {
         JumpTarget(self.func_list[func_id].jump_target_count - 1)
     }
 
-    fn add_const(&mut self, func_id: usize, value: ConstlValue) -> usize {
+    fn add_const(&mut self, func_id: usize, value: ConstValue) -> usize {
         if let Some(index) = self.func_list[func_id]
             .consts
             .iter()
@@ -63,7 +66,7 @@ impl CodeGen {
         }
     }
 
-    fn load(&mut self, func_id: usize, name: &str) -> Result<()> {
+    fn load(&mut self, func_id: usize, name: &str) -> Result<(), SyntaxError> {
         let t = if let Some(i) = self.func_list[func_id].local_names.get_index_of(name) {
             OpCode::LoadLocal(i)
         } else if let Some(i) = self.func_list[func_id]
@@ -77,13 +80,13 @@ impl CodeGen {
         {
             OpCode::LoadUpvalue(i)
         } else {
-            return Err(SyntaxError::IllegalAst.into());
+            return Err(SyntaxError::IllegalAst);
         };
         self.func_list[func_id].code.push(t);
         Ok(())
     }
 
-    fn store(&mut self, func_id: usize, name: &str) -> Result<()> {
+    fn store(&mut self, func_id: usize, name: &str) -> Result<(), SyntaxError> {
         let t = if let Some(i) = self.func_list[func_id].local_names.get_index_of(name) {
             OpCode::StoreLocal(i)
         } else if let Some(i) = self.func_list[func_id]
@@ -97,13 +100,13 @@ impl CodeGen {
         {
             OpCode::StoreUpvalue(i)
         } else {
-            return Err(SyntaxError::IllegalAst.into());
+            return Err(SyntaxError::IllegalAst);
         };
         self.func_list[func_id].code.push(t);
         Ok(())
     }
 
-    fn gen_code(&mut self, func_id: usize) -> Result<Code> {
+    fn gen_code(&mut self, func_id: usize) -> Result<Code, SyntaxError> {
         if let Some(variadic) = self.func_list[func_id].variadic.clone() {
             self.store(func_id, &variadic)?;
         }
@@ -116,7 +119,7 @@ impl CodeGen {
         if self.func_list[func_id].kind == FunctionKind::Do {
             self.func_list[func_id].code.push(OpCode::Return);
         } else if *self.func_list[func_id].code.last().unwrap_or(&OpCode::Pop) != OpCode::Return {
-            let t = self.add_const(func_id, ConstlValue::Null);
+            let t = self.add_const(func_id, ConstValue::Null);
             self.func_list[func_id].code.push(OpCode::LoadConst(t));
             self.func_list[func_id].code.push(OpCode::Return);
         }
@@ -135,9 +138,6 @@ impl CodeGen {
         let mut i = 0;
         while i < self.func_list[func_id].code.len() {
             match &self.func_list[func_id].code[i] {
-                OpCode::For(JumpTarget(v)) => {
-                    self.func_list[func_id].code[i] = OpCode::For(JumpTarget(temp[*v]))
-                }
                 OpCode::Jump(JumpTarget(v)) => {
                     self.func_list[func_id].code[i] = OpCode::Jump(JumpTarget(temp[*v]))
                 }
@@ -147,8 +147,8 @@ impl CodeGen {
                 OpCode::JumpPopIfFalse(JumpTarget(v)) => {
                     self.func_list[func_id].code[i] = OpCode::JumpPopIfFalse(JumpTarget(temp[*v]))
                 }
-                OpCode::JumpIfTureOrPop(JumpTarget(v)) => {
-                    self.func_list[func_id].code[i] = OpCode::JumpIfTureOrPop(JumpTarget(temp[*v]))
+                OpCode::JumpIfTrueOrPop(JumpTarget(v)) => {
+                    self.func_list[func_id].code[i] = OpCode::JumpIfTrueOrPop(JumpTarget(temp[*v]))
                 }
                 OpCode::JumpIfFalseOrPop(JumpTarget(v)) => {
                     self.func_list[func_id].code[i] = OpCode::JumpIfFalseOrPop(JumpTarget(temp[*v]))
@@ -196,27 +196,27 @@ impl CodeGen {
         })
     }
 
-    fn gen_expr(&mut self, func_id: usize, ast_node: &Expr) -> Result<()> {
+    fn gen_expr(&mut self, func_id: usize, ast_node: &Expr) -> Result<(), SyntaxError> {
         match &ast_node.kind {
             ExprKind::Lit(lit) => {
                 let t = self.add_const(
                     func_id,
                     match &lit.value {
-                        LitKind::Null => ConstlValue::Null,
-                        LitKind::Bool(v) => ConstlValue::Bool(*v),
-                        LitKind::Int(v) => ConstlValue::Int(*v),
-                        LitKind::Float(v) => ConstlValue::Float(*v),
-                        LitKind::Str(v) => ConstlValue::Str(v.clone()),
+                        LitKind::Null => ConstValue::Null,
+                        LitKind::Bool(v) => ConstValue::Bool(*v),
+                        LitKind::Int(v) => ConstValue::Int(*v),
+                        LitKind::Float(v) => ConstValue::Float(*v),
+                        LitKind::Str(v) => ConstValue::Str(v.clone()),
                     },
                 );
                 self.func_list[func_id].code.push(OpCode::LoadConst(t));
             }
             ExprKind::Ident(ident) => self.load(func_id, &ident.name)?,
-            ExprKind::Function { .. } => return Err(SyntaxError::IllegalAst.into()),
+            ExprKind::Function { .. } => return Err(SyntaxError::IllegalAst),
             ExprKind::FunctionId(i) => {
                 let code = self.gen_code(*i)?;
                 let is_do = code.kind == FunctionKind::Do;
-                let t = self.add_const(func_id, ConstlValue::Func(code));
+                let t = self.add_const(func_id, ConstValue::Func(code));
                 self.func_list[func_id].code.push(OpCode::LoadConst(t));
                 if is_do {
                     self.func_list[func_id].code.push(OpCode::Call(0));
@@ -263,7 +263,7 @@ impl CodeGen {
                     self.gen_expr(func_id, left)?;
                     self.func_list[func_id]
                         .code
-                        .push(OpCode::JumpIfTureOrPop(label));
+                        .push(OpCode::JumpIfTrueOrPop(label));
                     self.gen_expr(func_id, right)?;
                     self.func_list[func_id].code.push(OpCode::JumpTarget(label));
                 }
@@ -297,10 +297,10 @@ impl CodeGen {
                         match &property.kind {
                             ExprKind::Ident(ident) => {
                                 let t =
-                                    self.add_const(func_id, ConstlValue::Str(ident.name.clone()));
+                                    self.add_const(func_id, ConstValue::Str(ident.name.clone()));
                                 self.func_list[func_id].code.push(OpCode::LoadConst(t));
                             }
-                            _ => return Err(SyntaxError::IllegalAst.into()),
+                            _ => return Err(SyntaxError::IllegalAst),
                         }
                         self.func_list[func_id].code.push(OpCode::GetAttr);
                     }
@@ -348,27 +348,27 @@ impl CodeGen {
                                 self.func_list[func_id].code.push(OpCode::GetItem);
                             }
                             MemberKind::Dot => {
-                                self.func_list[func_id].code.push(OpCode::Dup);
+                                self.func_list[func_id].code.push(OpCode::Copy(1));
                                 match property.kind {
                                     ExprKind::Ident(ident) => {
                                         let t =
-                                            self.add_const(func_id, ConstlValue::Str(ident.name));
+                                            self.add_const(func_id, ConstValue::Str(ident.name));
                                         self.func_list[func_id].code.push(OpCode::LoadConst(t));
                                     }
-                                    _ => return Err(SyntaxError::IllegalAst.into()),
+                                    _ => return Err(SyntaxError::IllegalAst),
                                 }
                                 self.func_list[func_id].code.push(OpCode::GetAttr);
-                                self.func_list[func_id].code.push(OpCode::RotTwo);
+                                self.func_list[func_id].code.push(OpCode::Swap(2));
                                 temp += 1;
                             }
                             MemberKind::DoubleColon => {
                                 match property.kind {
                                     ExprKind::Ident(ident) => {
                                         let t =
-                                            self.add_const(func_id, ConstlValue::Str(ident.name));
+                                            self.add_const(func_id, ConstValue::Str(ident.name));
                                         self.func_list[func_id].code.push(OpCode::LoadConst(t));
                                     }
-                                    _ => return Err(SyntaxError::IllegalAst.into()),
+                                    _ => return Err(SyntaxError::IllegalAst),
                                 }
                                 self.func_list[func_id].code.push(OpCode::GetAttr);
                             }
@@ -394,7 +394,7 @@ impl CodeGen {
         Ok(())
     }
 
-    fn gen_stmt(&mut self, func_id: usize, ast_node: &Stmt) -> Result<()> {
+    fn gen_stmt(&mut self, func_id: usize, ast_node: &Stmt) -> Result<(), SyntaxError> {
         macro_rules! gen_block {
             ($block:expr) => {
                 for stmt in &$block.body {
@@ -405,17 +405,17 @@ impl CodeGen {
         macro_rules! gen_expr_member_without_get {
             ($table:expr, $property:expr, $kind:expr, $safe:expr) => {{
                 if *$safe {
-                    return Err(SyntaxError::IllegalAst.into());
+                    return Err(SyntaxError::IllegalAst);
                 }
                 self.gen_expr(func_id, &$table)?;
                 match $kind {
                     MemberKind::Bracket => self.gen_expr(func_id, &$property)?,
                     MemberKind::Dot | MemberKind::DoubleColon => match &$property.kind {
                         ExprKind::Ident(ident) => {
-                            let t = self.add_const(func_id, ConstlValue::Str(ident.name.clone()));
+                            let t = self.add_const(func_id, ConstValue::Str(ident.name.clone()));
                             self.func_list[func_id].code.push(OpCode::LoadConst(t));
                         }
-                        _ => return Err(SyntaxError::IllegalAst.into()),
+                        _ => return Err(SyntaxError::IllegalAst),
                     },
                 }
             }};
@@ -438,12 +438,12 @@ impl CodeGen {
                     }
                     ExprKind::MetaMember { table, safe } => {
                         if *safe {
-                            return Err(SyntaxError::IllegalAst.into());
+                            return Err(SyntaxError::IllegalAst);
                         }
                         self.gen_expr(func_id, table)?;
                         self.func_list[func_id].code.push(OpCode::SetMeta);
                     }
-                    _ => return Err(SyntaxError::IllegalAst.into()),
+                    _ => return Err(SyntaxError::IllegalAst),
                 }
             };
         }
@@ -543,16 +543,21 @@ impl CodeGen {
                 self.func_list[func_id].break_stack.push(break_label);
 
                 self.gen_expr(func_id, right)?;
+                self.func_list[func_id].code.push(OpCode::Iter);
                 self.func_list[func_id]
                     .code
                     .push(OpCode::JumpTarget(continue_label));
-                self.func_list[func_id].code.push(OpCode::For(break_label));
+                self.func_list[func_id].code.push(OpCode::Copy(1));
+                self.func_list[func_id].code.push(OpCode::Call(0));
+                self.func_list[func_id]
+                    .code
+                    .push(OpCode::JumpIfNull(break_label));
                 if left.len() == 1 {
                     self.store(func_id, &left[0].name)?;
                 } else {
                     for (i, l) in left.iter().enumerate() {
-                        self.func_list[func_id].code.push(OpCode::Dup);
-                        let t = self.add_const(func_id, ConstlValue::Int(i.try_into().unwrap()));
+                        self.func_list[func_id].code.push(OpCode::Copy(1));
+                        let t = self.add_const(func_id, ConstValue::Int(i.try_into().unwrap()));
                         self.func_list[func_id].code.push(OpCode::LoadConst(t));
                         self.func_list[func_id].code.push(OpCode::GetItem);
                         self.store(func_id, &l.name)?;
@@ -567,6 +572,7 @@ impl CodeGen {
                     .code
                     .push(OpCode::JumpTarget(break_label));
                 self.func_list[func_id].code.push(OpCode::Pop);
+                self.func_list[func_id].code.push(OpCode::Pop);
 
                 self.func_list[func_id].continue_stack.pop();
                 self.func_list[func_id].break_stack.pop();
@@ -574,20 +580,20 @@ impl CodeGen {
             StmtKind::Break => {
                 let t = OpCode::Jump(match self.func_list[func_id].break_stack.last() {
                     Some(v) => *v,
-                    None => return Err(SyntaxError::BreakOutsideLoop.into()),
+                    None => return Err(SyntaxError::BreakOutsideLoop),
                 });
                 self.func_list[func_id].code.push(t);
             }
             StmtKind::Continue => {
                 let t = OpCode::Jump(match self.func_list[func_id].continue_stack.last() {
                     Some(v) => *v,
-                    None => return Err(SyntaxError::ContinueOutsideLoop.into()),
+                    None => return Err(SyntaxError::ContinueOutsideLoop),
                 });
                 self.func_list[func_id].code.push(t);
             }
             StmtKind::Return { argument } => {
                 if self.func_list[func_id].kind == FunctionKind::Do {
-                    return Err(SyntaxError::ReturnOutsideFunction.into());
+                    return Err(SyntaxError::ReturnOutsideFunction);
                 }
                 if let ExprKind::Call {
                     propagating_error, ..
@@ -609,14 +615,14 @@ impl CodeGen {
             }
             StmtKind::Throw { argument } => {
                 if self.func_list[func_id].kind == FunctionKind::Do {
-                    return Err(SyntaxError::ThrowOutsideFunction.into());
+                    return Err(SyntaxError::ThrowOutsideFunction);
                 }
                 self.gen_expr(func_id, argument)?;
                 self.func_list[func_id].code.push(OpCode::Throw);
             }
             StmtKind::Global { arguments } => {
                 if self.func_list[func_id].kind == FunctionKind::Do {
-                    return Err(SyntaxError::GlobalOutsideFunction.into());
+                    return Err(SyntaxError::GlobalOutsideFunction);
                 }
                 for arg in arguments {
                     self.func_list[func_id].global_names.insert(GlobalNameInfo {
@@ -627,13 +633,13 @@ impl CodeGen {
             }
             StmtKind::Import { path, kind } => {
                 let path_str = path.iter().map(|x| x.name.as_str()).join("::");
-                let t = self.add_const(func_id, ConstlValue::Str(path_str));
+                let t = self.add_const(func_id, ConstValue::Str(path_str));
                 self.func_list[func_id].code.push(OpCode::Import(t));
                 match kind {
                     ImportKind::Simple(alias) => self.store(func_id, &alias.name)?,
                     ImportKind::Nested(items) => {
                         for (name, alias) in items {
-                            let t = self.add_const(func_id, ConstlValue::Str(name.name.clone()));
+                            let t = self.add_const(func_id, ConstValue::Str(name.name.clone()));
                             self.func_list[func_id].code.push(OpCode::ImportFrom(t));
                             self.store(func_id, &alias.name)?;
                         }
@@ -668,7 +674,8 @@ impl CodeGen {
                     safe,
                 } => {
                     gen_expr_member_without_get!(table, property, kind, safe);
-                    self.func_list[func_id].code.push(OpCode::DupTwo);
+                    self.func_list[func_id].code.push(OpCode::Copy(2));
+                    self.func_list[func_id].code.push(OpCode::Copy(2));
                     self.func_list[func_id].code.push(match kind {
                         MemberKind::Bracket => OpCode::GetItem,
                         MemberKind::Dot | MemberKind::DoubleColon => OpCode::GetAttr,
@@ -677,7 +684,8 @@ impl CodeGen {
                     self.func_list[func_id]
                         .code
                         .push(OpCode::try_from(*operator)?);
-                    self.func_list[func_id].code.push(OpCode::RotThree);
+                    self.func_list[func_id].code.push(OpCode::Swap(3));
+                    self.func_list[func_id].code.push(OpCode::Swap(2));
                     self.func_list[func_id].code.push(match kind {
                         MemberKind::Bracket => OpCode::SetItem,
                         MemberKind::Dot | MemberKind::DoubleColon => OpCode::SetAttr,
@@ -685,19 +693,19 @@ impl CodeGen {
                 }
                 ExprKind::MetaMember { table, safe } => {
                     if *safe {
-                        return Err(SyntaxError::IllegalAst.into());
+                        return Err(SyntaxError::IllegalAst);
                     }
                     self.gen_expr(func_id, table)?;
-                    self.func_list[func_id].code.push(OpCode::Dup);
+                    self.func_list[func_id].code.push(OpCode::Copy(1));
                     self.func_list[func_id].code.push(OpCode::GetMeta);
                     self.func_list[func_id].code.push(OpCode::SetMeta);
                 }
-                _ => return Err(SyntaxError::IllegalAst.into()),
+                _ => return Err(SyntaxError::IllegalAst),
             },
             StmtKind::AssignUnpack { left, right } => {
                 self.gen_expr(func_id, right)?;
                 for (i, l) in left.iter().enumerate() {
-                    let t = self.add_const(func_id, ConstlValue::Int(i.try_into().unwrap()));
+                    let t = self.add_const(func_id, ConstValue::Int(i.try_into().unwrap()));
                     self.func_list[func_id].code.push(OpCode::LoadConst(t));
                     self.func_list[func_id].code.push(OpCode::GetItem);
                     assign_left!(l);
@@ -705,7 +713,7 @@ impl CodeGen {
             }
             StmtKind::AssignMulti { left, right } => {
                 if left.len() != right.len() {
-                    return Err(SyntaxError::IllegalAst.into());
+                    return Err(SyntaxError::IllegalAst);
                 }
                 for right in right {
                     self.gen_expr(func_id, right)?;
@@ -731,9 +739,8 @@ fn get_stack_size(code: &Vec<OpCode>, mut offset: usize, init_size: usize) -> us
     while offset < code.len() {
         match code[offset] {
             OpCode::Pop => t += 1,
-            OpCode::Dup => t += 1,
-            OpCode::DupTwo => t += 2,
-            OpCode::RotTwo | OpCode::RotThree => (),
+            OpCode::Copy(_) => t += 1,
+            OpCode::Swap(_) => (),
             OpCode::LoadLocal(_)
             | OpCode::LoadGlobal(_)
             | OpCode::LoadUpvalue(_)
@@ -761,17 +768,17 @@ fn get_stack_size(code: &Vec<OpCode>, mut offset: usize, init_size: usize) -> us
             | OpCode::Lt
             | OpCode::Le
             | OpCode::Is => t -= 1,
-            OpCode::For(_) => t += 1,
+            OpCode::Iter => (),
             OpCode::Jump(JumpTarget(_)) => (),
             OpCode::JumpIfNull(JumpTarget(i)) => {
-                stack_size = max(stack_size, get_stack_size(code, i, t));
+                stack_size = stack_size.max(get_stack_size(code, i, t));
             }
             OpCode::JumpPopIfFalse(JumpTarget(i)) => {
                 t -= 1;
-                stack_size = max(stack_size, get_stack_size(code, i, t));
+                stack_size = stack_size.max(get_stack_size(code, i, t));
             }
-            OpCode::JumpIfTureOrPop(JumpTarget(i)) | OpCode::JumpIfFalseOrPop(JumpTarget(i)) => {
-                stack_size = max(stack_size, get_stack_size(code, i, t));
+            OpCode::JumpIfTrueOrPop(JumpTarget(i)) | OpCode::JumpIfFalseOrPop(JumpTarget(i)) => {
+                stack_size = stack_size.max(get_stack_size(code, i, t));
                 t -= 1;
             }
             OpCode::Call(i) => t = t - i + 1,
@@ -780,8 +787,27 @@ fn get_stack_size(code: &Vec<OpCode>, mut offset: usize, init_size: usize) -> us
             OpCode::ReturnCall(i) => t = t - i + 1,
             OpCode::JumpTarget(_) => panic!(),
         }
-        stack_size = max(stack_size, t);
+        stack_size = stack_size.max(t);
         offset += 1;
     }
     stack_size
+}
+
+/// Kind of SyntaxError.
+#[derive(Error, Debug, Clone, PartialEq)]
+pub enum SyntaxError {
+    #[error("illegal ast")]
+    IllegalAst,
+    #[error("break outside loop")]
+    BreakOutsideLoop,
+    #[error("continue outside loop")]
+    ContinueOutsideLoop,
+    #[error("global outside function")]
+    GlobalOutsideFunction,
+    #[error("return outside function")]
+    ReturnOutsideFunction,
+    #[error("throw outside function")]
+    ThrowOutsideFunction,
+    #[error(transparent)]
+    ParserError(#[from] ParserError),
 }

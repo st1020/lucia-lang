@@ -5,38 +5,20 @@ mod io;
 mod string;
 mod table;
 
-use std::collections::HashMap;
-
-use crate::lvm::Lvm;
-use crate::objects::Value;
-
-pub use builtin::builtin_variables;
-pub use io::lib as io_lib;
-pub use string::lib as string_lib;
-pub use table::lib as table_lib;
+pub use builtin::load_builtin;
+pub use io::io_lib;
+pub use string::string_lib;
+pub use table::table_lib;
 
 #[macro_export]
 macro_rules! check_args {
     (@AS_EXPR $e:expr) => {$e};
-
-    (@ARGS_ITER $args:ident ()) => {{
-        $args.iter()
-    }};
-    (@ARGS_ITER $args:ident (mut $($x:tt)*)) => {{
-        $args.iter_mut()
-    }};
-    (@ARGS_ITER $args:ident ($_:tt $($x:tt)*)) => {{
-        $crate::check_args!(@ARGS_ITER $args ($($x)*))
-    }};
 
     (@ARGS_CHECK ($(,)?) -> ($($args:tt)*) ()) => {{
         $crate::check_args!(@AS_EXPR ($($args)*, Some($($args)*)))
     }};
     (@ARGS_CHECK (, *) -> ($($args:tt)*) ()) => {{
         ($crate::check_args!(@AS_EXPR ($($args)*)), None)
-    }};
-    (@ARGS_CHECK (, mut $arg:tt $($ty:tt)*) -> ($($args:tt)*) ()) => {{
-        $crate::check_args!(@ARGS_CHECK ($($ty)*) -> ($($args)* + 1) ())
     }};
     (@ARGS_CHECK (, $arg:tt $($ty:tt)*) -> ($($args:tt)*) ()) => {{
         $crate::check_args!(@ARGS_CHECK ($($ty)*) -> ($($args)* + 1) ())
@@ -53,91 +35,86 @@ macro_rules! check_args {
     (@ARGS_CHECK (, *) -> ($args:expr) ($($opt_args:tt)+)) => {{
         ($args, None)
     }};
-    (@ARGS_CHECK (, mut $arg:tt $($ty:tt)*) -> ($args:expr) ($($opt_args:tt)+)) => {{
-        $crate::check_args!(@ARGS_CHECK ($($ty)*) -> ($args) ($($opt_args)+ + 1))
-    }};
     (@ARGS_CHECK (, $arg:tt $($ty:tt)*) -> ($args:expr) ($($opt_args:tt)+)) => {{
         $crate::check_args!(@ARGS_CHECK ($($ty)*) -> ($args) ($($opt_args)+ + 1))
     }};
 
-
-    (@BUILD_TUPLE $lvm:ident, $args_iter:ident, $is_opt:tt ($(,)?) -> ($($body:tt)*)) => {{
+    (@BUILD_TUPLE $args_iter:ident, $is_opt:tt ($(,)?) -> ($($body:tt)*)) => {{
         $crate::check_args!(@AS_EXPR ($($body)*))
     }};
-    (@BUILD_TUPLE $lvm:ident, $args_iter:ident, $is_opt:tt (, *) -> ($($body:tt)*)) => {{
+    (@BUILD_TUPLE $args_iter:ident, $is_opt:tt (, *) -> ($($body:tt)*)) => {{
         $crate::check_args!(@AS_EXPR ($($body)* $args_iter.collect::<Vec<_>>()))
     }};
-    (@BUILD_TUPLE $lvm:ident, $args_iter:ident, $is_opt:tt (| $($ty:tt)*) -> ($($body:tt)*)) => {{
+    (@BUILD_TUPLE $args_iter:ident, $is_opt:tt (| $($ty:tt)*) -> ($($body:tt)*)) => {{
         $crate::check_args!(
-            @BUILD_TUPLE $lvm, $args_iter, PARSE_ARG_OPT (, $($ty)*) -> ($($body)*)
+            @BUILD_TUPLE $args_iter, PARSE_ARG_OPT (, $($ty)*) -> ($($body)*)
         )
     }};
-    (@BUILD_TUPLE $lvm:ident, $args_iter:ident, $is_opt:tt (, mut $arg:tt $($ty:tt)*) -> ($($body:tt)*)) => {{
+    (@BUILD_TUPLE $args_iter:ident, $is_opt:tt (, $arg:tt $($ty:tt)*) -> ($($body:tt)*)) => {{
         $crate::check_args!(
-            @BUILD_TUPLE $lvm, $args_iter, $is_opt ($($ty)*) ->
-            ($($body)* $crate::check_args!(@$is_opt $lvm, $args_iter, $arg, mut),)
-        )
-    }};
-    (@BUILD_TUPLE $lvm:ident, $args_iter:ident, $is_opt:tt (, $arg:tt $($ty:tt)*) -> ($($body:tt)*)) => {{
-        $crate::check_args!(
-            @BUILD_TUPLE $lvm, $args_iter, $is_opt ($($ty)*) ->
-            ($($body)* $crate::check_args!(@$is_opt $lvm, $args_iter, $arg),)
+            @BUILD_TUPLE $args_iter, $is_opt ($($ty)*) ->
+            ($($body)* $crate::check_args!(@$is_opt $args_iter, $arg),)
         )
     }};
 
-    (@PARSE_ARG $lvm:ident, $args_iter:ident, Value) => {{
-        $args_iter.next().copied().unwrap()
+    (@PARSE_ARG $args_iter:ident, Value) => {{
+        $args_iter.next().unwrap()
     }};
-    (@PARSE_ARG_OPT $lvm:ident, $args_iter:ident, Value) => {{
-        $args_iter.next().copied()
+    (@PARSE_ARG_OPT $args_iter:ident, Value) => {{
+        $args_iter.next()
     }};
-    (@PARSE_ARG $lvm:ident, $args_iter:ident, $ty:tt $(, $is_mut:tt)?) => {{
+    (@PARSE_ARG $args_iter:ident, $ty:tt) => {{
         let t = $args_iter.next().unwrap();
-        $crate::try_as_value_type!($lvm, t, $ty $(, $is_mut)?)
+        $crate::check_args!(@AS_VALUE_TYPE t, $ty)
     }};
-    (@PARSE_ARG_OPT $lvm:ident, $args_iter:ident, $ty:tt) => {{
+    (@PARSE_ARG_OPT $args_iter:ident, $ty:tt) => {{
         match $args_iter.next() {
-            Some(v) => Some($crate::try_as_value_type!($lvm, v, $ty)),
-            None => None,
-        }
-    }};
-    (@PARSE_ARG_OPT $lvm:ident, $args_iter:ident, $ty:tt, mut) => {{
-        match $args_iter.next() {
-            Some(v) => Some($crate::try_as_value_type!($lvm, v, $ty, mut)),
+            Some(v) => Some($crate::check_args!(@AS_VALUE_TYPE v, $ty)),
             None => None,
         }
     }};
 
-    ($lvm:ident, $args:ident $(,)?) => {{
+    (@AS_VALUE_TYPE $value:ident, $ty:tt) => {{
+        if let Value::$ty(v) = $value {
+            v
+        } else {
+            return Err($crate::errors::Error::new(
+                $crate::errors::ErrorKind::UnexpectedType {
+                    expected: $crate::objects::ValueType::$ty,
+                    found: $value.value_type(),
+                }
+            ));
+        }
+    }};
+
+    ($args:ident $(,)?) => {{
         let args_len = $args.len();
         let required = $crate::errors::CallArgumentsErrorKind::from(0);
         if !required.contains(&args_len) {
-            $crate::return_error!($lvm, $crate::call_arguments_error!(None, required, args_len));
+            return Err($crate::errors::Error::new(
+                $crate::errors::ErrorKind::CallArguments {
+                    value: None,
+                    required,
+                    given: args_len,
+                }
+            ));
         }
     }};
-    ($lvm:ident, $args:ident $($cont:tt)*) => {{
+    ($args:ident $($cont:tt)*) => {{
         let args_len = $args.len();
         let required = $crate::errors::CallArgumentsErrorKind::from(
             $crate::check_args!(@ARGS_CHECK ($($cont)*) -> (0) ()),
         );
         if !required.contains(&args_len) {
-            $crate::return_error!($lvm, $crate::call_arguments_error!(None, required, args_len));
+            return Err($crate::errors::Error::new(
+                $crate::errors::ErrorKind::CallArguments {
+                    value: None,
+                    required,
+                    given: args_len,
+                }
+            ));
         }
-        let mut args_iter = $crate::check_args!(@ARGS_ITER $args ($($cont)*));
-        $crate::check_args!(@BUILD_TUPLE $lvm, args_iter, PARSE_ARG ($($cont)*) -> ())
+        let mut args_iter = $args.iter().copied();
+        $crate::check_args!(@BUILD_TUPLE args_iter, PARSE_ARG ($($cont)*) -> ())
     }};
-}
-
-pub fn std_libs(lvm: &mut Lvm) -> HashMap<String, Value> {
-    let mut std_libs = HashMap::new();
-    macro_rules! add_std_module {
-        ($name:expr, $path:path) => {
-            let t = $path(lvm);
-            std_libs.insert(String::from($name), lvm.new_table_value(t));
-        };
-    }
-    add_std_module!("std::io", io_lib);
-    add_std_module!("std::string", string_lib);
-    add_std_module!("std::table", table_lib);
-    std_libs
 }

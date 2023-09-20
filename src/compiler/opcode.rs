@@ -1,24 +1,23 @@
 //! The OpCodes for LVM.
 
-use std::fmt::{Debug, Display};
+use std::fmt;
+
+use gc_arena::Collect;
 
 /// The jump target.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct JumpTarget(pub usize);
 
 /// The operation code.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, Collect, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[collect(require_static)]
 pub enum OpCode {
     /// Removes the top-of-stack (TOS) item.
     Pop,
-    /// Duplicates the reference on top of the stack.
-    Dup,
-    /// Duplicates the two references on top of the stack, leaving them in the same order.
-    DupTwo,
-    /// Swaps the two top-most stack items.
-    RotTwo,
-    /// Lifts second and third stack item one position up, moves top down to position three.
-    RotThree,
+    /// Push the i-th item to the top of the stack.
+    Copy(usize),
+    /// Swap TOS with the item at position i.
+    Swap(usize),
     /// Pushes the value associated with `local_names[namei]` onto the stack.
     LoadLocal(usize),
     /// Pushes the value associated with `global_names[namei]` onto the stack.
@@ -38,7 +37,7 @@ pub enum OpCode {
     Import(usize),
     /// Loads the attribute `consts[consti]` the module found in TOS and pushed it onto the stack.
     ImportFrom(usize),
-    /// LoLoads all symbols from the module TOS to the global namespace.
+    /// Loads all symbols from the module TOS to the global namespace.
     ImportGlob,
 
     /// Pushes a new table onto the stack. Pops `2 * count` items to build table.
@@ -89,9 +88,8 @@ pub enum OpCode {
     /// Implements `TOS = TOS1 is TOS`.
     Is,
 
-    /// If TOS is iterable or callable, call TOS and get the return value, if the return value if null, jump to target,
-    /// else push the return value onto the stack. Used in `for` statement.
-    For(JumpTarget),
+    /// Get the __iter__ of TOS and pushed it onto the stack.
+    Iter,
     /// Sets the bytecode counter to target.
     Jump(JumpTarget),
     /// If TOS is null, sets the bytecode counter to target.
@@ -99,7 +97,7 @@ pub enum OpCode {
     /// If TOS is false, sets the bytecode counter to target. TOS is popped.
     JumpPopIfFalse(JumpTarget),
     /// If TOS is true, sets the bytecode counter to target and leaves TOS on the stack. Otherwise, TOS is popped.
-    JumpIfTureOrPop(JumpTarget),
+    JumpIfTrueOrPop(JumpTarget),
     /// If TOS is false, sets the bytecode counter to target and leaves TOS on the stack. Otherwise, TOS is popped.
     JumpIfFalseOrPop(JumpTarget),
 
@@ -118,15 +116,13 @@ pub enum OpCode {
     JumpTarget(JumpTarget),
 }
 
-impl Display for OpCode {
+impl fmt::Display for OpCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let width = 20;
         match self {
             Self::Pop => write!(f, "Pop"),
-            Self::Dup => write!(f, "Dup"),
-            Self::DupTwo => write!(f, "DupTwo"),
-            Self::RotTwo => write!(f, "RotTwo"),
-            Self::RotThree => write!(f, "RotThree"),
+            Self::Copy(i) => write!(f, "{:width$}{}", "Copy", i),
+            Self::Swap(i) => write!(f, "{:width$}{}", "Swap", i),
             Self::LoadLocal(i) => write!(f, "{:width$}{}", "LoadLocal", i),
             Self::LoadGlobal(i) => write!(f, "{:width$}{}", "LoadGlobal", i),
             Self::LoadUpvalue(i) => write!(f, "{:width$}{}", "LoadUpvalue", i),
@@ -159,11 +155,11 @@ impl Display for OpCode {
             Self::Lt => write!(f, "Lt"),
             Self::Le => write!(f, "Le"),
             Self::Is => write!(f, "Is"),
-            Self::For(JumpTarget(i)) => write!(f, "{:width$}{}", "For", i),
+            Self::Iter => write!(f, "Iter"),
             Self::Jump(JumpTarget(i)) => write!(f, "{:width$}{}", "Jump", i),
             Self::JumpIfNull(JumpTarget(i)) => write!(f, "{:width$}{}", "JumpIfNull", i),
             Self::JumpPopIfFalse(JumpTarget(i)) => write!(f, "{:width$}{}", "JumpPopIfFalse", i),
-            Self::JumpIfTureOrPop(JumpTarget(i)) => write!(f, "{:width$}{}", "JumpIfTureOrPop", i),
+            Self::JumpIfTrueOrPop(JumpTarget(i)) => write!(f, "{:width$}{}", "JumpIfTrueOrPop", i),
             Self::JumpIfFalseOrPop(JumpTarget(i)) => {
                 write!(f, "{:width$}{}", "JumpIfFalseOrPop", i)
             }

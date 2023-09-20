@@ -5,15 +5,15 @@
 //! Functions in the AST will be identified and processed.
 //! The kind of names within the namespace will be determined.
 
-use std::fmt::Display;
-use std::hash::Hash;
-use std::mem;
+use std::{fmt, hash::Hash, mem};
 
 use indexmap::IndexSet;
 
-use crate::ast::*;
-use crate::code::ConstlValue;
-use crate::opcode::{JumpTarget, OpCode};
+use super::{
+    ast::*,
+    code::ConstValue,
+    opcode::{JumpTarget, OpCode},
+};
 
 /// Global name information.
 #[derive(Debug, Clone)]
@@ -106,18 +106,18 @@ pub struct Function {
     /// Upvalue names.
     pub upvalue_names: IndexSet<UpvalueNameInfo>,
 
-    /// The count of upvalues defined in the funciton.
+    /// The count of upvalues defined in the function.
     pub def_upvalue_count: usize,
 
     // used by codegen
     pub(crate) code: Vec<OpCode>,
-    pub(crate) consts: Vec<ConstlValue>,
+    pub(crate) consts: Vec<ConstValue>,
     pub(crate) jump_target_count: usize,
     pub(crate) continue_stack: Vec<JumpTarget>,
     pub(crate) break_stack: Vec<JumpTarget>,
 }
 
-impl Display for Function {
+impl fmt::Display for Function {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "func_id: {}", self.func_id)?;
         writeln!(f, "kind: {}", self.kind)?;
@@ -158,7 +158,7 @@ impl Function {
             upvalue_names: IndexSet::new(),
             def_upvalue_count: 0,
             code: Vec::new(),
-            consts: vec![ConstlValue::Null],
+            consts: vec![ConstValue::Null],
             jump_target_count: 0,
             continue_stack: Vec::new(),
             break_stack: Vec::new(),
@@ -168,7 +168,7 @@ impl Function {
 
 /// Semantic Analyze. Lowers the AST to `Vec<Function>`.
 pub fn analyze(ast: Box<Block>) -> Vec<Function> {
-    let mut func = Function::new(0, FunctionKind::Funciton, Vec::new(), None, ast, None);
+    let mut func = Function::new(0, FunctionKind::Function, Vec::new(), None, ast, None);
     let mut analyzer = SemanticAnalyzer::new(&mut func);
     analyzer.func_list.insert(0, func);
     analyzer.analyze_name();

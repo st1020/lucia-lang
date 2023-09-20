@@ -1,74 +1,104 @@
-use crate::check_args;
-use crate::lvm::Lvm;
-use crate::objects::{ExtClosure, Table, Value};
+use gc_arena::Collect;
 
-pub fn lib(lvm: &mut Lvm) -> Table {
-    let mut t = Table::new();
+use crate::{
+    check_args, meta_ops,
+    objects::{AnyCallback, Callback, CallbackReturn, IntoValue, Table, Value},
+    Context,
+};
+
+#[derive(Collect)]
+#[collect[no_drop]]
+struct TableKeys<'gc>(Table<'gc>, usize);
+
+impl<'gc> Callback<'gc> for TableKeys<'gc> {
+    fn call(
+        &mut self,
+        _ctx: Context<'gc>,
+        _args: Vec<Value<'gc>>,
+    ) -> Result<CallbackReturn<'gc>, crate::errors::Error<'gc>> {
+        let t = Ok(CallbackReturn::Return(
+            self.0.get_index(self.1).map_or(Value::Null, |(k, _)| k),
+        ));
+        self.1 += 1;
+        t
+    }
+}
+
+#[derive(Collect)]
+#[collect[no_drop]]
+struct TableValues<'gc>(Table<'gc>, usize);
+
+impl<'gc> Callback<'gc> for TableValues<'gc> {
+    fn call(
+        &mut self,
+        _ctx: Context<'gc>,
+        _args: Vec<Value<'gc>>,
+    ) -> Result<CallbackReturn<'gc>, crate::errors::Error<'gc>> {
+        let t = Ok(CallbackReturn::Return(
+            self.0.get_index(self.1).map_or(Value::Null, |(_, v)| v),
+        ));
+        self.1 += 1;
+        t
+    }
+}
+
+pub fn table_lib(ctx: Context<'_>) -> Table<'_> {
+    let t = Table::new(&ctx);
     t.set(
-        &lvm.new_str_value("keys".to_string()),
-        Value::ExtFunction(|args, lvm| {
-            let (table_value,) = check_args!(lvm, args, Value);
-            Ok(lvm.new_ext_closure_value(ExtClosure::new(
-                |args, upvalues, lvm| {
-                    check_args!(lvm, args);
-                    let (table, index) = check_args!(lvm, upvalues, Table, Int);
-                    let t = table
-                        .get_index(index.try_into().unwrap())
-                        .map_or_else(|| Value::Null, |(k, _)| *k);
-                    drop(table);
-                    upvalues[1] = Value::Int(index + 1);
-                    Ok(t)
-                },
-                vec![table_value, Value::Int(0)],
+        ctx,
+        "keys",
+        AnyCallback::from_fn(&ctx, |ctx, args| {
+            let (t,) = check_args!(args, Table);
+            Ok(CallbackReturn::Return(
+                AnyCallback::new(&ctx, TableKeys(t, 0)).into(),
+            ))
+        }),
+    );
+    t.set(
+        ctx,
+        "values",
+        AnyCallback::from_fn(&ctx, |ctx, args| {
+            let (t,) = check_args!(args, Table);
+            Ok(CallbackReturn::Return(
+                AnyCallback::new(&ctx, TableValues(t, 0)).into(),
+            ))
+        }),
+    );
+    t.set(
+        ctx,
+        "raw_len",
+        AnyCallback::from_fn(&ctx, |_ctx, args| {
+            let (table,) = check_args!(args, Table);
+            Ok(CallbackReturn::Return(Value::Int(
+                table.len().try_into().unwrap(),
             )))
         }),
     );
     t.set(
-        &lvm.new_str_value("values".to_string()),
-        Value::ExtFunction(|args, lvm| {
-            let (table_value,) = check_args!(lvm, args, Value);
-            Ok(lvm.new_ext_closure_value(ExtClosure::new(
-                |args, upvalues, lvm| {
-                    check_args!(lvm, args);
-                    let (table, index) = check_args!(lvm, upvalues, Table, Int);
-                    let t = table
-                        .get_index(index.try_into().unwrap())
-                        .map_or_else(|| Value::Null, |(_, v)| *v);
-                    drop(table);
-                    upvalues[1] = Value::Int(index + 1);
-                    Ok(t)
-                },
-                vec![table_value, Value::Int(0)],
-            )))
+        ctx,
+        "raw_get",
+        AnyCallback::from_fn(&ctx, |ctx, args| {
+            let (table, key) = check_args!(args, Table, Value);
+            Ok(CallbackReturn::Return(table.get(ctx, key)))
         }),
     );
     t.set(
-        &lvm.new_str_value("raw_len".to_string()),
-        Value::ExtFunction(|args, lvm| {
-            let (table,) = check_args!(lvm, args, Table);
-            Ok(Value::Int(table.len().try_into().unwrap()))
+        ctx,
+        "raw_set",
+        AnyCallback::from_fn(&ctx, |ctx, args| {
+            let (table, key, value) = check_args!(args, Table, Value, Value);
+            table.set(ctx, key, value);
+            Ok(CallbackReturn::Return(Value::Null))
         }),
     );
     t.set(
-        &lvm.new_str_value("raw_get".to_string()),
-        Value::ExtFunction(|args, lvm| {
-            let (table, k) = check_args!(lvm, args, Table, Value);
-            Ok(table.get(&k).copied().unwrap_or(Value::Null))
-        }),
-    );
-    t.set(
-        &lvm.new_str_value("raw_set".to_string()),
-        Value::ExtFunction(|mut args, lvm| {
-            let (mut table, k, v) = check_args!(lvm, args, mut Table, Value, Value);
-            table.set(&k, v);
-            Ok(Value::Null)
-        }),
-    );
-    t.set(
-        &lvm.new_str_value("raw_iter".to_string()),
-        Value::ExtFunction(|args, lvm| {
-            let (table_value,) = check_args!(lvm, args, Value);
-            Ok(lvm.iter_table(table_value))
+        ctx,
+        "raw_iter",
+        AnyCallback::from_fn(&ctx, |ctx, args| {
+            let (table,) = check_args!(args, Table,);
+            Ok(CallbackReturn::Return(
+                AnyCallback::new(&ctx, meta_ops::IterTable(table, 0)).into_value(ctx),
+            ))
         }),
     );
     t

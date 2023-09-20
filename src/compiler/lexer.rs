@@ -1,16 +1,21 @@
 //! The lexer.
 
-use std::str::Chars;
+use std::{
+    fmt,
+    num::{ParseFloatError, ParseIntError},
+    str::Chars,
+};
 
+use thiserror::Error;
 use unicode_xid;
 
-use crate::errors::{EscapeError, SyntaxError};
-use crate::token::{
+use crate::utils::Location;
+
+use super::token::{
     LiteralKind::*,
     Token,
     TokenKind::{self, *},
 };
-use crate::utils::Location;
 
 /// Peekable iterator over a char sequence.
 ///
@@ -409,13 +414,13 @@ impl Cursor<'_> {
                 }
                 '.' if base == Base::Decimal => {
                     if has_point {
-                        return Literal(Float(Err(SyntaxError::NumberFormatError.into())));
+                        return Literal(Float(Err(LexerError::NumberFormatError)));
                     }
                     has_point = true;
                 }
                 'e' | 'E' if base == Base::Decimal => {
                     if has_exponent {
-                        return Literal(Float(Err(SyntaxError::NumberFormatError.into())));
+                        return Literal(Float(Err(LexerError::NumberFormatError)));
                     }
                     has_exponent = true;
                 }
@@ -432,11 +437,11 @@ impl Cursor<'_> {
         if has_point || has_exponent {
             // only support decimal float literal
             if base != Base::Decimal {
-                Literal(Float(Err(SyntaxError::NumberFormatError.into())))
+                Literal(Float(Err(LexerError::NumberFormatError)))
             } else {
                 match value.parse::<f64>() {
                     Ok(v) => Literal(Float(Ok(v))),
-                    Err(e) => Literal(Float(Err(SyntaxError::ParseFloatError(e).into()))),
+                    Err(e) => Literal(Float(Err(LexerError::ParseFloatError(e)))),
                 }
             }
         } else {
@@ -450,7 +455,7 @@ impl Cursor<'_> {
                 },
             ) {
                 Ok(v) => Literal(Int(Ok(v))),
-                Err(e) => Literal(Int(Err(SyntaxError::ParseIntError(e).into()))),
+                Err(e) => Literal(Int(Err(LexerError::ParseIntError(e)))),
             }
         }
     }
@@ -478,10 +483,10 @@ impl Cursor<'_> {
                 };
                 match t {
                     Ok(c) => value.push(c),
-                    Err(e) => return Literal(Str(Err(SyntaxError::EscapeError(e).into()))),
+                    Err(e) => return Literal(Str(Err(LexerError::EscapeError(e)))),
                 }
             } else {
-                return Literal(Str(Err(SyntaxError::UnterminatedStringError.into())));
+                return Literal(Str(Err(LexerError::UnterminatedStringError)));
             }
         }
         Literal(Str(Ok(value)))
@@ -572,5 +577,59 @@ impl Cursor<'_> {
             _ => return Err(EscapeError::InvalidEscape),
         };
         Ok(res)
+    }
+}
+
+/// Kind of LexerError.
+#[derive(Error, Debug, Clone, PartialEq)]
+pub enum LexerError {
+    #[error("parse int error ({0})")]
+    ParseIntError(#[from] ParseIntError),
+    #[error("parse float error ({0})")]
+    ParseFloatError(#[from] ParseFloatError),
+    #[error("number format error")]
+    NumberFormatError,
+    #[error("unterminated string error")]
+    UnterminatedStringError,
+    #[error("escape error ({0})")]
+    EscapeError(#[from] EscapeError),
+}
+
+/// Errors and warnings that can occur during string unescaping.
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
+pub enum EscapeError {
+    /// Invalid escape character (e.g. '\z').
+    InvalidEscape,
+    /// Raw '\r' encountered.
+    BareCarriageReturn,
+
+    /// Numeric character escape is too short (e.g. '\x1').
+    TooShortHexEscape,
+    /// Invalid character in numeric escape (e.g. '\xz')
+    InvalidCharInHexEscape,
+    /// Character code in numeric escape is non-ascii (e.g. '\xFF').
+    OutOfRangeHexEscape,
+
+    /// '\u' not followed by '{'.
+    NoBraceInUnicodeEscape,
+    /// Non-hexadecimal value in '\u{..}'.
+    InvalidCharInUnicodeEscape,
+    /// '\u{}'
+    EmptyUnicodeEscape,
+    /// No closing brace in '\u{..}', e.g. '\u{12'.
+    UnclosedUnicodeEscape,
+    /// '\u{_12}'
+    LeadingUnderscoreUnicodeEscape,
+    /// More than 6 characters in '\u{..}', e.g. '\u{10FFFF_FF}'
+    OverlongUnicodeEscape,
+    /// Invalid in-bound unicode character code, e.g. '\u{DFFF}'.
+    LoneSurrogateUnicodeEscape,
+    /// Out of bounds unicode character code, e.g. '\u{FFFFFF}'.
+    OutOfRangeUnicodeEscape,
+}
+
+impl fmt::Display for EscapeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fmt::Debug::fmt(self, f)
     }
 }

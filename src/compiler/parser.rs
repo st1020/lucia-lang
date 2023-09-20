@@ -1,15 +1,21 @@
 //! The parser.
 
-use crate::ast::*;
-use crate::errors::{Error, Result, SyntaxError};
-use crate::token::{LiteralKind, Token, TokenKind, TokenType};
+use thiserror::Error;
+
+use crate::utils::Join;
+
+use super::{
+    ast::*,
+    lexer::LexerError,
+    token::{LiteralKind, Token, TokenKind, TokenType},
+};
 
 macro_rules! unexpected_token_error {
     ($self:expr) => {
-        return Err(Error::SyntaxError(SyntaxError::UnexpectToken {
+        return Err(ParserError::UnexpectedToken {
             token: Box::new($self.token.clone()),
             expected: $self.expected_tokens.clone(),
-        }))
+        })
     };
 }
 
@@ -28,7 +34,7 @@ pub struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    /// Constructs a new `Paser` with a token iter.
+    /// Constructs a new `Parser` with a token iter.
     pub fn new(token_iter: &'a mut dyn Iterator<Item = Token>) -> Self {
         let mut parser = Parser {
             token: Token::dummy(),
@@ -59,12 +65,12 @@ impl<'a> Parser<'a> {
     }
 
     /// Expects and consumes the token `t`. Signals an error if the next token is not `t`.
-    fn expect(&mut self, t: &TokenKind) -> Result<()> {
+    fn expect(&mut self, t: &TokenKind) -> Result<(), ParserError> {
         if self.token.kind == *t {
             self.bump();
             Ok(())
         } else if self.is_eof {
-            Err(Error::SyntaxError(SyntaxError::UnexpectEOF))
+            Err(ParserError::UnexpectedEOF)
         } else {
             self.expected_tokens.push(TokenType::Token(t.clone()));
             unexpected_token_error!(self)
@@ -123,7 +129,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse token iter into AST (`Box<Block>`).
-    pub fn parse(&mut self) -> Result<Box<Block>> {
+    pub fn parse(&mut self) -> Result<Box<Block>, ParserError> {
         Ok(Box::new(Block {
             start: self.token.start,
             body: {
@@ -143,7 +149,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse statement.
-    fn parse_stmt(&mut self) -> Result<Stmt> {
+    fn parse_stmt(&mut self) -> Result<Stmt, ParserError> {
         macro_rules! stmt {
             ($kind:expr) => {
                 Stmt {
@@ -159,10 +165,10 @@ impl<'a> Parser<'a> {
                     ExprKind::Ident(_) => (),
                     ExprKind::Member { safe, .. } | ExprKind::MetaMember { safe, .. } => {
                         if safe {
-                            return Err(SyntaxError::ParseAssignStmtError.into());
+                            return Err(ParserError::ParseAssignStmtError);
                         }
                     }
-                    _ => return Err(SyntaxError::ParseAssignStmtError.into()),
+                    _ => return Err(ParserError::ParseAssignStmtError),
                 }
             };
         }
@@ -324,7 +330,7 @@ impl<'a> Parser<'a> {
                         }
                     }
                     if left.len() != right.len() {
-                        return Err(SyntaxError::ParseAssignStmtError.into());
+                        return Err(ParserError::ParseAssignStmtError);
                     }
                     Stmt {
                         start,
@@ -371,7 +377,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse block.
-    fn parse_block(&mut self) -> Result<Box<Block>> {
+    fn parse_block(&mut self) -> Result<Box<Block>, ParserError> {
         self.expect(&TokenKind::OpenBrace)?;
         self.eat_eol();
         Ok(Box::new(Block {
@@ -393,7 +399,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse if statement.
-    fn parse_stmt_if(&mut self) -> Result<Stmt> {
+    fn parse_stmt_if(&mut self) -> Result<Stmt, ParserError> {
         Ok(Stmt {
             start: self.prev_token.start,
             kind: StmtKind::If {
@@ -416,7 +422,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse expression.
-    fn parse_expr(&mut self, min_precedence: u32) -> Result<Box<Expr>> {
+    fn parse_expr(&mut self, min_precedence: u32) -> Result<Box<Expr>, ParserError> {
         let start = self.token.start;
         let mut left = self.parse_expr_unary()?;
         loop {
@@ -456,7 +462,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse unary expression.
-    fn parse_expr_unary(&mut self) -> Result<Box<Expr>> {
+    fn parse_expr_unary(&mut self) -> Result<Box<Expr>, ParserError> {
         macro_rules! unary_expr {
             ($un_op:expr) => {{
                 Ok(Box::new(Expr {
@@ -479,7 +485,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse primary expression.
-    fn parse_expr_primary(&mut self) -> Result<Box<Expr>> {
+    fn parse_expr_primary(&mut self) -> Result<Box<Expr>, ParserError> {
         let start = self.token.start;
         let mut ast_node = self.parse_expr_atom()?;
         macro_rules! member_attr_expr {
@@ -585,7 +591,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse atom expression.
-    fn parse_expr_atom(&mut self) -> Result<Box<Expr>> {
+    fn parse_expr_atom(&mut self) -> Result<Box<Expr>, ParserError> {
         macro_rules! lit_expr {
             ($lit_kind:expr) => {{
                 Ok(Box::new(Expr::from(Lit {
@@ -638,7 +644,7 @@ impl<'a> Parser<'a> {
             {
                 *propagating_error = true;
             } else {
-                return Err(SyntaxError::ParseTryExprError.into());
+                return Err(ParserError::ParseTryExprError);
             }
             Ok(temp)
         } else {
@@ -647,7 +653,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse table expression.
-    fn parse_expr_table(&mut self) -> Result<Box<Expr>> {
+    fn parse_expr_table(&mut self) -> Result<Box<Expr>, ParserError> {
         Ok(Box::new(Expr {
             start: self.prev_token.start,
             kind: ExprKind::Table {
@@ -680,7 +686,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse table expression.
-    fn parse_expr_list(&mut self) -> Result<Box<Expr>> {
+    fn parse_expr_list(&mut self) -> Result<Box<Expr>, ParserError> {
         Ok(Box::new(Expr {
             start: self.prev_token.start,
             kind: ExprKind::List {
@@ -704,7 +710,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse function expression.
-    fn parse_expr_func(&mut self, is_closure: bool) -> Result<Box<Expr>> {
+    fn parse_expr_func(&mut self, is_closure: bool) -> Result<Box<Expr>, ParserError> {
         let start = self.prev_token.start;
         let end_token = if is_closure {
             TokenKind::VBar
@@ -719,7 +725,7 @@ impl<'a> Parser<'a> {
                 kind: if is_closure {
                     FunctionKind::Closure
                 } else {
-                    FunctionKind::Funciton
+                    FunctionKind::Function
                 },
                 params: {
                     let mut temp = Vec::new();
@@ -747,7 +753,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse ident.
-    fn parse_ident(&mut self) -> Result<Ident> {
+    fn parse_ident(&mut self) -> Result<Ident, ParserError> {
         if let Some(v) = self.eat_ident() {
             Ok(Ident {
                 start: self.token.start,
@@ -758,4 +764,22 @@ impl<'a> Parser<'a> {
             unexpected_token_error!(self)
         }
     }
+}
+
+/// Kind of ParserError.
+#[derive(Error, Debug, Clone, PartialEq)]
+pub enum ParserError {
+    #[error("unexpected token (expected {}, found {token})", .expected.iter().join(", "))]
+    UnexpectedToken {
+        token: Box<Token>,
+        expected: Vec<TokenType>,
+    },
+    #[error("unexpected EOF")]
+    UnexpectedEOF,
+    #[error("parse assign statement error")]
+    ParseAssignStmtError,
+    #[error("parse try expression error")]
+    ParseTryExprError,
+    #[error(transparent)]
+    LexerError(#[from] LexerError),
 }

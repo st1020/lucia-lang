@@ -1,13 +1,13 @@
 //! The Lucia Abstract Syntax Tree (AST).
 
-use std::fmt::Display;
+use std::fmt;
 
 use crate::utils::{escape_str, Join, Location};
 
 /// Kind of function.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FunctionKind {
-    Funciton,
+    Function,
     Closure,
     Do,
 }
@@ -20,7 +20,7 @@ pub struct Stmt {
     pub end: Location,
 }
 
-impl Display for Stmt {
+impl fmt::Display for Stmt {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.kind)
     }
@@ -102,7 +102,7 @@ pub enum StmtKind {
     Expr(Box<Expr>),
 }
 
-impl Display for StmtKind {
+impl fmt::Display for StmtKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             StmtKind::If {
@@ -171,7 +171,7 @@ pub struct Block {
     pub end: Location,
 }
 
-impl Display for Block {
+impl fmt::Display for Block {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{{")?;
         for stmt in &self.body {
@@ -196,7 +196,7 @@ pub struct Expr {
     pub end: Location,
 }
 
-impl Display for Expr {
+impl fmt::Display for Expr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.kind)
     }
@@ -266,7 +266,7 @@ pub enum ExprKind {
     },
 }
 
-impl Display for ExprKind {
+impl fmt::Display for ExprKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ExprKind::Lit(lit) => write!(f, "{lit}"),
@@ -279,7 +279,7 @@ impl Display for ExprKind {
             } => {
                 if let Some(variadic) = variadic {
                     match kind {
-                        FunctionKind::Funciton => write!(
+                        FunctionKind::Function => write!(
                             f,
                             "fn ({}, {}) {}",
                             params.iter().join(", "),
@@ -293,7 +293,7 @@ impl Display for ExprKind {
                     }
                 } else {
                     match kind {
-                        FunctionKind::Funciton => {
+                        FunctionKind::Function => {
                             write!(f, "fn ({}) {}", params.iter().join(", "), body)
                         }
                         FunctionKind::Closure => {
@@ -392,7 +392,7 @@ pub struct Lit {
     pub end: Location,
 }
 
-impl Display for Lit {
+impl fmt::Display for Lit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.value)
     }
@@ -413,7 +413,7 @@ pub enum LitKind {
     Str(String),
 }
 
-impl Display for LitKind {
+impl fmt::Display for LitKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LitKind::Null => write!(f, "null"),
@@ -433,7 +433,7 @@ pub struct Ident {
     pub end: Location,
 }
 
-impl Display for Ident {
+impl fmt::Display for Ident {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name)
     }
@@ -448,7 +448,7 @@ pub enum UnOp {
     Neg,
 }
 
-impl Display for UnOp {
+impl fmt::Display for UnOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             UnOp::Not => write!(f, "not"),
@@ -490,7 +490,7 @@ pub enum BinOp {
     Is,
 }
 
-impl Display for BinOp {
+impl fmt::Display for BinOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             BinOp::Add => write!(f, "+"),
@@ -567,7 +567,7 @@ pub struct TableProperty {
     pub end: Location,
 }
 
-impl Display for TableProperty {
+impl fmt::Display for TableProperty {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}: {}", self.key, self.value)
     }
