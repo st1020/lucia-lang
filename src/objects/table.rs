@@ -17,7 +17,7 @@ pub struct Table<'gc>(pub Gc<'gc, RefLock<TableState<'gc>>>);
 
 impl<'gc> PartialEq for Table<'gc> {
     fn eq(&self, other: &Table<'gc>) -> bool {
-        Gc::ptr_eq(self.0, other.0)
+        Gc::ptr_eq(self.0, other.0) || self.0.borrow().entries == other.0.borrow().entries
     }
 }
 
@@ -140,7 +140,7 @@ pub struct TableState<'gc> {
     pub metatable: Option<Table<'gc>>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct TableEntries<'gc> {
     array: Vec<Value<'gc>>,
     map: IndexMap<Value<'gc>, Value<'gc>>,
