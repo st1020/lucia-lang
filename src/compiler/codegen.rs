@@ -2,7 +2,7 @@
 //!
 //! Turn `Vec<Function>` build by analyzer into `Code`.
 
-use std::{convert::TryFrom, vec};
+use std::{convert::TryFrom, iter, vec};
 
 use thiserror::Error;
 
@@ -704,6 +704,9 @@ impl CodeGen {
             },
             StmtKind::AssignUnpack { left, right } => {
                 self.gen_expr(func_id, right)?;
+                self.func_list[func_id]
+                    .code
+                    .extend(iter::repeat(OpCode::Copy(1)).take(left.len()));
                 for (i, l) in left.iter().enumerate() {
                     let t = self.add_const(func_id, ConstValue::Int(i.try_into().unwrap()));
                     self.func_list[func_id].code.push(OpCode::LoadConst(t));
