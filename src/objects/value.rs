@@ -7,7 +7,7 @@ use std::{
 use gc_arena::{Collect, Gc};
 
 use crate::{
-    objects::{AnyCallback, AnyUserData, Closure, GcError, Str, Table},
+    objects::{AnyCallback, AnyUserData, Closure, Str, Table},
     utils::escape_str,
 };
 
@@ -56,8 +56,6 @@ pub enum Value<'gc> {
     Function(Function<'gc>),
     /// `userdata` - An UserData.
     UserData(AnyUserData<'gc>),
-    /// `error` - An error.
-    Error(GcError<'gc>),
 }
 
 impl<'gc> Value<'gc> {
@@ -80,7 +78,6 @@ impl<'gc> Value<'gc> {
             Self::Function(Function::Closure(v)) => NonZeroUsize::new(Gc::as_ptr(v.0) as usize),
             Self::Function(Function::Callback(v)) => NonZeroUsize::new(v.as_ptr() as usize),
             Self::UserData(v) => NonZeroUsize::new(v.as_ptr() as usize),
-            Self::Error(v) => NonZeroUsize::new(Gc::as_ptr(v.0) as usize),
         }
     }
 
@@ -105,7 +102,6 @@ impl<'gc> Value<'gc> {
                 l0.as_ptr() == r0.as_ptr()
             }
             (Self::UserData(l0), Self::UserData(r0)) => l0.as_ptr() == r0.as_ptr(),
-            (Self::Error(l0), Self::Error(r0)) => Gc::ptr_eq(l0.0, r0.0),
             _ => false,
         }
     }
@@ -120,7 +116,6 @@ impl<'gc> Value<'gc> {
             Self::Table(_) => ValueType::Table,
             Self::Function(_) => ValueType::Function,
             Self::UserData(_) => ValueType::UserData,
-            Self::Error(_) => ValueType::Error,
         }
     }
 
@@ -151,7 +146,6 @@ impl<'gc> fmt::Display for Value<'gc> {
             Self::Function(Function::Closure(v)) => write!(f, "<function {:p}>", v.0),
             Self::Function(Function::Callback(v)) => write!(f, "<function {:p}>", v.as_ptr()),
             Self::UserData(v) => write!(f, "<userdata {:p}>", v.as_ptr()),
-            Self::Error(e) => write!(f, "<error {}>", **e),
         }
     }
 }
@@ -173,7 +167,6 @@ impl<'gc> PartialEq for Value<'gc> {
             (Self::Table(l0), Self::Table(r0)) => l0 == r0,
             (Self::Function(l0), Self::Function(r0)) => l0 == r0,
             (Self::UserData(l0), Self::UserData(r0)) => l0 == r0,
-            (Self::Error(l0), Self::Error(r0)) => l0 == r0,
             _ => false,
         }
     }
@@ -200,7 +193,6 @@ impl<'gc> Hash for Value<'gc> {
             Self::Table(v) => v.hash(state),
             Self::Function(v) => v.hash(state),
             Self::UserData(v) => v.hash(state),
-            Self::Error(v) => v.hash(state),
         }
     }
 }

@@ -4,7 +4,7 @@ use crate::{
         opcode::{JumpTarget, OpCode},
     },
     errors::{Error, ErrorKind},
-    frame::{Frame, FramesState},
+    frame::{CatchErrorKind, Frame, FramesState},
     meta_ops,
     objects::{Closure, Function, IntoValue, Str, Table, Value},
     Context,
@@ -305,13 +305,28 @@ impl<'gc> FramesState<'gc> {
                     }
                 }
                 OpCode::Call(i) => {
+                    frame.catch_error = CatchErrorKind::None;
                     let args = frame.stack.split_off(frame.stack.len() - i);
                     let callee = frame.stack.pop().unwrap();
                     self.call_function(ctx, meta_ops::call(ctx, callee)?, args)?;
                     break;
                 }
                 OpCode::TryCall(i) => {
-                    frame.catch_error = true;
+                    frame.catch_error = CatchErrorKind::Try;
+                    let args = frame.stack.split_off(frame.stack.len() - i);
+                    let callee = frame.stack.pop().unwrap();
+                    self.call_function(ctx, meta_ops::call(ctx, callee)?, args)?;
+                    break;
+                }
+                OpCode::TryOptionCall(i) => {
+                    frame.catch_error = CatchErrorKind::TryOption;
+                    let args = frame.stack.split_off(frame.stack.len() - i);
+                    let callee = frame.stack.pop().unwrap();
+                    self.call_function(ctx, meta_ops::call(ctx, callee)?, args)?;
+                    break;
+                }
+                OpCode::TryPanicCall(i) => {
+                    frame.catch_error = CatchErrorKind::TryPanic;
                     let args = frame.stack.split_off(frame.stack.len() - i);
                     let callee = frame.stack.pop().unwrap();
                     self.call_function(ctx, meta_ops::call(ctx, callee)?, args)?;
@@ -329,7 +344,7 @@ impl<'gc> FramesState<'gc> {
                         }
                         frame.stack.push(Value::Table(table));
                     }
-                    self.return_upper();
+                    self.return_upper(ctx);
                     break;
                 }
                 OpCode::Throw => {

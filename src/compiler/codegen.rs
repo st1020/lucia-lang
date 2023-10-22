@@ -325,7 +325,7 @@ impl CodeGen {
             ExprKind::Call {
                 callee,
                 arguments,
-                propagating_error,
+                kind,
             } => {
                 let mut temp: usize = arguments.len();
                 let safe_label = self.get_jump_target(func_id);
@@ -381,10 +381,11 @@ impl CodeGen {
                 for arg in arguments {
                     self.gen_expr(func_id, arg)?;
                 }
-                self.func_list[func_id].code.push(if *propagating_error {
-                    OpCode::TryCall(temp)
-                } else {
-                    OpCode::Call(temp)
+                self.func_list[func_id].code.push(match kind {
+                    CallKind::None => OpCode::Call(temp),
+                    CallKind::Try => OpCode::TryCall(temp),
+                    CallKind::TryOption => OpCode::TryOptionCall(temp),
+                    CallKind::TryPanic => OpCode::TryPanicCall(temp),
                 });
                 self.func_list[func_id]
                     .code
@@ -595,18 +596,17 @@ impl CodeGen {
                 if self.func_list[func_id].kind == FunctionKind::Do {
                     return Err(SyntaxError::ReturnOutsideFunction);
                 }
-                if let ExprKind::Call {
-                    propagating_error, ..
-                } = argument.kind
-                {
+                if let ExprKind::Call { kind, .. } = argument.kind {
                     self.gen_expr(func_id, argument)?;
-                    if propagating_error {
+                    if kind != CallKind::None {
                         self.func_list[func_id].code.push(OpCode::Return);
                     } else if let OpCode::Call(i) =
                         self.func_list[func_id].code[self.func_list[func_id].code.len() - 2]
                     {
                         let t = self.func_list[func_id].code.len();
                         self.func_list[func_id].code[t - 2] = OpCode::ReturnCall(i);
+                    } else {
+                        self.func_list[func_id].code.push(OpCode::Return);
                     }
                 } else {
                     self.gen_expr(func_id, argument)?;
@@ -784,8 +784,10 @@ fn get_stack_size(code: &Vec<OpCode>, mut offset: usize, init_size: usize) -> us
                 stack_size = stack_size.max(get_stack_size(code, i, t));
                 t -= 1;
             }
-            OpCode::Call(i) => t = t - i + 1,
-            OpCode::TryCall(i) => t = t - i + 1,
+            OpCode::Call(i)
+            | OpCode::TryCall(i)
+            | OpCode::TryOptionCall(i)
+            | OpCode::TryPanicCall(i) => t = t - i + 1,
             OpCode::Return | OpCode::Throw => break,
             OpCode::ReturnCall(i) => t = t - i + 1,
             OpCode::JumpTarget(_) => panic!(),

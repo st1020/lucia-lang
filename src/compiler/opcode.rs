@@ -105,6 +105,10 @@ pub enum OpCode {
     Call(usize),
     /// Call with a shortcut for propagating errors.
     TryCall(usize),
+    /// Call with a shortcut for propagating errors.
+    TryOptionCall(usize),
+    /// Call with a shortcut for propagating errors.
+    TryPanicCall(usize),
     /// Returns with TOS to the caller of the function.
     Return,
     /// Returns with TOS as a error.
@@ -165,6 +169,8 @@ impl fmt::Display for OpCode {
             }
             Self::Call(i) => write!(f, "{:width$}{}", "Call", i),
             Self::TryCall(i) => write!(f, "{:width$}{}", "TryCall", i),
+            Self::TryOptionCall(i) => write!(f, "{:width$}{}", "TryOptionCall", i),
+            Self::TryPanicCall(i) => write!(f, "{:width$}{}", "TryPanicCall", i),
             Self::Return => write!(f, "Return"),
             Self::Throw => write!(f, "Throw"),
             Self::ReturnCall(i) => write!(f, "{:width$}{}", "ReturnCall", i),

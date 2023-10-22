@@ -317,7 +317,7 @@ impl SemanticAnalyzer {
             ExprKind::Call {
                 callee,
                 arguments,
-                propagating_error: _,
+                kind: _,
             } => {
                 self.build_expr(callee);
                 for arg in arguments {
@@ -505,7 +505,7 @@ impl SemanticAnalyzer {
             ExprKind::Call {
                 callee,
                 arguments,
-                propagating_error: _,
+                kind: _,
             } => {
                 self.analyze_name_expr(func_id, callee);
                 for arg in arguments {

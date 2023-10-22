@@ -6,7 +6,7 @@ use crate::{
     compiler::code::Code,
     frame::{FrameMode, Frames},
     libs,
-    objects::{Closure, Registry, StaticValue, Table},
+    objects::{Closure, GcError, Registry, StaticError, StaticValue, Table},
 };
 
 #[derive(Clone, Collect)]
@@ -105,7 +105,7 @@ impl Lucia {
         }
     }
 
-    pub fn run_code(&mut self, code: Code) -> StaticValue {
+    pub fn run_code(&mut self, code: Code) -> Result<StaticValue, StaticError> {
         self.run(|ctx| {
             let closure = Closure::new(&ctx, code.clone(), None);
             ctx.state
@@ -115,9 +115,17 @@ impl Lucia {
         });
         self.run_frame();
         self.run(|ctx| {
-            ctx.state
-                .registry
-                .stash(&ctx, ctx.state.frames.0.borrow().return_value)
+            if let Some(e) = &ctx.state.frames.0.borrow().error {
+                Err(ctx
+                    .state
+                    .registry
+                    .stash(&ctx, GcError::new(&ctx, e.clone())))
+            } else {
+                Ok(ctx
+                    .state
+                    .registry
+                    .stash(&ctx, ctx.state.frames.0.borrow().return_value))
+            }
         })
     }
 }

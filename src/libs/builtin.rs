@@ -33,7 +33,7 @@ pub fn load_builtin(ctx: Context<'_>) {
         "assert",
         AnyCallback::from_fn(&ctx, |_ctx, args| {
             let (v, msg) = check_args!(args, Value | Value);
-            if matches!(v, Value::Error(_)) || !(bool::from(v)) {
+            if !(bool::from(v)) {
                 Err(Error::new(ErrorKind::AssertError(
                     msg.unwrap_or(Value::Null),
                 )))

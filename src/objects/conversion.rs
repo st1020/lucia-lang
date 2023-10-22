@@ -1,8 +1,7 @@
 use crate::{
     errors::{Error, ErrorKind},
     objects::{
-        AnyCallback, Closure, Function, GcError, Str, Table, TableEntries, TableState, Value,
-        ValueType,
+        AnyCallback, Closure, Function, Str, Table, TableEntries, TableState, Value, ValueType,
     },
     Context,
 };
@@ -95,12 +94,6 @@ impl<'gc> IntoValue<'gc> for TableEntries<'gc> {
                 metatable: None,
             },
         ))
-    }
-}
-
-impl<'gc> IntoValue<'gc> for Error<'gc> {
-    fn into_value(self, ctx: Context<'gc>) -> Value<'gc> {
-        Value::Error(GcError::new(&ctx, self))
     }
 }
 

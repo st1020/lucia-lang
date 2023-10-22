@@ -4,7 +4,9 @@ use std::time::Instant;
 macro_rules! run {
     ($input:expr $(,)?) => {{
         let mut lucia = context::Lucia::new();
-        lucia.run_code(compiler::code::Code::try_from($input).unwrap())
+        lucia
+            .run_code(compiler::code::Code::try_from($input).unwrap())
+            .unwrap()
     }};
 }
 
@@ -12,7 +14,12 @@ macro_rules! run_check_value {
     ($input:expr, $value:expr $(,)?) => {{
         let mut lucia = context::Lucia::new();
         let r = lucia.run_code(compiler::code::Code::try_from($input).unwrap());
-        lucia.run(|ctx| assert_eq!(ctx.state.registry.fetch(&r), $value.into_value(ctx)));
+        lucia.run(|ctx| {
+            assert_eq!(
+                ctx.state.registry.fetch(&r.unwrap()),
+                $value.into_value(ctx)
+            )
+        });
     }};
 }
 
@@ -139,11 +146,12 @@ fn test_assert() {
     } else {
         panic!("unexpected return")
     }
+}
 
-    if let objects::StaticValue::Error(_) = run!(r#"assert(1 != 1)"#) {
-    } else {
-        panic!("unexpected return")
-    }
+#[test]
+#[should_panic]
+fn test_assert_error() {
+    run!(r#"assert(1 != 1)"#);
 }
 
 #[test]
@@ -499,15 +507,82 @@ println(repr(l))
 
 #[test]
 fn test_do() {
-    let input = "
-    import std::io::{println}
-    l = do {
-        a = 1
-        b = 2
-    }
-    println(repr(l))
-    ";
-    context::Lucia::new().run_code(compiler::code::Code::try_from(input).unwrap());
+    run!(
+        r#"
+import std::io::{println}
+l = do {
+    a = 1
+    b = 2
+}
+println(repr(l))
+"#
+    );
+}
+
+#[test]
+fn test_try() {
+    run!(
+        r#"
+fn a() {
+    return 1
+}
+fn b () {
+    throw 1
+}
+res, err = try a()
+assert(res == 1)
+assert(err == null)
+
+res, err = try b()
+assert(res == null)
+assert(err == 1)
+"#
+    );
+}
+
+#[test]
+fn test_try_option() {
+    run!(
+        r#"
+fn a() {
+    return 1
+}
+fn b () {
+    throw 1
+}
+res = try? a()
+assert(res == 1)
+
+res = try? b()
+assert(res == null)
+"#
+    );
+}
+
+#[test]
+fn test_try_panic() {
+    run!(
+        r#"
+fn a() {
+    return 1
+}
+res = try! a()
+assert(res == 1)
+    "#
+    );
+}
+
+#[test]
+#[should_panic]
+fn test_try_panic_error() {
+    run!(
+        r#"
+fn b () {
+    throw 1
+}
+res = try! b()
+    "#
+    );
 }
 
 #[test]
@@ -522,7 +597,9 @@ fn tail_call() {
     }
     return f(1_000_000, 1)
     ";
-    context::Lucia::new().run_code(compiler::code::Code::try_from(input).unwrap());
+    context::Lucia::new()
+        .run_code(compiler::code::Code::try_from(input).unwrap())
+        .unwrap();
 }
 
 #[test]
@@ -539,7 +616,7 @@ fn add_pref() {
     let mut lucia = context::Lucia::new();
     let code = compiler::code::Code::try_from(input).unwrap();
     for _ in 0..100 {
-        lucia.run_code(code.clone());
+        lucia.run_code(code.clone()).unwrap();
     }
     let duration = start.elapsed();
     println!("Time: {:?}", duration / 100);
@@ -571,7 +648,7 @@ fn gcd_pref() {
     let mut lucia = context::Lucia::new();
     let code = compiler::code::Code::try_from(input).unwrap();
     for _ in 0..100 {
-        lucia.run_code(code.clone());
+        lucia.run_code(code.clone()).unwrap();
     }
     let duration = start.elapsed();
     println!("Time: {:?}", duration / 100);

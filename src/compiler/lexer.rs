@@ -279,6 +279,7 @@ impl Cursor<'_> {
             ']' => CloseBracket,
             '#' => Pound,
             '?' => Question,
+            '!' => Exclamation,
             ':' => Colon,
             '=' => Assign,
             '<' => Lt,

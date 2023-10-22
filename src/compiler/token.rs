@@ -100,6 +100,8 @@ pub enum TokenKind {
     Pound,
     /// "?"
     Question,
+    /// "!"
+    Exclamation,
     /// ":"
     Colon,
     /// "="
@@ -187,6 +189,7 @@ impl fmt::Display for TokenKind {
             Self::CloseBracket => write!(f, "CloseBracket (])"),
             Self::Pound => write!(f, "Pound (#)"),
             Self::Question => write!(f, "Question (?)"),
+            Self::Exclamation => write!(f, "Exclamation (!)"),
             Self::Colon => write!(f, "Colon (:)"),
             Self::Assign => write!(f, "Assign (=)"),
             Self::Lt => write!(f, "Lt (<)"),

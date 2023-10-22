@@ -78,17 +78,6 @@ impl From<StaticCallback> for StaticFunction {
     }
 }
 
-#[derive(Clone)]
-pub struct StaticError(pub DynamicRoot<Rootable![GcError<'_>]>);
-
-impl fmt::Debug for StaticError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("StaticError")
-            .field(&self.0.as_ptr())
-            .finish()
-    }
-}
-
 #[derive(Debug, Clone)]
 pub enum StaticValue {
     Null,
@@ -99,7 +88,6 @@ pub enum StaticValue {
     Table(StaticTable),
     Function(StaticFunction),
     UserData(StaticUserData),
-    Error(StaticError),
 }
 
 impl From<bool> for StaticValue {
@@ -220,7 +208,6 @@ reg_type!(Str, StaticStr);
 reg_type!(Table, StaticTable);
 reg_type!(Closure, StaticClosure);
 reg_type!(AnyCallback, StaticCallback);
-reg_type!(GcError, StaticError);
 reg_type!(AnyUserData, StaticUserData);
 
 macro_rules! fetch_type {
@@ -239,7 +226,6 @@ fetch_type!(StaticStr, Str);
 fetch_type!(StaticTable, Table);
 fetch_type!(StaticClosure, Closure);
 fetch_type!(StaticCallback, AnyCallback);
-fetch_type!(StaticError, GcError);
 fetch_type!(StaticUserData, AnyUserData);
 
 impl<'gc> Stashable<'gc> for Function<'gc> {
@@ -277,7 +263,6 @@ impl<'gc> Stashable<'gc> for Value<'gc> {
             Value::Table(t) => StaticValue::Table(t.stash(roots, mc)),
             Value::Function(f) => StaticValue::Function(f.stash(roots, mc)),
             Value::UserData(u) => StaticValue::UserData(u.stash(roots, mc)),
-            Value::Error(e) => StaticValue::Error(e.stash(roots, mc)),
         }
     }
 }
@@ -295,7 +280,20 @@ impl<'gc> Fetchable<'gc> for StaticValue {
             StaticValue::Table(t) => Value::Table(t.fetch(roots)),
             StaticValue::Function(f) => Value::Function(f.fetch(roots)),
             StaticValue::UserData(u) => Value::UserData(u.fetch(roots)),
-            StaticValue::Error(e) => Value::Error(e.fetch(roots)),
         }
     }
 }
+
+#[derive(Clone)]
+pub struct StaticError(pub DynamicRoot<Rootable![GcError<'_>]>);
+
+impl fmt::Debug for StaticError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("StaticError")
+            .field(&self.0.as_ptr())
+            .finish()
+    }
+}
+
+reg_type!(GcError, StaticError);
+fetch_type!(StaticError, GcError);

@@ -262,7 +262,7 @@ pub enum ExprKind {
     Call {
         callee: Box<Expr>,
         arguments: Vec<Expr>,
-        propagating_error: bool,
+        kind: CallKind,
     },
 }
 
@@ -372,12 +372,14 @@ impl fmt::Display for ExprKind {
             ExprKind::Call {
                 callee,
                 arguments,
-                propagating_error,
+                kind,
             } => {
-                if *propagating_error {
-                    write!(f, "{callee}({})?", arguments.iter().join(", "))
-                } else {
-                    write!(f, "{callee}({})", arguments.iter().join(", "))
+                let args = arguments.iter().join(", ");
+                match kind {
+                    CallKind::None => write!(f, "{callee}({args})"),
+                    CallKind::Try => write!(f, "try {callee}({args})"),
+                    CallKind::TryOption => write!(f, "try? {callee}({args})"),
+                    CallKind::TryPanic => write!(f, "try! {callee}({args})"),
                 }
             }
         }
@@ -556,6 +558,15 @@ pub enum ImportKind {
     Nested(Vec<(Ident, Ident)>),
     /// `import path::*`
     Glob,
+}
+
+// Kind of call expression.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CallKind {
+    None,
+    Try,
+    TryOption,
+    TryPanic,
 }
 
 /// A TableProperty.

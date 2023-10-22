@@ -562,7 +562,7 @@ impl<'a> Parser<'a> {
                             }
                             temp
                         },
-                        propagating_error: false,
+                        kind: CallKind::None,
                     },
                     start,
                     end: self.prev_token.end,
@@ -637,12 +637,16 @@ impl<'a> Parser<'a> {
                 end: self.prev_token.end,
             }))
         } else if self.eat(&TokenKind::Try) {
+            let call_kind = if self.eat(&TokenKind::Question) {
+                CallKind::TryOption
+            } else if self.eat(&TokenKind::Exclamation) {
+                CallKind::TryPanic
+            } else {
+                CallKind::Try
+            };
             let mut temp = self.parse_expr_primary()?;
-            if let ExprKind::Call {
-                propagating_error, ..
-            } = &mut temp.kind
-            {
-                *propagating_error = true;
+            if let ExprKind::Call { kind, .. } = &mut temp.kind {
+                *kind = call_kind;
             } else {
                 return Err(ParserError::ParseTryExprError);
             }

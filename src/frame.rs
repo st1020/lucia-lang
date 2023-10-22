@@ -50,6 +50,15 @@ pub enum FrameMode {
     Running,
 }
 
+#[derive(Debug, Clone, Copy, Collect, PartialEq, Eq, Hash)]
+#[collect[require_static]]
+pub enum CatchErrorKind {
+    None,
+    Try,
+    TryOption,
+    TryPanic,
+}
+
 impl fmt::Display for FrameMode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self)
@@ -63,6 +72,7 @@ impl<'gc> Frames<'gc> {
             RefLock::new(FramesState {
                 frames: Vec::new(),
                 return_value: Value::Null,
+                error: None,
             }),
         ))
     }
@@ -108,7 +118,17 @@ impl<'gc> Frames<'gc> {
 
                     match return_value {
                         Ok(CallbackReturn::Return(v)) => match state.frames.last_mut() {
-                            Some(Frame::Lua(LuciaFrame { stack, .. })) => stack.push(v),
+                            Some(Frame::Lua(LuciaFrame {
+                                stack, catch_error, ..
+                            })) => match catch_error {
+                                CatchErrorKind::Try => {
+                                    let table = Table::new(&ctx);
+                                    table.set(ctx, 0, v);
+                                    table.set(ctx, 1, Value::Null);
+                                    stack.push(table.into_value(ctx));
+                                }
+                                _ => stack.push(v),
+                            },
                             _ => panic!("frame above callback must be lua frame"),
                         },
                         Ok(CallbackReturn::TailCall(f, args)) => {
@@ -176,6 +196,7 @@ impl<'gc> Frames<'gc> {
 pub(crate) struct FramesState<'gc> {
     pub frames: Vec<Frame<'gc>>,
     pub return_value: Value<'gc>,
+    pub error: Option<Error<'gc>>,
 }
 
 #[derive(Collect, Debug, Clone)]
@@ -185,7 +206,7 @@ pub struct LuciaFrame<'gc> {
     pub closure: Closure<'gc>,
     pub locals: Vec<Value<'gc>>,
     pub stack: Vec<Value<'gc>>,
-    pub catch_error: bool,
+    pub catch_error: CatchErrorKind,
 }
 
 #[derive(Collect, Debug, Clone)]
@@ -248,7 +269,7 @@ impl<'gc> LuciaFrame<'gc> {
             closure,
             locals: vec![Value::Null; function.local_names.len()],
             stack,
-            catch_error: false,
+            catch_error: CatchErrorKind::None,
         })
     }
 }
@@ -291,12 +312,22 @@ impl<'gc> FramesState<'gc> {
     }
 
     // Return to the upper frame with results starting at the given register index.
-    pub(crate) fn return_upper(&mut self) {
+    pub(crate) fn return_upper(&mut self, ctx: Context<'gc>) {
         match self.frames.pop() {
             Some(Frame::Lua(LuciaFrame { mut stack, .. })) => {
                 let return_value = stack.pop().expect("stack error");
                 match self.frames.last_mut() {
-                    Some(Frame::Lua(LuciaFrame { stack, .. })) => stack.push(return_value),
+                    Some(Frame::Lua(LuciaFrame {
+                        stack, catch_error, ..
+                    })) => match catch_error {
+                        CatchErrorKind::Try => {
+                            let table = Table::new(&ctx);
+                            table.set(ctx, 0, return_value);
+                            table.set(ctx, 1, Value::Null);
+                            stack.push(table.into_value(ctx));
+                        }
+                        _ => stack.push(return_value),
+                    },
                     None => self.return_value = return_value,
                     _ => panic!("lua frame must be above a lua frame"),
                 }
@@ -312,19 +343,43 @@ impl<'gc> FramesState<'gc> {
         if e.kind.recoverable() {
             for (c, f) in self.frames.iter_mut().rev().enumerate() {
                 if let Frame::Lua(LuciaFrame {
-                    catch_error: true,
-                    stack,
-                    ..
+                    catch_error, stack, ..
                 }) = f
                 {
-                    stack.push(e.into_value(ctx));
-                    self.frames.truncate(c);
-                    return;
+                    match catch_error {
+                        CatchErrorKind::None => (),
+                        CatchErrorKind::Try => {
+                            let table = Table::new(&ctx);
+                            table.set(ctx, 0, Value::Null);
+                            table.set(
+                                ctx,
+                                1,
+                                if let ErrorKind::LuciaError(v) = e.kind {
+                                    v
+                                } else {
+                                    e.to_string().into_value(ctx)
+                                },
+                            );
+                            stack.push(table.into_value(ctx));
+                            self.frames.truncate(c);
+                            return;
+                        }
+                        CatchErrorKind::TryOption => {
+                            stack.push(Value::Null);
+                            self.frames.truncate(c);
+                            return;
+                        }
+                        CatchErrorKind::TryPanic => {
+                            self.frames.clear();
+                            self.error = Some(e);
+                            return;
+                        }
+                    }
                 }
             }
         }
         self.frames.clear();
-        self.return_value = e.into_value(ctx);
+        self.error = Some(e);
     }
 
     pub(crate) fn traceback(&self) -> Vec<Frame<'gc>> {
