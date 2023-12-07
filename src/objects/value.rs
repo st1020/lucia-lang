@@ -209,7 +209,6 @@ pub enum ValueType {
     Table,
     Function,
     UserData,
-    Error,
 }
 
 impl ValueType {
@@ -223,7 +222,6 @@ impl ValueType {
             ValueType::Table => "table",
             ValueType::Function => "function",
             ValueType::UserData => "userdata",
-            ValueType::Error => "error",
         }
     }
 }

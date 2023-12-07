@@ -2,7 +2,10 @@
 
 use std::fmt;
 
-use crate::utils::{escape_str, Join, Location};
+use crate::{
+    compiler::parser::ParserError,
+    utils::{escape_str, Join, Location},
+};
 
 /// Kind of function.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,20 +85,20 @@ pub enum StmtKind {
         kind: ImportKind,
     },
     Assign {
-        left: Box<Expr>,
+        left: AssignLeft,
         right: Box<Expr>,
     },
     AssignOp {
         operator: BinOp,
-        left: Box<Expr>,
+        left: AssignLeft,
         right: Box<Expr>,
     },
     AssignUnpack {
-        left: Vec<Expr>,
+        left: Vec<AssignLeft>,
         right: Box<Expr>,
     },
     AssignMulti {
-        left: Vec<Expr>,
+        left: Vec<AssignLeft>,
         right: Vec<Expr>,
     },
     Block(Box<Block>),
@@ -251,8 +254,7 @@ pub enum ExprKind {
     },
     Member {
         table: Box<Expr>,
-        property: Box<Expr>,
-        kind: MemberKind,
+        property: MemberKind,
         safe: bool,
     },
     MetaMember {
@@ -345,29 +347,10 @@ impl fmt::Display for ExprKind {
             ExprKind::Member {
                 table,
                 property,
-                kind,
                 safe,
-            } => {
-                if *safe {
-                    match kind {
-                        MemberKind::Bracket => write!(f, "{table}?[{property}]"),
-                        MemberKind::Dot => write!(f, "{table}?.{property}"),
-                        MemberKind::DoubleColon => write!(f, "{table}?::{property}"),
-                    }
-                } else {
-                    match kind {
-                        MemberKind::Bracket => write!(f, "{table}[{property}]"),
-                        MemberKind::Dot => write!(f, "{table}.{property}"),
-                        MemberKind::DoubleColon => write!(f, "{table}::{property}"),
-                    }
-                }
-            }
+            } => write!(f, "{table}{}{property}", if *safe { "?" } else { "" }),
             ExprKind::MetaMember { table, safe } => {
-                if *safe {
-                    write!(f, "{table}?[#]")
-                } else {
-                    write!(f, "{table}[#]")
-                }
+                write!(f, "{table}{}[#]", if *safe { "?" } else { "" })
             }
             ExprKind::Call {
                 callee,
@@ -539,14 +522,24 @@ impl BinOp {
 }
 
 /// Kind of member expression.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum MemberKind {
     /// `[]`
-    Bracket,
+    Bracket(Box<Expr>),
     /// `.`
-    Dot,
+    Dot(Box<Ident>),
     /// `::`
-    DoubleColon,
+    DoubleColon(Box<Ident>),
+}
+
+impl fmt::Display for MemberKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MemberKind::Bracket(expr) => write!(f, "[{}]", expr),
+            MemberKind::Dot(ident) => write!(f, ".{}", ident),
+            MemberKind::DoubleColon(ident) => write!(f, "::{}", ident),
+        }
+    }
 }
 
 /// Kind of import statement.
@@ -581,5 +574,89 @@ pub struct TableProperty {
 impl fmt::Display for TableProperty {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}: {}", self.key, self.value)
+    }
+}
+
+/// The left part of assign.
+#[derive(Debug, Clone)]
+pub enum AssignLeft {
+    Ident(Box<Ident>),
+    Member {
+        table: Box<Expr>,
+        property: MemberKind,
+    },
+    MetaMember {
+        table: Box<Expr>,
+    },
+}
+
+impl fmt::Display for AssignLeft {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AssignLeft::Ident(ident) => write!(f, "{ident}"),
+            AssignLeft::Member { table, property } => write!(f, "{table}{property}"),
+            AssignLeft::MetaMember { table } => write!(f, "{table}[#]"),
+        }
+    }
+}
+
+impl From<Ident> for AssignLeft {
+    fn from(value: Ident) -> Self {
+        AssignLeft::Ident(Box::new(value))
+    }
+}
+
+impl TryFrom<Expr> for AssignLeft {
+    type Error = ParserError;
+
+    fn try_from(value: Expr) -> Result<Self, Self::Error> {
+        match value.kind {
+            ExprKind::Ident(ident) => Ok(AssignLeft::Ident(ident)),
+            ExprKind::Member {
+                table,
+                property,
+                safe,
+            } => {
+                if safe {
+                    Err(ParserError::ParseAssignStmtError)
+                } else {
+                    Ok(AssignLeft::Member { table, property })
+                }
+            }
+            ExprKind::MetaMember { table, safe } => {
+                if safe {
+                    Err(ParserError::ParseAssignStmtError)
+                } else {
+                    Ok(AssignLeft::MetaMember { table })
+                }
+            }
+            _ => Err(ParserError::ParseAssignStmtError),
+        }
+    }
+}
+
+impl From<AssignLeft> for Expr {
+    fn from(value: AssignLeft) -> Self {
+        match value {
+            AssignLeft::Ident(ident) => (*ident).into(),
+            AssignLeft::Member { table, property } => Expr {
+                start: table.start,
+                end: match &property {
+                    MemberKind::Bracket(expr) => expr.end,
+                    MemberKind::Dot(ident) => ident.end,
+                    MemberKind::DoubleColon(ident) => ident.end,
+                },
+                kind: ExprKind::Member {
+                    table,
+                    property,
+                    safe: false,
+                },
+            },
+            AssignLeft::MetaMember { table } => Expr {
+                start: table.start,
+                end: table.end,
+                kind: ExprKind::MetaMember { table, safe: false },
+            },
+        }
     }
 }

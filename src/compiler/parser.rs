@@ -159,29 +159,15 @@ impl<'a> Parser<'a> {
                 }
             };
         }
-        macro_rules! check_assign_left {
-            ($ast_node:expr) => {
-                match $ast_node.kind {
-                    ExprKind::Ident(_) => (),
-                    ExprKind::Member { safe, .. } | ExprKind::MetaMember { safe, .. } => {
-                        if safe {
-                            return Err(ParserError::ParseAssignStmtError);
-                        }
-                    }
-                    _ => return Err(ParserError::ParseAssignStmtError),
-                }
-            };
-        }
         macro_rules! assign_op_stmt {
             ($ast_node:expr, $bin_op:expr) => {{
-                check_assign_left!($ast_node);
                 let right = self.parse_expr(1)?;
                 Stmt {
                     start: $ast_node.start,
                     end: right.end,
                     kind: StmtKind::AssignOp {
                         operator: $bin_op,
-                        left: $ast_node,
+                        left: (*$ast_node).try_into()?,
                         right,
                     },
                 }
@@ -300,20 +286,18 @@ impl<'a> Parser<'a> {
             (*self.parse_block()?).into()
         } else if self.eat(&TokenKind::Fn) {
             stmt!(StmtKind::Assign {
-                left: Box::new(self.parse_ident()?.into()),
+                left: self.parse_ident()?.into(),
                 right: self.parse_expr_func(false)?
             })
         } else {
             let ast_node = self.parse_expr(1)?;
             if self.check(&TokenKind::Comma) {
-                check_assign_left!(ast_node);
                 let start = ast_node.start;
-                let mut left = vec![*ast_node];
+                let mut left = vec![(*ast_node).try_into()?];
                 loop {
                     if self.eat(&TokenKind::Comma) {
                         let ast_node = self.parse_expr(1)?;
-                        check_assign_left!(ast_node);
-                        left.push(*ast_node);
+                        left.push((*ast_node).try_into()?);
                     } else {
                         self.expect(&TokenKind::Assign)?;
                         break;
@@ -345,13 +329,12 @@ impl<'a> Parser<'a> {
                     }
                 }
             } else if self.eat(&TokenKind::Assign) {
-                check_assign_left!(ast_node);
                 let right = self.parse_expr(1)?;
                 Stmt {
                     start: ast_node.start,
                     end: right.end,
                     kind: StmtKind::Assign {
-                        left: ast_node,
+                        left: (*ast_node).try_into()?,
                         right,
                     },
                 }
@@ -489,7 +472,7 @@ impl<'a> Parser<'a> {
         let start = self.token.start;
         let mut ast_node = self.parse_expr_atom()?;
         macro_rules! member_attr_expr {
-            ($member_expr_kind:expr, $safe:expr) => {
+            ($member_expr_kind:path, $safe:expr) => {
                 if self.eat_noexpect(&TokenKind::Pound) {
                     Box::new(Expr {
                         kind: ExprKind::MetaMember {
@@ -503,9 +486,8 @@ impl<'a> Parser<'a> {
                     Box::new(Expr {
                         kind: ExprKind::Member {
                             table: ast_node,
-                            kind: $member_expr_kind,
+                            property: $member_expr_kind(Box::new(self.parse_ident()?.into())),
                             safe: $safe,
-                            property: Box::new(self.parse_ident()?.into()),
                         },
                         start,
                         end: self.prev_token.end,
@@ -531,9 +513,8 @@ impl<'a> Parser<'a> {
                     Box::new(Expr {
                         kind: ExprKind::Member {
                             table: ast_node,
-                            kind: MemberKind::Bracket,
+                            property: MemberKind::Bracket(self.parse_expr(1)?),
                             safe: $safe,
-                            property: self.parse_expr(1)?,
                         },
                         start: {
                             self.expect(&TokenKind::CloseBracket)?;

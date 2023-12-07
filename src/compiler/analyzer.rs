@@ -230,7 +230,7 @@ impl SemanticAnalyzer {
             StmtKind::Global { arguments: _ } => (),
             StmtKind::Import { path: _, kind: _ } => (),
             StmtKind::Assign { left, right } => {
-                self.build_expr(left);
+                self.build_assign_left(left);
                 self.build_expr(right);
             }
             StmtKind::AssignOp {
@@ -238,18 +238,18 @@ impl SemanticAnalyzer {
                 left,
                 right,
             } => {
-                self.build_expr(left);
+                self.build_assign_left(left);
                 self.build_expr(right);
             }
             StmtKind::AssignUnpack { left, right } => {
                 for left in left {
-                    self.build_expr(left);
+                    self.build_assign_left(left);
                 }
                 self.build_expr(right);
             }
             StmtKind::AssignMulti { left, right } => {
                 for left in left {
-                    self.build_expr(left);
+                    self.build_assign_left(left);
                 }
                 for right in right {
                     self.build_expr(right);
@@ -307,11 +307,10 @@ impl SemanticAnalyzer {
             ExprKind::Member {
                 table,
                 property,
-                kind: _,
                 safe: _,
             } => {
                 self.build_expr(table);
-                self.build_expr(property);
+                self.build_member_property(property);
             }
             ExprKind::MetaMember { table, safe: _ } => self.build_expr(table),
             ExprKind::Call {
@@ -324,6 +323,24 @@ impl SemanticAnalyzer {
                     self.build_expr(arg);
                 }
             }
+        }
+    }
+
+    fn build_assign_left(&mut self, ast_node: &mut AssignLeft) {
+        match ast_node {
+            AssignLeft::Ident(_) => (),
+            AssignLeft::Member { table, property } => {
+                self.build_expr(table);
+                self.build_member_property(property);
+            }
+            AssignLeft::MetaMember { table } => self.build_expr(table),
+        }
+    }
+
+    fn build_member_property(&mut self, ast_node: &mut MemberKind) {
+        match ast_node {
+            MemberKind::Bracket(expr) => self.build_expr(expr),
+            MemberKind::Dot(_) | MemberKind::DoubleColon(_) => (),
         }
     }
 
@@ -401,11 +418,7 @@ impl SemanticAnalyzer {
                 ImportKind::Glob => (),
             },
             StmtKind::Assign { left, right } => {
-                if let ExprKind::Ident(ident) = &left.kind {
-                    self.store_name(func_id, &ident.name);
-                } else {
-                    self.analyze_name_expr(func_id, left);
-                }
+                self.analyze_name_assign_left(func_id, left);
                 self.analyze_name_expr(func_id, right);
             }
             StmtKind::AssignOp {
@@ -413,31 +426,18 @@ impl SemanticAnalyzer {
                 left,
                 right,
             } => {
-                if let ExprKind::Ident(ident) = &left.kind {
-                    self.store_name(func_id, &ident.name);
-                } else {
-                    self.analyze_name_expr(func_id, left);
-                }
-                self.analyze_name_expr(func_id, left);
+                self.analyze_name_assign_left(func_id, left);
                 self.analyze_name_expr(func_id, right);
             }
             StmtKind::AssignUnpack { left, right } => {
                 for left in left {
-                    if let ExprKind::Ident(ident) = &left.kind {
-                        self.store_name(func_id, &ident.name);
-                    } else {
-                        self.analyze_name_expr(func_id, left);
-                    }
+                    self.analyze_name_assign_left(func_id, left);
                 }
                 self.analyze_name_expr(func_id, right);
             }
             StmtKind::AssignMulti { left, right } => {
                 for left in left {
-                    if let ExprKind::Ident(ident) = &left.kind {
-                        self.store_name(func_id, &ident.name);
-                    } else {
-                        self.analyze_name_expr(func_id, left);
-                    }
+                    self.analyze_name_assign_left(func_id, left);
                 }
                 for right in right {
                     self.analyze_name_expr(func_id, right);
@@ -495,11 +495,10 @@ impl SemanticAnalyzer {
             ExprKind::Member {
                 table,
                 property,
-                kind: _,
                 safe: _,
             } => {
                 self.analyze_name_expr(func_id, table);
-                self.analyze_name_expr(func_id, property);
+                self.analyze_name_member_property(func_id, property);
             }
             ExprKind::MetaMember { table, safe: _ } => self.analyze_name_expr(func_id, table),
             ExprKind::Call {
@@ -511,6 +510,26 @@ impl SemanticAnalyzer {
                 for arg in arguments {
                     self.analyze_name_expr(func_id, arg);
                 }
+            }
+        }
+    }
+
+    fn analyze_name_assign_left(&mut self, func_id: usize, ast_node: &mut AssignLeft) {
+        match ast_node {
+            AssignLeft::Ident(ident) => self.store_name(func_id, &ident.name),
+            AssignLeft::Member { table, property } => {
+                self.analyze_name_expr(func_id, table);
+                self.analyze_name_member_property(func_id, property);
+            }
+            AssignLeft::MetaMember { table } => self.analyze_name_expr(func_id, table),
+        }
+    }
+
+    fn analyze_name_member_property(&mut self, func_id: usize, ast_node: &mut MemberKind) {
+        match ast_node {
+            MemberKind::Bracket(expr) => self.analyze_name_expr(func_id, expr),
+            MemberKind::Dot(ident) | MemberKind::DoubleColon(ident) => {
+                self.load_name(func_id, &ident.name)
             }
         }
     }
