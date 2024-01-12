@@ -2,7 +2,7 @@
 
 use thiserror::Error;
 
-use crate::utils::Join;
+use crate::utils::{Float, Join};
 
 use super::{
     ast::*,
@@ -595,7 +595,7 @@ impl<'a> Parser<'a> {
         } else if let Some(v) = self.eat_literal() {
             lit_expr!(match v {
                 LiteralKind::Int(v) => LitKind::Int(v?),
-                LiteralKind::Float(v) => LitKind::Float(v?),
+                LiteralKind::Float(v) => LitKind::Float(Float(v?)),
                 LiteralKind::Str(v) => LitKind::Str(v?),
             })
         } else if self.eat(&TokenKind::OpenBrace) {

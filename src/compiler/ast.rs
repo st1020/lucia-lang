@@ -4,7 +4,7 @@ use std::fmt;
 
 use crate::{
     compiler::parser::ParserError,
-    utils::{escape_str, Join, Location},
+    utils::{escape_str, Float, Join, Location},
 };
 
 /// Kind of function.
@@ -384,7 +384,7 @@ impl fmt::Display for Lit {
 }
 
 /// Kind of literal.
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Hash)]
 pub enum LitKind {
     /// "null"
     Null,
@@ -393,7 +393,7 @@ pub enum LitKind {
     /// "12", "0o100", "0b110"
     Int(i64),
     /// "12.34", "0b100.100"
-    Float(f64),
+    Float(Float),
     /// ""abc"", ""abc"
     Str(String),
 }

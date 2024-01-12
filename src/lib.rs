@@ -33,7 +33,7 @@ pub mod frame;
 pub mod libs;
 pub mod meta_ops;
 pub mod objects;
-mod utils;
+pub mod utils;
 mod vm;
 
 pub use context::*;

@@ -1,19 +1,11 @@
-use std::{
-    fmt,
-    hash::{Hash, Hasher},
-    num::NonZeroUsize,
-};
+use std::{fmt, num::NonZeroUsize};
 
 use gc_arena::{Collect, Gc};
 
 use crate::{
     objects::{AnyCallback, AnyUserData, Closure, Str, Table},
-    utils::escape_str,
+    utils::{escape_str, Float},
 };
-
-// canonical raw float bit
-const CANONICAL_NAN_BITS: u64 = 0x7ff8000000000000u64;
-const CANONICAL_ZERO_BITS: u64 = 0x0u64;
 
 /// Enum of lucia function (Closure / Callback).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Collect)]
@@ -36,7 +28,7 @@ impl<'gc> From<AnyCallback<'gc>> for Function<'gc> {
 }
 
 /// Enum of all lucia values.
-#[derive(Debug, Copy, Clone, Collect, Default)]
+#[derive(Debug, Copy, Clone, Collect, Default, PartialEq, Eq, Hash)]
 #[collect(no_drop)]
 pub enum Value<'gc> {
     /// `null` - A null value.
@@ -47,7 +39,7 @@ pub enum Value<'gc> {
     /// `int` - A 64-bit integer.
     Int(i64),
     /// `float` - A 64-bit floating point number.
-    Float(f64),
+    Float(Float),
     /// `str` - A UTF-8 string.
     Str(Str<'gc>),
     /// `table` - A table.
@@ -83,26 +75,11 @@ impl<'gc> Value<'gc> {
 
     pub fn is(&self, other: &Value<'gc>) -> bool {
         match (self, other) {
-            (Self::Null, Self::Null) => true,
-            (Self::Bool(l0), Self::Bool(r0)) => l0 == r0,
-            (Self::Int(l0), Self::Int(r0)) => l0 == r0,
-            (Self::Float(l0), Self::Float(r0)) => {
-                if l0.is_nan() {
-                    r0.is_nan()
-                } else {
-                    l0 == r0
-                }
-            }
-            (Self::Str(l0), Self::Str(r0)) => Gc::ptr_eq(l0.0, r0.0),
-            (Self::Table(l0), Self::Table(r0)) => Gc::ptr_eq(l0.0, r0.0),
-            (Self::Function(Function::Closure(l0)), Self::Function(Function::Closure(r0))) => {
-                Gc::ptr_eq(l0.0, r0.0)
-            }
-            (Self::Function(Function::Callback(l0)), Self::Function(Function::Callback(r0))) => {
-                l0.as_ptr() == r0.as_ptr()
-            }
-            (Self::UserData(l0), Self::UserData(r0)) => l0.as_ptr() == r0.as_ptr(),
-            _ => false,
+            (Self::Null, Self::Null)
+            | (Self::Bool(_), Self::Bool(_))
+            | (Self::Int(_), Self::Int(_))
+            | (Self::Float(_), Self::Float(_)) => self == other,
+            _ => self.id() == other.id(),
         }
     }
 
@@ -146,53 +123,6 @@ impl<'gc> fmt::Display for Value<'gc> {
             Self::Function(Function::Closure(v)) => write!(f, "<function {:p}>", v.0),
             Self::Function(Function::Callback(v)) => write!(f, "<function {:p}>", v.as_ptr()),
             Self::UserData(v) => write!(f, "<userdata {:p}>", v.as_ptr()),
-        }
-    }
-}
-
-impl<'gc> PartialEq for Value<'gc> {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Null, Self::Null) => true,
-            (Self::Bool(l0), Self::Bool(r0)) => l0 == r0,
-            (Self::Int(l0), Self::Int(r0)) => l0 == r0,
-            (Self::Float(l0), Self::Float(r0)) => {
-                if l0.is_nan() {
-                    r0.is_nan()
-                } else {
-                    l0 == r0
-                }
-            }
-            (Self::Str(l0), Self::Str(r0)) => l0 == r0,
-            (Self::Table(l0), Self::Table(r0)) => l0 == r0,
-            (Self::Function(l0), Self::Function(r0)) => l0 == r0,
-            (Self::UserData(l0), Self::UserData(r0)) => l0 == r0,
-            _ => false,
-        }
-    }
-}
-
-impl<'gc> Eq for Value<'gc> {}
-
-impl<'gc> Hash for Value<'gc> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        match self {
-            Self::Null => 0.hash(state),
-            Self::Bool(v) => v.hash(state),
-            Self::Int(v) => v.hash(state),
-            Self::Float(v) => {
-                if v.is_nan() {
-                    CANONICAL_NAN_BITS.hash(state)
-                } else if *v == 0.0f64 {
-                    CANONICAL_ZERO_BITS.hash(state)
-                } else {
-                    (*v).to_bits().hash(state)
-                }
-            }
-            Self::Str(v) => v.hash(state),
-            Self::Table(v) => v.hash(state),
-            Self::Function(v) => v.hash(state),
-            Self::UserData(v) => v.hash(state),
         }
     }
 }

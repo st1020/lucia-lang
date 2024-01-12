@@ -4,6 +4,8 @@ use std::fmt;
 
 use gc_arena::Collect;
 
+use crate::utils::Float;
+
 pub use super::ast::FunctionKind;
 use super::{
     analyzer,
@@ -81,6 +83,8 @@ impl PartialEq for Code {
     }
 }
 
+impl Eq for Code {}
+
 impl fmt::Display for FunctionKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -92,7 +96,7 @@ impl fmt::Display for FunctionKind {
 }
 
 /// The const value.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConstValue {
     /// "null"
     Null,
@@ -101,7 +105,7 @@ pub enum ConstValue {
     /// "12", "0o100", "0b110"
     Int(i64),
     /// "12.34", "0b100.100"
-    Float(f64),
+    Float(Float),
     /// ""abc"", ""abc"
     Str(String),
     /// A function.

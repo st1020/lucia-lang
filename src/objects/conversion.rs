@@ -3,6 +3,7 @@ use crate::{
     objects::{
         AnyCallback, Closure, Function, Str, Table, TableEntries, TableState, Value, ValueType,
     },
+    utils::Float,
     Context,
 };
 
@@ -20,6 +21,12 @@ impl<'gc> From<i64> for Value<'gc> {
 
 impl<'gc> From<f64> for Value<'gc> {
     fn from(v: f64) -> Value<'gc> {
+        Value::Float(v.into())
+    }
+}
+
+impl<'gc> From<Float> for Value<'gc> {
+    fn from(v: Float) -> Value<'gc> {
         Value::Float(v)
     }
 }
@@ -203,7 +210,7 @@ macro_rules! impl_float_from {
             impl<'gc> FromValue<'gc> for $f {
                 fn from_value(value: Value<'gc>) -> Result<Self, Error<'gc>> {
                     if let Value::Float(v) = value {
-                        Ok(v as $f)
+                        Ok(v.0 as $f)
                     } else {
                         Err(unexpected_type_error!(ValueType::Float, value))
                     }
@@ -260,7 +267,7 @@ impl<'gc> From<Value<'gc>> for bool {
             Value::Null => false,
             Value::Bool(v) => v,
             Value::Int(v) => v != 0,
-            Value::Float(v) => v != 0.0,
+            Value::Float(v) => v.0 != 0.0,
             _ => true,
         }
     }

@@ -358,7 +358,7 @@ pub fn bool<'gc>(ctx: Context<'gc>, v: Value<'gc>) -> Result<MetaResult<'gc, 1>,
         Value::Null => Ok(MetaResult::Value(false.into())),
         Value::Bool(v) => Ok(MetaResult::Value(v.into())),
         Value::Int(v) => Ok(MetaResult::Value((v != 0).into())),
-        Value::Float(v) => Ok(MetaResult::Value((v != 0.0).into())),
+        Value::Float(v) => Ok(MetaResult::Value((v.0 != 0.0).into())),
         _ => Ok(MetaResult::Value(true.into())),
     }
 }
@@ -375,7 +375,7 @@ pub fn int<'gc>(ctx: Context<'gc>, v: Value<'gc>) -> Result<MetaResult<'gc, 1>, 
         Value::Null => Ok(MetaResult::Value(0.into())),
         Value::Bool(v) => Ok(MetaResult::Value((if v { 1 } else { 0 }).into())),
         Value::Int(v) => Ok(MetaResult::Value(v.into())),
-        Value::Float(v) => Ok(MetaResult::Value((v as i64).into())),
+        Value::Float(v) => Ok(MetaResult::Value((v.0 as i64).into())),
         Value::Str(s) => Ok(MetaResult::Value(
             s.parse::<i64>()
                 .map_err(|_| meta_operator_error!(ctx, MetaMethod::Int, v))?

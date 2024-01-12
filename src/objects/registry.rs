@@ -4,6 +4,7 @@ use gc_arena::{Collect, DynamicRoot, DynamicRootSet, Mutation, Rootable};
 
 use crate::{
     objects::{AnyCallback, AnyUserData, Closure, Function, GcError, Str, Table, Value},
+    utils::Float,
     Context,
 };
 
@@ -83,7 +84,7 @@ pub enum StaticValue {
     Null,
     Bool(bool),
     Int(i64),
-    Float(f64),
+    Float(Float),
     Str(StaticStr),
     Table(StaticTable),
     Function(StaticFunction),
@@ -104,6 +105,12 @@ impl From<i64> for StaticValue {
 
 impl From<f64> for StaticValue {
     fn from(v: f64) -> StaticValue {
+        StaticValue::Float(v.into())
+    }
+}
+
+impl From<Float> for StaticValue {
+    fn from(v: Float) -> StaticValue {
         StaticValue::Float(v)
     }
 }
