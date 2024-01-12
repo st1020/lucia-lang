@@ -388,7 +388,7 @@ f(1, 2, 3)
 }
 
 #[test]
-fn test_type_convert_bool() {
+fn test_type_convert() {
     run!(
         r#"
 assert(bool(null) == false)
@@ -403,7 +403,7 @@ assert(bool({}) == true)
         r#"
 assert(int(null) == 0)
 assert(int(true) == 1)
-assert(int(flase) == 0)
+assert(int(false) == 0)
 assert(int(0.0) == 0)
 assert(int(0.5) == 0)
 assert(int(0.9) == 0)
@@ -417,7 +417,7 @@ assert(int("123") == 123)
         r#"
 assert(float(null) == 0.0)
 assert(float(true) == 1.0)
-assert(float(flase) == 0.0)
+assert(float(false) == 0.0)
 assert(float(0) == 0.0)
 assert(float(1) == 1.0)
 assert(float("1.0") == 1.0)
