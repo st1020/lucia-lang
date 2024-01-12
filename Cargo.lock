@@ -53,7 +53,7 @@ dependencies = [
  "gc-arena",
  "indexmap",
  "thiserror",
- "unicode-xid",
+ "unicode-ident",
 ]
 
 [[package]]

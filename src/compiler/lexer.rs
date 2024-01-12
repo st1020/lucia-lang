@@ -7,7 +7,7 @@ use std::{
 };
 
 use thiserror::Error;
-use unicode_xid;
+use unicode_ident;
 
 use crate::utils::Location;
 
@@ -169,12 +169,12 @@ pub fn is_whitespace(c: char) -> bool {
 /// True if `c` is valid as a first character of an identifier.
 pub fn is_id_start(c: char) -> bool {
     // This is XID_Start OR '_' (which formally is not a XID_Start).
-    c == '_' || unicode_xid::UnicodeXID::is_xid_start(c)
+    c == '_' || unicode_ident::is_xid_start(c)
 }
 
 /// True if `c` is valid as a non-first character of an identifier.
 pub fn is_id_continue(c: char) -> bool {
-    unicode_xid::UnicodeXID::is_xid_continue(c)
+    unicode_ident::is_xid_continue(c)
 }
 
 /// The passed string is lexically an identifier.

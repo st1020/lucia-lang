@@ -11,7 +11,7 @@ keywords = ["language", "compiler", "lexer", "parser", "lucia"]
 categories = ["compilers", "parser-implementations"]
 
 [dependencies]
-unicode-xid = "0.2"
+unicode-ident = "1.0"
 thiserror = "1.0"
 indexmap = "2.0"
 gc-arena = "0.5"
