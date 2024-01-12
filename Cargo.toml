@@ -14,7 +14,7 @@ categories = ["compilers", "parser-implementations"]
 unicode-xid = "0.2"
 thiserror = "1.0"
 indexmap = "2.0"
-gc-arena = "0.3"
+gc-arena = "0.5"
 
 [profile.release]
 opt-level = 3

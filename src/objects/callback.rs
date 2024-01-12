@@ -185,7 +185,8 @@ mod tests {
             }
         }
 
-        let arena = Arena::<Rootable![State<'_>]>::new(Default::default(), |mc| State::new(mc));
+        #[allow(clippy::redundant_closure)]
+        let arena = Arena::<Rootable![State<'_>]>::new(|mc| State::new(mc));
         arena.mutate(|mc, state| {
             let ctx = state.ctx(mc);
             let dyn_callback = AnyCallback::new(mc, CB(17));

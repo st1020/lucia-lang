@@ -1,6 +1,6 @@
 use std::ops;
 
-use gc_arena::{Arena, ArenaParameters, Collect, Mutation, Rootable};
+use gc_arena::{Arena, Collect, Mutation, Rootable};
 
 use crate::{
     compiler::code::Code,
@@ -58,8 +58,8 @@ const COLLECTOR_GRANULARITY: f64 = 1024.0;
 
 impl Lucia {
     pub fn new() -> Lucia {
-        let arena =
-            Arena::<Rootable![State<'_>]>::new(ArenaParameters::default(), |mc| State::new(mc));
+        #[allow(clippy::redundant_closure)]
+        let arena = Arena::<Rootable![State<'_>]>::new(|mc| State::new(mc));
         let mut lucia = Lucia(arena);
         lucia.load_libs();
         lucia
@@ -85,7 +85,7 @@ impl Lucia {
         F: for<'gc> FnOnce(Context<'gc>) -> T,
     {
         let r = self.0.mutate(move |mc, state| f(state.ctx(mc)));
-        if self.0.allocation_debt() > COLLECTOR_GRANULARITY {
+        if self.0.metrics().allocation_debt() > COLLECTOR_GRANULARITY {
             self.0.collect_debt();
         }
         r
