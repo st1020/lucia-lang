@@ -1,7 +1,8 @@
 //! Utilities for lucia-lang.
 
 use std::{
-    fmt::{Debug, Display},
+    cmp::Ordering,
+    fmt,
     hash::{Hash, Hasher},
     ops,
 };
@@ -12,8 +13,8 @@ use gc_arena::Collect;
 const CANONICAL_NAN_BITS: u64 = 0x7ff8000000000000u64;
 const CANONICAL_ZERO_BITS: u64 = 0x0u64;
 
-/// The f64 which impl Eq, Hash.
-#[derive(Clone, Copy, Collect, PartialOrd)]
+/// The f64 which impl Eq, Ord, Hash.
+#[derive(Clone, Copy, Collect)]
 #[collect(require_static)]
 pub struct Float(pub f64);
 
@@ -41,6 +42,22 @@ impl PartialEq for Float {
 
 impl Eq for Float {}
 
+impl PartialOrd for Float {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Float {
+    fn cmp(&self, other: &Self) -> Ordering {
+        if self == other {
+            Ordering::Equal
+        } else {
+            self.0.total_cmp(&other.0)
+        }
+    }
+}
+
 impl Hash for Float {
     fn hash<H: Hasher>(&self, state: &mut H) {
         if self.0.is_nan() {
@@ -53,15 +70,15 @@ impl Hash for Float {
     }
 }
 
-impl Debug for Float {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Debug::fmt(&self.0, f)
+impl fmt::Debug for Float {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self, f)
     }
 }
 
-impl Display for Float {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.0, f)
+impl fmt::Display for Float {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self, f)
     }
 }
 
