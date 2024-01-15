@@ -346,8 +346,8 @@ impl<'a> Parser<'a> {
                 assign_op_stmt!(ast_node, BinOp::Mul)
             } else if self.eat(&TokenKind::DivAssign) {
                 assign_op_stmt!(ast_node, BinOp::Div)
-            } else if self.eat(&TokenKind::ModAssign) {
-                assign_op_stmt!(ast_node, BinOp::Mod)
+            } else if self.eat(&TokenKind::RemAssign) {
+                assign_op_stmt!(ast_node, BinOp::Rem)
             } else {
                 Stmt {
                     start: ast_node.start,
@@ -423,7 +423,7 @@ impl<'a> Parser<'a> {
                 TokenKind::Sub => BinOp::Sub,
                 TokenKind::Mul => BinOp::Mul,
                 TokenKind::Div => BinOp::Div,
-                TokenKind::Mod => BinOp::Mod,
+                TokenKind::Rem => BinOp::Rem,
                 _ => break,
             };
             if operator.precedence() < min_precedence {

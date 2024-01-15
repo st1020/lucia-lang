@@ -24,7 +24,7 @@ pub enum MetaMethod {
     Sub,
     Mul,
     Div,
-    Mod,
+    Rem,
     Eq,
     Ne,
     Gt,
@@ -68,7 +68,7 @@ impl MetaMethod {
             MetaMethod::Sub => "__sub__",
             MetaMethod::Mul => "__mul__",
             MetaMethod::Div => "__div__",
-            MetaMethod::Mod => "__mod__",
+            MetaMethod::Rem => "__rem__",
             MetaMethod::Eq => "__eq__",
             MetaMethod::Ne => "__ne__",
             MetaMethod::Gt => "__gt__",
@@ -302,7 +302,7 @@ pub fn add<'gc>(
 bin_op!(sub, -, Sub);
 bin_op!(mul, *, Mul);
 bin_op!(div, /, Div);
-bin_op!(mod_, %, Mod);
+bin_op!(rem, %, Rem);
 
 macro_rules! eq_ne {
     ($name:tt, $op:tt, $meta_method:tt) => {

@@ -77,7 +77,7 @@ pub enum TokenKind {
     /// "/="
     DivAssign,
     /// "%="
-    ModAssign,
+    RemAssign,
 
     // One-char tokens:
     /// ","
@@ -121,7 +121,7 @@ pub enum TokenKind {
     /// "/"
     Div,
     /// "%"
-    Mod,
+    Rem,
 
     // other
     /// End of line (`\n`)
@@ -178,7 +178,7 @@ impl fmt::Display for TokenKind {
             Self::SubAssign => write!(f, "SubAssign (-=)"),
             Self::MulAssign => write!(f, "MulAssign (*=)"),
             Self::DivAssign => write!(f, "DivAssign (/=)"),
-            Self::ModAssign => write!(f, "ModAssign (%=)"),
+            Self::RemAssign => write!(f, "RemAssign (%=)"),
             Self::Comma => write!(f, "Comma (,)"),
             Self::Dot => write!(f, "Dot (.)"),
             Self::OpenParen => write!(f, "OpenParen (())"),
@@ -199,7 +199,7 @@ impl fmt::Display for TokenKind {
             Self::Sub => write!(f, "Sub (-)"),
             Self::Mul => write!(f, "Mul (*)"),
             Self::Div => write!(f, "Div (/)"),
-            Self::Mod => write!(f, "Mod (%)"),
+            Self::Rem => write!(f, "Rem (%)"),
             Self::EOL => write!(f, "EOL (\\n)"),
             Self::LineComment => write!(f, "LineComment (// ...)"),
             Self::BlockComment => write!(f, "BlockComment (/* ... */)"),

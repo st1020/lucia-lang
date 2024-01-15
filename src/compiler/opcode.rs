@@ -71,7 +71,7 @@ pub enum OpCode {
     /// Implements `TOS = TOS1 / TOS`.
     Div,
     /// Implements `TOS = TOS1 % TOS`.
-    Mod,
+    Rem,
 
     /// Implements `TOS = TOS1 == TOS`.
     Eq,
@@ -151,7 +151,7 @@ impl fmt::Display for OpCode {
             Self::Sub => write!(f, "Sub"),
             Self::Mul => write!(f, "Mul"),
             Self::Div => write!(f, "Div"),
-            Self::Mod => write!(f, "Mod"),
+            Self::Rem => write!(f, "Rem"),
             Self::Eq => write!(f, "Eq"),
             Self::Ne => write!(f, "Ne"),
             Self::Gt => write!(f, "Gt"),

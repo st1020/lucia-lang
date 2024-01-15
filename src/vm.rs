@@ -252,7 +252,7 @@ impl<'gc> FramesState<'gc> {
                 OpCode::Sub => bin_op!(sub),
                 OpCode::Mul => bin_op!(mul),
                 OpCode::Div => bin_op!(div),
-                OpCode::Mod => bin_op!(mod_),
+                OpCode::Rem => bin_op!(rem),
                 OpCode::Eq => bin_op!(eq),
                 OpCode::Ne => bin_op!(ne),
                 OpCode::Gt => bin_op!(gt),

@@ -25,7 +25,7 @@ impl TryFrom<BinOp> for OpCode {
             BinOp::Sub => OpCode::Sub,
             BinOp::Mul => OpCode::Mul,
             BinOp::Div => OpCode::Div,
-            BinOp::Mod => OpCode::Mod,
+            BinOp::Rem => OpCode::Rem,
             BinOp::Eq => OpCode::Eq,
             BinOp::Lt => OpCode::Lt,
             BinOp::Le => OpCode::Le,
@@ -734,7 +734,7 @@ fn get_stack_size(code: &Vec<OpCode>, mut offset: usize, init_size: usize) -> us
             | OpCode::Sub
             | OpCode::Mul
             | OpCode::Div
-            | OpCode::Mod
+            | OpCode::Rem
             | OpCode::Eq
             | OpCode::Ne
             | OpCode::Gt

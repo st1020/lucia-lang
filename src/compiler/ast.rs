@@ -453,8 +453,8 @@ pub enum BinOp {
     Mul,
     /// The `/` operator (division)
     Div,
-    /// The `%` operator (modulus)
-    Mod,
+    /// The `%` operator (remainder)
+    Rem,
     /// The `and` operator (logical and)
     And,
     /// The `or` operator (logical or)
@@ -482,7 +482,7 @@ impl fmt::Display for BinOp {
             BinOp::Sub => write!(f, "-"),
             BinOp::Mul => write!(f, "*"),
             BinOp::Div => write!(f, "/"),
-            BinOp::Mod => write!(f, "%"),
+            BinOp::Rem => write!(f, "%"),
             BinOp::And => write!(f, "and"),
             BinOp::Or => write!(f, "or"),
             BinOp::Eq => write!(f, "=="),
@@ -501,7 +501,7 @@ impl BinOp {
         match self {
             BinOp::Mul => 5,
             BinOp::Div => 5,
-            BinOp::Mod => 5,
+            BinOp::Rem => 5,
 
             BinOp::Add => 4,
             BinOp::Sub => 4,

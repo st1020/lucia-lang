@@ -260,7 +260,7 @@ impl Cursor<'_> {
             }
             '%' if self.first() == '=' => {
                 self.bump();
-                ModAssign
+                RemAssign
             }
 
             // One-symbol tokens.
@@ -288,7 +288,7 @@ impl Cursor<'_> {
             '+' => Add,
             '-' => Sub,
             '*' => Mul,
-            '%' => Mod,
+            '%' => Rem,
             c => Unknown(c),
         };
         Token::new(token_kind, start, self.location())
