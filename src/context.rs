@@ -52,7 +52,9 @@ impl<'gc> ops::Deref for Context<'gc> {
     }
 }
 
-pub struct Lucia(Arena<Rootable![State<'_>]>);
+pub struct Lucia {
+    arena: Arena<Rootable![State<'_>]>,
+}
 
 const COLLECTOR_GRANULARITY: f64 = 1024.0;
 
@@ -60,7 +62,7 @@ impl Lucia {
     pub fn new() -> Lucia {
         #[allow(clippy::redundant_closure)]
         let arena = Arena::<Rootable![State<'_>]>::new(|mc| State::new(mc));
-        let mut lucia = Lucia(arena);
+        let mut lucia = Lucia { arena };
         lucia.load_libs();
         lucia
     }
@@ -77,16 +79,16 @@ impl Lucia {
     }
 
     pub fn gc_collect(&mut self) {
-        self.0.collect_all();
+        self.arena.collect_all();
     }
 
     pub fn run<F, T>(&mut self, f: F) -> T
     where
         F: for<'gc> FnOnce(Context<'gc>) -> T,
     {
-        let r = self.0.mutate(move |mc, state| f(state.ctx(mc)));
-        if self.0.metrics().allocation_debt() > COLLECTOR_GRANULARITY {
-            self.0.collect_debt();
+        let r = self.arena.mutate(move |mc, state| f(state.ctx(mc)));
+        if self.arena.metrics().allocation_debt() > COLLECTOR_GRANULARITY {
+            self.arena.collect_debt();
         }
         r
     }

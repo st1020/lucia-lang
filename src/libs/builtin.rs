@@ -2,7 +2,7 @@ use crate::{
     check_args,
     errors::{Error, ErrorKind},
     meta_ops,
-    objects::{AnyCallback, CallbackReturn, IntoValue, Value},
+    objects::{Callback, CallbackReturn, IntoValue, Value},
     Context,
 };
 
@@ -11,7 +11,7 @@ pub fn load_builtin(ctx: Context<'_>) {
     builtins.set(
         ctx,
         "id",
-        AnyCallback::from_fn(&ctx, |_ctx, args| {
+        Callback::from_fn(&ctx, |_ctx, args| {
             let (v,) = check_args!(args, Value);
             Ok(CallbackReturn::Return(v.id().map_or(Value::Null, |x| {
                 Value::Int(usize::from(x).try_into().unwrap())
@@ -21,7 +21,7 @@ pub fn load_builtin(ctx: Context<'_>) {
     builtins.set(
         ctx,
         "type",
-        AnyCallback::from_fn(&ctx, |ctx, args| {
+        Callback::from_fn(&ctx, |ctx, args| {
             let (v,) = check_args!(args, Value);
             Ok(CallbackReturn::Return(
                 v.value_type().name().into_value(ctx),
@@ -31,7 +31,7 @@ pub fn load_builtin(ctx: Context<'_>) {
     builtins.set(
         ctx,
         "assert",
-        AnyCallback::from_fn(&ctx, |_ctx, args| {
+        Callback::from_fn(&ctx, |_ctx, args| {
             let (v, msg) = check_args!(args, Value | Value);
             if !(bool::from(v)) {
                 Err(Error::new(ErrorKind::AssertError(
@@ -45,7 +45,7 @@ pub fn load_builtin(ctx: Context<'_>) {
     builtins.set(
         ctx,
         "len",
-        AnyCallback::from_fn(&ctx, |ctx, args| {
+        Callback::from_fn(&ctx, |ctx, args| {
             let (v,) = check_args!(args, Value);
             Ok(meta_ops::len(ctx, v)?.into())
         }),
@@ -53,7 +53,7 @@ pub fn load_builtin(ctx: Context<'_>) {
     builtins.set(
         ctx,
         "bool",
-        AnyCallback::from_fn(&ctx, |ctx, args| {
+        Callback::from_fn(&ctx, |ctx, args| {
             let (v,) = check_args!(args, Value);
             Ok(meta_ops::bool(ctx, v)?.into())
         }),
@@ -61,7 +61,7 @@ pub fn load_builtin(ctx: Context<'_>) {
     builtins.set(
         ctx,
         "int",
-        AnyCallback::from_fn(&ctx, |ctx, args| {
+        Callback::from_fn(&ctx, |ctx, args| {
             let (v,) = check_args!(args, Value);
             Ok(meta_ops::int(ctx, v)?.into())
         }),
@@ -69,7 +69,7 @@ pub fn load_builtin(ctx: Context<'_>) {
     builtins.set(
         ctx,
         "float",
-        AnyCallback::from_fn(&ctx, |ctx, args| {
+        Callback::from_fn(&ctx, |ctx, args| {
             let (v,) = check_args!(args, Value);
             Ok(meta_ops::float(ctx, v)?.into())
         }),
@@ -77,7 +77,7 @@ pub fn load_builtin(ctx: Context<'_>) {
     builtins.set(
         ctx,
         "str",
-        AnyCallback::from_fn(&ctx, |ctx, args| {
+        Callback::from_fn(&ctx, |ctx, args| {
             let (v,) = check_args!(args, Value);
             Ok(meta_ops::str(ctx, v)?.into())
         }),
@@ -85,7 +85,7 @@ pub fn load_builtin(ctx: Context<'_>) {
     builtins.set(
         ctx,
         "repr",
-        AnyCallback::from_fn(&ctx, |ctx, args| {
+        Callback::from_fn(&ctx, |ctx, args| {
             let (v,) = check_args!(args, Value);
             Ok(meta_ops::repr(ctx, v)?.into())
         }),

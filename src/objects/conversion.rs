@@ -1,7 +1,7 @@
 use crate::{
     errors::{Error, ErrorKind},
     objects::{
-        AnyCallback, Closure, Function, Str, Table, TableEntries, TableState, Value, ValueType,
+        Callback, Closure, Function, Str, Table, TableEntries, TableState, Value, ValueType,
     },
     utils::Float,
     Context,
@@ -55,8 +55,8 @@ impl<'gc> From<Closure<'gc>> for Value<'gc> {
     }
 }
 
-impl<'gc> From<AnyCallback<'gc>> for Value<'gc> {
-    fn from(v: AnyCallback<'gc>) -> Value<'gc> {
+impl<'gc> From<Callback<'gc>> for Value<'gc> {
+    fn from(v: Callback<'gc>) -> Value<'gc> {
         Value::Function(Function::Callback(v))
     }
 }
@@ -252,7 +252,7 @@ impl<'gc> FromValue<'gc> for Closure<'gc> {
     }
 }
 
-impl<'gc> FromValue<'gc> for AnyCallback<'gc> {
+impl<'gc> FromValue<'gc> for Callback<'gc> {
     fn from_value(value: Value<'gc>) -> Result<Self, Error<'gc>> {
         match value {
             Value::Function(Function::Callback(c)) => Ok(c),

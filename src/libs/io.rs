@@ -2,7 +2,7 @@ use std::io;
 
 use crate::{
     check_args,
-    objects::{AnyCallback, CallbackReturn, IntoValue, Table, Value},
+    objects::{Callback, CallbackReturn, IntoValue, Table, Value},
     utils::Join,
     Context,
 };
@@ -12,7 +12,7 @@ pub fn io_lib(ctx: Context<'_>) -> Table<'_> {
     t.set(
         ctx,
         "print",
-        AnyCallback::from_fn(&ctx, |_ctx, args| {
+        Callback::from_fn(&ctx, |_ctx, args| {
             match args.len() {
                 0 => (),
                 1 => print!("{}", args.first().unwrap()),
@@ -24,7 +24,7 @@ pub fn io_lib(ctx: Context<'_>) -> Table<'_> {
     t.set(
         ctx,
         "println",
-        AnyCallback::from_fn(&ctx, |_ctx, args| {
+        Callback::from_fn(&ctx, |_ctx, args| {
             match args.len() {
                 0 => println!(),
                 1 => println!("{}", args.first().unwrap()),
@@ -36,7 +36,7 @@ pub fn io_lib(ctx: Context<'_>) -> Table<'_> {
     t.set(
         ctx,
         "input",
-        AnyCallback::from_fn(&ctx, |ctx, args| {
+        Callback::from_fn(&ctx, |ctx, args| {
             check_args!(args);
             let mut t = String::new();
             io::stdin().read_line(&mut t).unwrap();

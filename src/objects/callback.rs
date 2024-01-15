@@ -28,7 +28,7 @@ impl<'gc, const N: usize> From<MetaResult<'gc, N>> for CallbackReturn<'gc> {
     }
 }
 
-pub trait Callback<'gc>: Collect {
+pub trait CallbackFn<'gc>: Collect {
     fn call(
         &mut self,
         ctx: Context<'gc>,
@@ -39,21 +39,21 @@ pub trait Callback<'gc>: Collect {
 // Represents a callback as a single pointer with an inline VTable header.
 #[derive(Copy, Clone, Collect)]
 #[collect(no_drop)]
-pub struct AnyCallback<'gc>(Gc<'gc, Header<'gc>>);
+pub struct Callback<'gc>(Gc<'gc, CallbackInner<'gc>>);
 
-struct Header<'gc> {
+pub struct CallbackInner<'gc> {
     call: unsafe fn(
-        *const (),
+        *const CallbackInner<'gc>,
         Context<'gc>,
         Vec<Value<'gc>>,
     ) -> Result<CallbackReturn<'gc>, Error<'gc>>,
 }
 
-impl<'gc> AnyCallback<'gc> {
-    pub fn new<C: Callback<'gc> + 'gc>(mc: &Mutation<'gc>, callback: C) -> Self {
+impl<'gc> Callback<'gc> {
+    pub fn new<C: CallbackFn<'gc> + 'gc>(mc: &Mutation<'gc>, callback: C) -> Self {
         #[repr(C)]
         struct HeaderCallback<'gc, C> {
-            header: Header<'gc>,
+            header: CallbackInner<'gc>,
             callback: C,
         }
 
@@ -76,7 +76,7 @@ impl<'gc> AnyCallback<'gc> {
         let hc = Gc::new(
             mc,
             HeaderCallback {
-                header: Header {
+                header: CallbackInner {
                     call: |ptr, ctx, args| unsafe {
                         let hc = ptr as *mut HeaderCallback<C>;
                         ((*hc).callback).call(ctx, args)
@@ -86,17 +86,17 @@ impl<'gc> AnyCallback<'gc> {
             },
         );
 
-        Self(unsafe { Gc::cast::<Header>(hc) })
+        Self(unsafe { Gc::cast::<CallbackInner>(hc) })
     }
 
-    pub fn from_fn<F>(mc: &Mutation<'gc>, call: F) -> AnyCallback<'gc>
+    pub fn from_fn<F>(mc: &Mutation<'gc>, call: F) -> Callback<'gc>
     where
         F: 'static + Fn(Context<'gc>, Vec<Value<'gc>>) -> Result<CallbackReturn<'gc>, Error<'gc>>,
     {
         Self::from_fn_with(mc, (), move |_, ctx, args| call(ctx, args))
     }
 
-    pub fn from_fn_with<R, F>(mc: &Mutation<'gc>, root: R, call: F) -> AnyCallback<'gc>
+    pub fn from_fn_with<R, F>(mc: &Mutation<'gc>, root: R, call: F) -> Callback<'gc>
     where
         R: 'gc + Collect,
         F: 'static
@@ -110,7 +110,7 @@ impl<'gc> AnyCallback<'gc> {
             call: F,
         }
 
-        impl<'gc, R, F> Callback<'gc> for RootCallback<R, F>
+        impl<'gc, R, F> CallbackFn<'gc> for RootCallback<R, F>
         where
             R: 'gc + Collect,
             F: 'static
@@ -125,11 +125,15 @@ impl<'gc> AnyCallback<'gc> {
             }
         }
 
-        AnyCallback::new(mc, RootCallback { root, call })
+        Callback::new(mc, RootCallback { root, call })
     }
 
-    pub fn as_ptr(self) -> *const () {
-        Gc::as_ptr(self.0) as *const ()
+    pub fn from_inner(inner: Gc<'gc, CallbackInner<'gc>>) -> Self {
+        Self(inner)
+    }
+
+    pub fn into_inner(self) -> Gc<'gc, CallbackInner<'gc>> {
+        self.0
     }
 
     pub fn call(
@@ -137,27 +141,29 @@ impl<'gc> AnyCallback<'gc> {
         ctx: Context<'gc>,
         args: Vec<Value<'gc>>,
     ) -> Result<CallbackReturn<'gc>, Error<'gc>> {
-        unsafe { (self.0.call)(Gc::as_ptr(self.0) as *const (), ctx, args) }
+        unsafe { (self.0.call)(Gc::as_ptr(self.0), ctx, args) }
     }
 }
 
-impl<'gc> fmt::Debug for AnyCallback<'gc> {
+impl<'gc> fmt::Debug for Callback<'gc> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.debug_tuple("Callback").field(&self.as_ptr()).finish()
+        fmt.debug_tuple("Callback")
+            .field(&Gc::as_ptr(self.0))
+            .finish()
     }
 }
 
-impl<'gc> PartialEq for AnyCallback<'gc> {
-    fn eq(&self, other: &AnyCallback<'gc>) -> bool {
-        self.as_ptr() == other.as_ptr()
+impl<'gc> PartialEq for Callback<'gc> {
+    fn eq(&self, other: &Callback<'gc>) -> bool {
+        Gc::ptr_eq(self.0, other.0)
     }
 }
 
-impl<'gc> Eq for AnyCallback<'gc> {}
+impl<'gc> Eq for Callback<'gc> {}
 
-impl<'gc> Hash for AnyCallback<'gc> {
+impl<'gc> Hash for Callback<'gc> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.as_ptr().hash(state)
+        Gc::as_ptr(self.0).hash(state)
     }
 }
 
@@ -175,7 +181,7 @@ mod tests {
         #[collect(require_static)]
         struct CB(i64);
 
-        impl<'gc> Callback<'gc> for CB {
+        impl<'gc> CallbackFn<'gc> for CB {
             fn call(
                 &mut self,
                 _ctx: Context<'gc>,
@@ -189,7 +195,7 @@ mod tests {
         let arena = Arena::<Rootable![State<'_>]>::new(|mc| State::new(mc));
         arena.mutate(|mc, state| {
             let ctx = state.ctx(mc);
-            let dyn_callback = AnyCallback::new(mc, CB(17));
+            let dyn_callback = Callback::new(mc, CB(17));
             assert_eq!(
                 dyn_callback.call(ctx, Vec::new()),
                 Ok(CallbackReturn::Return(Value::Int(42)))

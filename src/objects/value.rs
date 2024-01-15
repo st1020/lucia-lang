@@ -3,7 +3,7 @@ use std::{fmt, num::NonZeroUsize};
 use gc_arena::{Collect, Gc};
 
 use crate::{
-    objects::{AnyCallback, AnyUserData, Closure, Str, Table},
+    objects::{Callback, Closure, Str, Table, UserData},
     utils::{escape_str, Float},
 };
 
@@ -12,7 +12,7 @@ use crate::{
 #[collect(no_drop)]
 pub enum Function<'gc> {
     Closure(Closure<'gc>),
-    Callback(AnyCallback<'gc>),
+    Callback(Callback<'gc>),
 }
 
 impl<'gc> From<Closure<'gc>> for Function<'gc> {
@@ -21,8 +21,8 @@ impl<'gc> From<Closure<'gc>> for Function<'gc> {
     }
 }
 
-impl<'gc> From<AnyCallback<'gc>> for Function<'gc> {
-    fn from(callback: AnyCallback<'gc>) -> Self {
+impl<'gc> From<Callback<'gc>> for Function<'gc> {
+    fn from(callback: Callback<'gc>) -> Self {
         Self::Callback(callback)
     }
 }
@@ -47,7 +47,7 @@ pub enum Value<'gc> {
     /// `function` - A function.
     Function(Function<'gc>),
     /// `userdata` - An UserData.
-    UserData(AnyUserData<'gc>),
+    UserData(UserData<'gc>),
 }
 
 impl<'gc> Value<'gc> {
@@ -65,11 +65,15 @@ impl<'gc> Value<'gc> {
             Self::Bool(_) => None,
             Self::Int(_) => None,
             Self::Float(_) => None,
-            Self::Str(v) => NonZeroUsize::new(Gc::as_ptr(v.0) as usize),
-            Self::Table(v) => NonZeroUsize::new(Gc::as_ptr(v.0) as usize),
-            Self::Function(Function::Closure(v)) => NonZeroUsize::new(Gc::as_ptr(v.0) as usize),
-            Self::Function(Function::Callback(v)) => NonZeroUsize::new(v.as_ptr() as usize),
-            Self::UserData(v) => NonZeroUsize::new(v.as_ptr() as usize),
+            Self::Str(v) => NonZeroUsize::new(Gc::as_ptr(v.into_inner()) as usize),
+            Self::Table(v) => NonZeroUsize::new(Gc::as_ptr(v.into_inner()) as usize),
+            Self::Function(Function::Closure(v)) => {
+                NonZeroUsize::new(Gc::as_ptr(v.into_inner()) as usize)
+            }
+            Self::Function(Function::Callback(v)) => {
+                NonZeroUsize::new(Gc::as_ptr(v.into_inner()) as usize)
+            }
+            Self::UserData(v) => NonZeroUsize::new(Gc::as_ptr(v.into_inner()) as usize),
         }
     }
 
@@ -119,10 +123,12 @@ impl<'gc> fmt::Display for Value<'gc> {
             Self::Int(v) => write!(f, "{}", v),
             Self::Float(v) => write!(f, "{}", v),
             Self::Str(v) => write!(f, "{}", v),
-            Self::Table(v) => write!(f, "<table {:p}>", v.0),
-            Self::Function(Function::Closure(v)) => write!(f, "<function {:p}>", v.0),
-            Self::Function(Function::Callback(v)) => write!(f, "<function {:p}>", v.as_ptr()),
-            Self::UserData(v) => write!(f, "<userdata {:p}>", v.as_ptr()),
+            Self::Table(v) => write!(f, "<table {:p}>", v.into_inner()),
+            Self::Function(Function::Closure(v)) => write!(f, "<function {:p}>", v.into_inner()),
+            Self::Function(Function::Callback(v)) => {
+                write!(f, "<function {:p}>", Gc::as_ptr(v.into_inner()))
+            }
+            Self::UserData(v) => write!(f, "<userdata {:p}>", Gc::as_ptr(v.into_inner())),
         }
     }
 }

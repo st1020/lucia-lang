@@ -6,7 +6,7 @@ use gc_arena::Collect;
 
 use crate::{
     errors::{Error, ErrorKind},
-    objects::{AnyCallback, Callback, CallbackReturn, Function, IntoValue, Str, Table, Value},
+    objects::{Callback, CallbackFn, CallbackReturn, Function, IntoValue, Str, Table, Value},
     Context,
 };
 
@@ -122,7 +122,7 @@ pub fn call<'gc>(ctx: Context<'gc>, v: Value<'gc>) -> Result<Function<'gc>, Erro
 #[collect(no_drop)]
 pub struct IterTable<'gc>(pub Table<'gc>, pub usize);
 
-impl<'gc> Callback<'gc> for IterTable<'gc> {
+impl<'gc> CallbackFn<'gc> for IterTable<'gc> {
     fn call(
         &mut self,
         ctx: Context<'gc>,
@@ -146,7 +146,7 @@ impl<'gc> Callback<'gc> for IterTable<'gc> {
 #[collect(no_drop)]
 pub struct MetaIterTable<'gc>(pub Function<'gc>, pub Value<'gc>);
 
-impl<'gc> Callback<'gc> for MetaIterTable<'gc> {
+impl<'gc> CallbackFn<'gc> for MetaIterTable<'gc> {
     fn call(
         &mut self,
         _ctx: Context<'gc>,
@@ -160,7 +160,7 @@ pub fn iter<'gc>(ctx: Context<'gc>, v: Value<'gc>) -> Result<Function<'gc>, Erro
     if let Some(metatable) = v.metatable() {
         let t = metatable.get(ctx, MetaMethod::Iter);
         if !t.is_null() {
-            return Ok(Function::Callback(AnyCallback::new(
+            return Ok(Function::Callback(Callback::new(
                 &ctx,
                 MetaIterTable(call(ctx, t)?, v),
             )));
@@ -168,7 +168,7 @@ pub fn iter<'gc>(ctx: Context<'gc>, v: Value<'gc>) -> Result<Function<'gc>, Erro
     }
 
     match v {
-        Value::Table(v) => Ok(Function::Callback(AnyCallback::new(&ctx, IterTable(v, 0)))),
+        Value::Table(v) => Ok(Function::Callback(Callback::new(&ctx, IterTable(v, 0)))),
         Value::Function(v) => Ok(v),
         _ => Err(meta_operator_error!(ctx, MetaMethod::Iter, v)),
     }

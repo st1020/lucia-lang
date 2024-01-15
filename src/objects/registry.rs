@@ -3,7 +3,7 @@ use std::fmt;
 use gc_arena::{Collect, DynamicRoot, DynamicRootSet, Mutation, Rootable};
 
 use crate::{
-    objects::{AnyCallback, AnyUserData, Closure, Function, GcError, Str, Table, Value},
+    objects::{Callback, Closure, Function, GcError, Str, Table, UserData, Value},
     utils::Float,
     Context,
 };
@@ -40,7 +40,7 @@ impl fmt::Debug for StaticClosure {
 }
 
 #[derive(Clone)]
-pub struct StaticCallback(pub DynamicRoot<Rootable![AnyCallback<'_>]>);
+pub struct StaticCallback(pub DynamicRoot<Rootable![Callback<'_>]>);
 
 impl fmt::Debug for StaticCallback {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -51,7 +51,7 @@ impl fmt::Debug for StaticCallback {
 }
 
 #[derive(Clone)]
-pub struct StaticUserData(pub DynamicRoot<Rootable![AnyUserData<'_>]>);
+pub struct StaticUserData(pub DynamicRoot<Rootable![UserData<'_>]>);
 
 impl fmt::Debug for StaticUserData {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -214,8 +214,8 @@ macro_rules! reg_type {
 reg_type!(Str, StaticStr);
 reg_type!(Table, StaticTable);
 reg_type!(Closure, StaticClosure);
-reg_type!(AnyCallback, StaticCallback);
-reg_type!(AnyUserData, StaticUserData);
+reg_type!(Callback, StaticCallback);
+reg_type!(UserData, StaticUserData);
 
 macro_rules! fetch_type {
     ($r:ident, $t:ident) => {
@@ -232,8 +232,8 @@ macro_rules! fetch_type {
 fetch_type!(StaticStr, Str);
 fetch_type!(StaticTable, Table);
 fetch_type!(StaticClosure, Closure);
-fetch_type!(StaticCallback, AnyCallback);
-fetch_type!(StaticUserData, AnyUserData);
+fetch_type!(StaticCallback, Callback);
+fetch_type!(StaticUserData, UserData);
 
 impl<'gc> Stashable<'gc> for Function<'gc> {
     type Stashed = StaticFunction;

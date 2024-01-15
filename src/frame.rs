@@ -9,7 +9,7 @@ use gc_arena::{lock::RefLock, Collect, Gc, Mutation};
 
 use crate::{
     errors::{Error, ErrorKind},
-    objects::{AnyCallback, CallbackReturn, Closure, Function, IntoValue, Table, Value},
+    objects::{Callback, CallbackReturn, Closure, Function, IntoValue, Table, Value},
     Context,
 };
 
@@ -215,7 +215,7 @@ pub enum Frame<'gc> {
     // An running Lua frame.
     Lua(LuciaFrame<'gc>),
     // A callback that has been queued but not called yet. Arguments will be in the external stack.
-    Callback(AnyCallback<'gc>, Vec<Value<'gc>>),
+    Callback(Callback<'gc>, Vec<Value<'gc>>),
     // The thread must be unlocked during external calls to permit cross-thread upvalue handling,
     // but this presents a danger if methods on this thread were to be recursively called at this
     // time. This frame keeps the thread in the `Running` mode during external calls, ensuring the
@@ -229,7 +229,7 @@ impl<'gc> LuciaFrame<'gc> {
         closure: Closure<'gc>,
         mut args: Vec<Value<'gc>>,
     ) -> Result<Self, Error<'gc>> {
-        let function = &closure.0.function;
+        let function = &closure.function;
         let params_num = function.params.len();
         let mut stack = vec![Value::Null; params_num];
         match args.len().cmp(&params_num) {

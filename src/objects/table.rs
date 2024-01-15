@@ -11,9 +11,11 @@ use crate::{
     Context,
 };
 
+pub type TableInner<'gc> = RefLock<TableState<'gc>>;
+
 #[derive(Debug, Copy, Clone, Collect)]
 #[collect(no_drop)]
-pub struct Table<'gc>(pub Gc<'gc, RefLock<TableState<'gc>>>);
+pub struct Table<'gc>(Gc<'gc, TableInner<'gc>>);
 
 impl<'gc> PartialEq for Table<'gc> {
     fn eq(&self, other: &Table<'gc>) -> bool {
@@ -25,7 +27,7 @@ impl<'gc> Eq for Table<'gc> {}
 
 impl<'gc> Hash for Table<'gc> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.as_ptr().hash(state);
+        Gc::as_ptr(self.0).hash(state)
     }
 }
 
@@ -38,7 +40,15 @@ impl<'gc> Table<'gc> {
         Table(Gc::new(mc, RefLock::new(table_state)))
     }
 
-    pub fn get<K: IntoValue<'gc>>(&self, ctx: Context<'gc>, key: K) -> Value<'gc> {
+    pub fn from_inner(inner: Gc<'gc, TableInner<'gc>>) -> Self {
+        Self(inner)
+    }
+
+    pub fn into_inner(self) -> Gc<'gc, TableInner<'gc>> {
+        self.0
+    }
+
+    pub fn get<K: IntoValue<'gc>>(self, ctx: Context<'gc>, key: K) -> Value<'gc> {
         let key = key.into_value(ctx);
         let entries = &self.0.borrow().entries;
         if let Value::Int(key) = key {
@@ -49,7 +59,7 @@ impl<'gc> Table<'gc> {
         *entries.map.get(&key).unwrap_or(&Value::Null)
     }
 
-    pub fn get_index(&self, index: usize) -> Option<(Value<'gc>, Value<'gc>)> {
+    pub fn get_index(self, index: usize) -> Option<(Value<'gc>, Value<'gc>)> {
         let entries = &self.0.borrow().entries;
         if index < entries.array.len() {
             entries
@@ -64,7 +74,7 @@ impl<'gc> Table<'gc> {
         }
     }
 
-    pub fn set<K: IntoValue<'gc>, V: IntoValue<'gc>>(&self, ctx: Context<'gc>, key: K, value: V) {
+    pub fn set<K: IntoValue<'gc>, V: IntoValue<'gc>>(self, ctx: Context<'gc>, key: K, value: V) {
         let key = key.into_value(ctx);
         let value = value.into_value(ctx);
         let entries = &mut self.0.borrow_mut(&ctx).entries;
@@ -84,21 +94,21 @@ impl<'gc> Table<'gc> {
         }
     }
 
-    pub fn len(&self) -> usize {
+    pub fn len(self) -> usize {
         let entries = &self.0.borrow().entries;
         entries.array.len() + entries.map.len()
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub fn is_empty(self) -> bool {
         self.len() == 0
     }
 
-    pub fn metatable(&self) -> Option<Table<'gc>> {
+    pub fn metatable(self) -> Option<Table<'gc>> {
         self.0.borrow().metatable
     }
 
     pub fn set_metatable(
-        &self,
+        self,
         mc: &Mutation<'gc>,
         metatable: Option<Table<'gc>>,
     ) -> Option<Table<'gc>> {
@@ -106,7 +116,7 @@ impl<'gc> Table<'gc> {
     }
 
     /// Return the repr string fo the table.
-    pub(crate) fn repr_table(&self, t: &Value<'gc>) -> String {
+    pub(crate) fn repr_table(self, t: &Value<'gc>) -> String {
         let mut temp = Vec::new();
         for i in 0..self.len() {
             if let Some((k, v)) = self.get_index(i) {

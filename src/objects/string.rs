@@ -4,11 +4,19 @@ use gc_arena::{Collect, Gc, Mutation};
 
 #[derive(Clone, Copy, Collect, Hash)]
 #[collect(no_drop)]
-pub struct Str<'gc>(pub Gc<'gc, String>);
+pub struct Str<'gc>(Gc<'gc, String>);
 
 impl<'gc> Str<'gc> {
     pub fn new(mc: &Mutation<'gc>, s: String) -> Str<'gc> {
         Str(Gc::new(mc, s))
+    }
+
+    pub fn from_inner(inner: Gc<'gc, String>) -> Self {
+        Self(inner)
+    }
+
+    pub fn into_inner(self) -> Gc<'gc, String> {
+        self.0
     }
 }
 

@@ -23,7 +23,7 @@ impl<'gc> FramesState<'gc> {
             Some(Frame::Lua(frame)) => frame,
             _ => panic!("top frame is not lua frame"),
         };
-        let function = &frame.closure.0.function;
+        let function = &frame.closure.function;
 
         macro_rules! operator_error {
             ($operator:expr, $arg1:expr) => {
@@ -110,15 +110,15 @@ impl<'gc> FramesState<'gc> {
                 OpCode::LoadUpvalue(i) => {
                     let (_, func_count, upvalue_id) = function.upvalue_names[i];
                     if func_count == 0 {
-                        frame.stack.push(frame.closure.0.upvalues[upvalue_id].get());
+                        frame.stack.push(frame.closure.upvalues[upvalue_id].get());
                     } else {
-                        let mut base_closure = frame.closure.0.base_closure;
+                        let mut base_closure = frame.closure.base_closure;
                         for _ in 0..(func_count - 1) {
-                            base_closure = base_closure.unwrap().0.base_closure;
+                            base_closure = base_closure.unwrap().base_closure;
                         }
                         frame
                             .stack
-                            .push(base_closure.unwrap().0.upvalues[upvalue_id].get());
+                            .push(base_closure.unwrap().upvalues[upvalue_id].get());
                     }
                 }
                 OpCode::LoadConst(i) => {
@@ -155,13 +155,13 @@ impl<'gc> FramesState<'gc> {
                 OpCode::StoreUpvalue(i) => {
                     let (_, func_count, upvalue_id) = function.upvalue_names[i];
                     if func_count == 0 {
-                        frame.closure.0.upvalues[upvalue_id].set(&ctx, frame.stack.pop().unwrap());
+                        frame.closure.upvalues[upvalue_id].set(&ctx, frame.stack.pop().unwrap());
                     } else {
-                        let mut base_closure = frame.closure.0.base_closure;
+                        let mut base_closure = frame.closure.base_closure;
                         for _ in 0..(func_count - 1) {
-                            base_closure = base_closure.unwrap().0.base_closure;
+                            base_closure = base_closure.unwrap().base_closure;
                         }
-                        base_closure.unwrap().0.upvalues[upvalue_id]
+                        base_closure.unwrap().upvalues[upvalue_id]
                             .set(&ctx, frame.stack.pop().unwrap());
                     }
                 }

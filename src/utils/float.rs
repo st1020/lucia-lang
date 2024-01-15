@@ -6,17 +6,16 @@ use std::{
     ops,
 };
 
-use gc_arena::{static_collect, Collect};
+use gc_arena::Collect;
 
 // canonical raw float bit
 const CANONICAL_NAN_BITS: u64 = 0x7ff8000000000000u64;
 const CANONICAL_ZERO_BITS: u64 = 0x0u64;
 
 /// The f64 which impl Eq, Hash.
-#[derive(Clone, Copy, PartialOrd)]
+#[derive(Clone, Copy, Collect, PartialOrd)]
+#[collect(require_static)]
 pub struct Float(pub f64);
-
-static_collect!(Float);
 
 impl From<f64> for Float {
     fn from(value: f64) -> Self {

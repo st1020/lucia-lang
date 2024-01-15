@@ -1,8 +1,15 @@
-use std::{any::TypeId, fmt};
+use std::{
+    any::TypeId,
+    fmt,
+    hash::{Hash, Hasher},
+};
 
 use gc_arena::{barrier::Write, Collect, Gc, Mutation, Root, Rootable};
 
-/// Garbage collected `Any` type that can be downcast.
+/// A `Gc` pointer to any type `T: Collect + 'gc` which allows safe downcasting.
+///
+/// The optional `M` metadata parameter provides a way of including statically typed metadata along
+/// with the dynamically typed value.
 //
 // SAFETY:
 //
@@ -22,8 +29,8 @@ use gc_arena::{barrier::Write, Collect, Gc, Mutation, Root, Rootable};
 // 2) The `Gc` type is *invariant* in the 'gc lifetime. If it was instead covariant or contravariant
 //    in 'gc, then we could store a type with a mismatched variance and improperly lengthen or
 //    shorten the 'gc lifetime for that type. Since `Gc` is invariant in 'gc (the entire garbage
-//    collection system relies on this), `AnyValue` can project to a type with any variance in 'gc
-//    and nothing can go wrong.
+//    collection system relies on this), `Any` can project to a type with any variance in 'gc and
+//    nothing can go wrong.
 //
 // 3) We use the proxy `Rootable` type as the source of the `TypeId` rather than the projected
 //    `<R as Rootable<'_>>::Root`. If we were to instead use `<R as Rootable<'static>>:Root` for
@@ -38,23 +45,11 @@ use gc_arena::{barrier::Write, Collect, Gc, Mutation, Root, Rootable};
 //    were given.
 #[derive(Collect)]
 #[collect(no_drop)]
-pub struct AnyValue<'gc, M: 'gc>(Gc<'gc, Header<M>>);
-
-impl<'gc, M> fmt::Debug for AnyValue<'gc, M>
-where
-    M: fmt::Debug,
-{
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.debug_struct("AnyValue")
-            .field("metadata", self.metadata())
-            .field("type_id", &(self.type_id()))
-            .finish()
-    }
-}
+pub struct Any<'gc, M: 'gc = ()>(Gc<'gc, AnyInner<M>>);
 
 #[derive(Collect)]
 #[collect(no_drop)]
-struct Header<M> {
+pub struct AnyInner<M> {
     metadata: M,
     type_id: TypeId,
 }
@@ -63,20 +58,55 @@ struct Header<M> {
 #[collect(no_drop)]
 #[repr(C)]
 struct Value<M, V> {
-    header: Header<M>,
-    data: V,
+    header: AnyInner<M>,
+    value: V,
 }
 
-impl<'gc, M> Copy for AnyValue<'gc, M> {}
+impl<'gc, M> fmt::Debug for Any<'gc, M>
+where
+    M: fmt::Debug,
+{
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt.debug_struct("Any")
+            .field("data", &Gc::as_ptr(self.0))
+            .field("metadata", self.metadata())
+            .field("type_id", &(self.type_id()))
+            .finish()
+    }
+}
 
-impl<'gc, M> Clone for AnyValue<'gc, M> {
+impl<'gc, M> PartialEq for Any<'gc, M> {
+    fn eq(&self, other: &Self) -> bool {
+        Gc::ptr_eq(self.0, other.0)
+    }
+}
+
+impl<'gc, M> Eq for Any<'gc, M> {}
+
+impl<'gc, M> Hash for Any<'gc, M> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        Gc::as_ptr(self.0).hash(state)
+    }
+}
+
+impl<'gc, M> Copy for Any<'gc, M> {}
+
+impl<'gc, M> Clone for Any<'gc, M> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<'gc, M> AnyValue<'gc, M> {
-    pub fn new<R>(mc: &Mutation<'gc>, metadata: M, data: Root<'gc, R>) -> Self
+impl<'gc, M> Any<'gc, M> {
+    pub fn new<R>(mc: &Mutation<'gc>, data: Root<'gc, R>) -> Self
+    where
+        M: Collect + Default,
+        R: for<'a> Rootable<'a>,
+    {
+        Self::with_metadata::<R>(mc, M::default(), data)
+    }
+
+    pub fn with_metadata<R>(mc: &Mutation<'gc>, metadata: M, data: Root<'gc, R>) -> Self
     where
         M: Collect,
         R: for<'a> Rootable<'a>,
@@ -84,55 +114,59 @@ impl<'gc, M> AnyValue<'gc, M> {
         let val = Gc::new(
             mc,
             Value::<M, Root<'gc, R>> {
-                header: Header {
+                header: AnyInner {
                     metadata,
                     type_id: TypeId::of::<R>(),
                 },
-                data,
+                value: data,
             },
         );
 
         // SAFETY: We know we can cast to a `Header<M>` because `Value<M, Root<'gc, R>>` is
         // `#[repr(C)]` and `Header<M>` is the first field
-        Self(unsafe { Gc::cast::<Header<M>>(val) })
+        Self(unsafe { Gc::cast::<AnyInner<M>>(val) })
     }
 
-    pub fn metadata(&self) -> &'gc M {
+    pub fn from_inner(inner: Gc<'gc, AnyInner<M>>) -> Self {
+        Self(inner)
+    }
+
+    pub fn into_inner(self) -> Gc<'gc, AnyInner<M>> {
+        self.0
+    }
+
+    pub fn metadata(self) -> &'gc M {
         &self.0.as_ref().metadata
     }
 
-    pub fn write_metadata(&self, mc: &Mutation<'gc>) -> &'gc Write<M> {
-        gc_arena::barrier::field!(Gc::write(mc, self.0), Header, metadata)
+    pub fn write_metadata(self, mc: &Mutation<'gc>) -> &'gc Write<M> {
+        gc_arena::barrier::field!(Gc::write(mc, self.0), AnyInner, metadata)
     }
 
-    pub fn as_ptr(&self) -> *const () {
-        Gc::as_ptr(self.0) as *const ()
-    }
-
-    pub fn type_id(&self) -> TypeId {
+    pub fn type_id(self) -> TypeId {
         self.0.type_id
     }
 
-    pub fn is<R>(&self) -> bool
+    pub fn is<R>(self) -> bool
     where
         R: for<'b> Rootable<'b>,
     {
         TypeId::of::<R>() == self.0.type_id
     }
 
-    pub fn downcast<R>(&self) -> Option<&'gc Root<'gc, R>>
+    pub fn downcast<R>(self) -> Option<&'gc Root<'gc, R>>
     where
         R: for<'b> Rootable<'b>,
     {
         if TypeId::of::<R>() == self.0.type_id {
             let ptr = unsafe { Gc::cast::<Value<M, Root<'gc, R>>>(self.0) };
-            Some(&ptr.as_ref().data)
+            Some(&ptr.as_ref().value)
         } else {
             None
         }
     }
 
-    pub fn downcast_write<R>(&self, mc: &Mutation<'gc>) -> Option<&'gc Write<Root<'gc, R>>>
+    pub fn downcast_write<R>(self, mc: &Mutation<'gc>) -> Option<&'gc Write<Root<'gc, R>>>
     where
         R: for<'b> Rootable<'b>,
     {
@@ -164,9 +198,9 @@ mod tests {
             #[collect(no_drop)]
             struct C<'gc>(Gc<'gc, i32>);
 
-            let any1 = AnyValue::new::<Rootable![A<'_>]>(mc, 1i32, A(Gc::new(mc, 5)));
-            let any2 = AnyValue::new::<Rootable![B<'_>]>(mc, 2i32, B(Gc::new(mc, 6)));
-            let any3 = AnyValue::new::<Rootable![C<'_>]>(mc, 3i32, C(Gc::new(mc, 7)));
+            let any1 = Any::with_metadata::<Rootable![A<'_>]>(mc, 1i32, A(Gc::new(mc, 5)));
+            let any2 = Any::with_metadata::<Rootable![B<'_>]>(mc, 2i32, B(Gc::new(mc, 6)));
+            let any3 = Any::with_metadata::<Rootable![C<'_>]>(mc, 3i32, C(Gc::new(mc, 7)));
 
             assert!(any1.is::<Rootable![A<'_>]>());
             assert!(!any1.is::<Rootable![B<'_>]>());
