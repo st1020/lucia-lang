@@ -481,6 +481,27 @@ for k, v in t {
 }
 
 #[test]
+fn test_closure() {
+    run!(
+        r#"
+t = 0
+add = |x| {
+    t += x
+}
+sub = |x| {
+    t -= x
+}
+
+assert(t == 0)
+add(1)
+assert(t == 1)
+sub(2)
+assert(t == -1)
+"#,
+    );
+}
+
+#[test]
 fn test_for() {
     run!(
         r#"
