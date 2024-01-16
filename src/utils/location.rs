@@ -1,7 +1,7 @@
 use std::fmt;
 
 /// Location of token in the code.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub struct Location {
     /// The lineno.
     pub lineno: u32,

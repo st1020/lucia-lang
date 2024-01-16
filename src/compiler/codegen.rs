@@ -9,7 +9,7 @@ use thiserror::Error;
 use crate::utils::Join;
 
 use super::{
-    analyzer::{Function, GlobalNameInfo, UpvalueNameInfo},
+    analyzer::Function,
     ast::*,
     code::{Code, ConstValue, FunctionKind},
     opcode::{JumpTarget, OpCode},
@@ -83,17 +83,19 @@ impl CodeGen {
     }
 
     fn load(&mut self, func_id: usize, name: &str) -> Result<(), SyntaxError> {
-        let t = if let Some(i) = self.func_list[func_id].local_names.get_index_of(name) {
+        macro_rules! find_name_index {
+            ($name:ident) => {
+                self.func_list[func_id]
+                    .$name()
+                    .enumerate()
+                    .find_map(|(i, x)| if x == name { Some(i) } else { None })
+            };
+        }
+        let t = if let Some(i) = find_name_index!(local_names) {
             OpCode::LoadLocal(i)
-        } else if let Some(i) = self.func_list[func_id]
-            .global_names
-            .get_index_of(&GlobalNameInfo::from(name.to_owned()))
-        {
+        } else if let Some(i) = find_name_index!(global_names) {
             OpCode::LoadGlobal(i)
-        } else if let Some(i) = self.func_list[func_id]
-            .upvalue_names
-            .get_index_of(&UpvalueNameInfo::from(name.to_owned()))
-        {
+        } else if let Some(i) = find_name_index!(upvalue_names) {
             OpCode::LoadUpvalue(i)
         } else {
             return Err(SyntaxError::IllegalAst);
@@ -103,17 +105,19 @@ impl CodeGen {
     }
 
     fn store(&mut self, func_id: usize, name: &str) -> Result<(), SyntaxError> {
-        let t = if let Some(i) = self.func_list[func_id].local_names.get_index_of(name) {
+        macro_rules! find_name_index {
+            ($name:ident) => {
+                self.func_list[func_id]
+                    .$name()
+                    .enumerate()
+                    .find_map(|(i, x)| if x == name { Some(i) } else { None })
+            };
+        }
+        let t = if let Some(i) = find_name_index!(local_names) {
             OpCode::StoreLocal(i)
-        } else if let Some(i) = self.func_list[func_id]
-            .global_names
-            .get_index_of(&GlobalNameInfo::from(name.to_owned()))
-        {
+        } else if let Some(i) = find_name_index!(global_names) {
             OpCode::StoreGlobal(i)
-        } else if let Some(i) = self.func_list[func_id]
-            .upvalue_names
-            .get_index_of(&UpvalueNameInfo::from(name.to_owned()))
-        {
+        } else if let Some(i) = find_name_index!(upvalue_names) {
             OpCode::StoreUpvalue(i)
         } else {
             return Err(SyntaxError::IllegalAst);
@@ -188,23 +192,9 @@ impl CodeGen {
             kind: self.func_list[func_id].kind,
             code: self.func_list[func_id].code.clone(),
             consts: self.func_list[func_id].consts.clone(),
-            local_names: self.func_list[func_id]
-                .local_names
-                .clone()
-                .into_iter()
-                .collect(),
-            global_names: self.func_list[func_id]
-                .global_names
-                .clone()
-                .into_iter()
-                .map(|x| x.name)
-                .collect(),
-            upvalue_names: self.func_list[func_id]
-                .upvalue_names
-                .clone()
-                .into_iter()
-                .map(|x| x.into())
-                .collect(),
+            local_names: self.func_list[func_id].local_names().cloned().collect(),
+            global_names: self.func_list[func_id].global_names().cloned().collect(),
+            upvalue_names: self.func_list[func_id].upvalues().collect(),
             def_upvalue_count: self.func_list[func_id].def_upvalue_count,
             stack_size,
         })
@@ -570,15 +560,9 @@ impl CodeGen {
                 self.gen_expr(func_id, argument)?;
                 self.func_list[func_id].code.push(OpCode::Throw);
             }
-            StmtKind::Global { arguments } => {
+            StmtKind::Global { arguments: _ } => {
                 if self.func_list[func_id].kind == FunctionKind::Do {
                     return Err(SyntaxError::GlobalOutsideFunction);
-                }
-                for arg in arguments {
-                    self.func_list[func_id].global_names.insert(GlobalNameInfo {
-                        name: arg.name.clone(),
-                        is_writable: true,
-                    });
                 }
             }
             StmtKind::Import { path, kind } => {

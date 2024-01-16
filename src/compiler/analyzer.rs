@@ -5,9 +5,9 @@
 //! Functions in the AST will be identified and processed.
 //! The kind of names within the namespace will be determined.
 
-use std::{fmt, hash::Hash, mem};
+use std::{fmt, mem};
 
-use indexmap::IndexSet;
+use indexmap::IndexMap;
 
 use super::{
     ast::*,
@@ -15,76 +15,20 @@ use super::{
     opcode::{JumpTarget, OpCode},
 };
 
-/// Global name information.
 #[derive(Debug, Clone)]
-pub struct GlobalNameInfo {
-    pub name: String,
-    pub is_writable: bool,
-}
-
-impl Hash for GlobalNameInfo {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.name.hash(state);
-    }
-}
-
-impl PartialEq for GlobalNameInfo {
-    fn eq(&self, other: &Self) -> bool {
-        self.name == other.name
-    }
-}
-
-impl Eq for GlobalNameInfo {}
-
-impl From<String> for GlobalNameInfo {
-    fn from(value: String) -> Self {
-        GlobalNameInfo {
-            name: value,
-            is_writable: false,
-        }
-    }
-}
-
-/// Upvalue name information.
-#[derive(Debug, Clone)]
-pub struct UpvalueNameInfo {
-    pub name: String,
-    pub func_count: usize,
-    pub upvalue_id: usize,
-}
-
-impl Hash for UpvalueNameInfo {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.name.hash(state);
-    }
-}
-
-impl PartialEq for UpvalueNameInfo {
-    fn eq(&self, other: &Self) -> bool {
-        self.name == other.name
-    }
-}
-
-impl Eq for UpvalueNameInfo {}
-
-impl From<String> for UpvalueNameInfo {
-    fn from(value: String) -> Self {
-        UpvalueNameInfo {
-            name: value,
-            func_count: 0,
-            upvalue_id: 0,
-        }
-    }
-}
-
-impl From<UpvalueNameInfo> for (String, usize, usize) {
-    fn from(value: UpvalueNameInfo) -> Self {
-        (value.name, value.func_count, value.upvalue_id)
-    }
+pub enum NameKind {
+    Local,
+    Global {
+        is_writable: bool,
+    },
+    Upvalue {
+        func_count: usize,
+        upvalue_id: usize,
+    },
 }
 
 /// A Function.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Function {
     /// Function id.
     pub func_id: usize,
@@ -99,12 +43,8 @@ pub struct Function {
     /// The base function.
     pub base_function: Option<usize>,
 
-    /// Local names.
-    pub local_names: IndexSet<String>,
-    /// Global names.
-    pub global_names: IndexSet<GlobalNameInfo>,
-    /// Upvalue names.
-    pub upvalue_names: IndexSet<UpvalueNameInfo>,
+    /// Names.
+    pub names: IndexMap<String, NameKind>,
 
     /// The count of upvalues defined in the function.
     pub def_upvalue_count: usize,
@@ -130,9 +70,7 @@ impl fmt::Display for Function {
         writeln!(f, "def_upvalue_count: {}", self.def_upvalue_count)?;
         writeln!(f, "body: {}", self.body)?;
 
-        writeln!(f, "local_names: {:?}", self.local_names)?;
-        writeln!(f, "global_names: {:?}", self.global_names)?;
-        writeln!(f, "upvalue_names: {:?}", self.upvalue_names)?;
+        writeln!(f, "names: {:?}", self.names)?;
         Ok(())
     }
 }
@@ -153,9 +91,7 @@ impl Function {
             variadic: variadic.map(|x| x.name),
             body,
             base_function,
-            local_names: IndexSet::new(),
-            global_names: IndexSet::new(),
-            upvalue_names: IndexSet::new(),
+            names: IndexMap::new(),
             def_upvalue_count: 0,
             code: Vec::new(),
             consts: vec![ConstValue::Null],
@@ -164,31 +100,91 @@ impl Function {
             break_stack: Vec::new(),
         }
     }
+
+    pub fn upvalues(&self) -> impl Iterator<Item = (String, usize, usize)> + '_ {
+        self.names.iter().filter_map(|(k, v)| match v {
+            NameKind::Upvalue {
+                func_count,
+                upvalue_id,
+            } => Some((k.clone(), *func_count, *upvalue_id)),
+            _ => None,
+        })
+    }
 }
+
+macro_rules! impl_names_iter {
+    ($name:ident, $pattern:pat) => {
+        impl Function {
+            pub fn $name(&self) -> impl Iterator<Item = &String> + '_ {
+                self.names.iter().filter_map(
+                    |(k, v)| {
+                        if matches!(v, $pattern) {
+                            Some(k)
+                        } else {
+                            None
+                        }
+                    },
+                )
+            }
+        }
+    };
+}
+
+impl_names_iter!(local_names, NameKind::Local);
+impl_names_iter!(global_names, NameKind::Global { .. });
+impl_names_iter!(upvalue_names, NameKind::Upvalue { .. });
 
 /// Semantic Analyze. Lowers the AST to `Vec<Function>`.
 pub fn analyze(ast: Box<Block>) -> Vec<Function> {
-    let mut func = Function::new(0, FunctionKind::Function, Vec::new(), None, ast, None);
-    let mut analyzer = SemanticAnalyzer::new(&mut func);
-    analyzer.func_list.insert(0, func);
-    analyzer.analyze_name();
-    analyzer.func_list
+    let mut func_list: Vec<Function> = Vec::new();
+
+    Handle::new(0, &mut func_list).build(Function::new(
+        0,
+        FunctionKind::Function,
+        Vec::new(),
+        None,
+        ast,
+        None,
+    ));
+
+    for func_id in 0..func_list.len() {
+        for param in func_list[func_id].params.clone() {
+            func_list[func_id].names.insert(param, NameKind::Local);
+        }
+        if let Some(variadic) = func_list[func_id].variadic.clone() {
+            func_list[func_id].names.insert(variadic, NameKind::Local);
+        }
+        let mut body = mem::take(&mut func_list[func_id].body);
+        Handle::new(func_id, &mut func_list).analyze_name_block(&body);
+        mem::swap(&mut func_list[func_id].body, &mut body);
+    }
+
+    func_list
 }
 
-#[derive(Debug, Clone)]
-struct SemanticAnalyzer {
+#[derive(Debug)]
+struct Handle<'a> {
     func_id: usize,
-    pub func_list: Vec<Function>,
+    func_list: &'a mut Vec<Function>,
 }
 
-impl SemanticAnalyzer {
-    fn new(func: &mut Function) -> Self {
-        let mut analyzer = SemanticAnalyzer {
-            func_id: func.func_id,
-            func_list: Vec::new(),
-        };
-        analyzer.build_block(&mut func.body);
-        analyzer
+impl<'a> Handle<'a> {
+    fn new(func_id: usize, func_list: &'a mut Vec<Function>) -> Self {
+        Handle { func_id, func_list }
+    }
+
+    fn current(&self) -> &Function {
+        &self.func_list[self.func_id]
+    }
+
+    fn current_mut(&mut self) -> &mut Function {
+        &mut self.func_list[self.func_id]
+    }
+
+    fn build(&mut self, mut func: Function) {
+        self.func_list.push(Function::default());
+        self.build_block(&mut func.body);
+        self.func_list[self.func_id] = func;
     }
 
     fn build_block(&mut self, ast_node: &mut Block) {
@@ -265,7 +261,7 @@ impl SemanticAnalyzer {
             ExprKind::Lit(_) => (),
             ExprKind::Ident(_) => (),
             ExprKind::Function { .. } => {
-                let func_id = self.func_id + self.func_list.len() + 1;
+                let func_id = self.func_list.len();
                 if let ExprKind::Function {
                     kind,
                     params,
@@ -273,11 +269,14 @@ impl SemanticAnalyzer {
                     body,
                 } = mem::replace(&mut ast_node.kind, ExprKind::FunctionId(func_id))
                 {
-                    let mut func =
-                        Function::new(func_id, kind, params, variadic, body, Some(self.func_id));
-                    let mut analyzer = SemanticAnalyzer::new(&mut func);
-                    self.func_list.push(func);
-                    self.func_list.append(&mut analyzer.func_list);
+                    Handle::new(func_id, self.func_list).build(Function::new(
+                        func_id,
+                        kind,
+                        params,
+                        variadic,
+                        body,
+                        Some(self.func_id),
+                    ));
                 }
             }
             ExprKind::FunctionId(_) => (),
@@ -344,332 +343,248 @@ impl SemanticAnalyzer {
         }
     }
 
-    pub fn analyze_name(&mut self) {
-        for i in 0..self.func_list.len() {
-            for param in self.func_list[i].params.clone() {
-                self.func_list[i].local_names.insert(param);
-            }
-            if let Some(variadic) = self.func_list[i].variadic.clone() {
-                self.func_list[i].local_names.insert(variadic);
-            }
-            let mut t = self.func_list[i].body.clone();
-            self.analyze_name_block(i, &mut t);
+    fn analyze_name_block(&mut self, ast_node: &Block) {
+        for stmt in &ast_node.body {
+            self.analyze_name_stmt(stmt);
         }
     }
 
-    fn analyze_name_block(&mut self, func_id: usize, ast_node: &mut Block) {
-        for stmt in &mut ast_node.body {
-            self.analyze_name_stmt(func_id, stmt);
-        }
-    }
-
-    fn analyze_name_stmt(&mut self, func_id: usize, ast_node: &mut Stmt) {
-        match &mut ast_node.kind {
+    fn analyze_name_stmt(&mut self, ast_node: &Stmt) {
+        match &ast_node.kind {
             StmtKind::If {
                 test,
                 consequent,
                 alternate,
             } => {
-                self.analyze_name_expr(func_id, test);
-                self.analyze_name_block(func_id, consequent);
+                self.analyze_name_expr(test);
+                self.analyze_name_block(consequent);
                 if let Some(alternate) = alternate {
-                    self.analyze_name_stmt(func_id, alternate);
+                    self.analyze_name_stmt(alternate);
                 }
             }
-            StmtKind::Loop { body } => self.analyze_name_block(func_id, body),
+            StmtKind::Loop { body } => self.analyze_name_block(body),
             StmtKind::While { test, body } => {
-                self.analyze_name_expr(func_id, test);
-                self.analyze_name_block(func_id, body);
+                self.analyze_name_expr(test);
+                self.analyze_name_block(body);
             }
             StmtKind::For { left, right, body } => {
                 for left in left {
-                    self.store_name(func_id, &left.name);
+                    self.store_name(&left.name);
                 }
-                self.analyze_name_expr(func_id, right);
-                self.analyze_name_block(func_id, body);
+                self.analyze_name_expr(right);
+                self.analyze_name_block(body);
             }
             StmtKind::Break => (),
             StmtKind::Continue => (),
-            StmtKind::Return { argument } => self.analyze_name_expr(func_id, argument),
-            StmtKind::Throw { argument } => self.analyze_name_expr(func_id, argument),
+            StmtKind::Return { argument } => self.analyze_name_expr(argument),
+            StmtKind::Throw { argument } => self.analyze_name_expr(argument),
             StmtKind::Global { arguments } => {
                 for arg in arguments {
-                    self.func_list[func_id]
-                        .global_names
-                        .replace(GlobalNameInfo {
-                            name: arg.name.clone(),
-                            is_writable: true,
-                        });
+                    self.current_mut()
+                        .names
+                        .insert(arg.name.clone(), NameKind::Global { is_writable: true });
                 }
             }
             StmtKind::Import { path: _, kind } => match kind {
                 ImportKind::Simple(alias) => {
-                    self.func_list[func_id]
-                        .global_names
-                        .insert(GlobalNameInfo::from(alias.name.clone()));
+                    self.current_mut()
+                        .names
+                        .insert(alias.name.clone(), NameKind::Global { is_writable: false });
                 }
                 ImportKind::Nested(items) => {
                     for (_, alias) in items {
-                        self.func_list[func_id]
-                            .global_names
-                            .insert(GlobalNameInfo::from(alias.name.clone()));
+                        self.current_mut()
+                            .names
+                            .insert(alias.name.clone(), NameKind::Global { is_writable: false });
                     }
                 }
                 ImportKind::Glob => (),
             },
             StmtKind::Assign { left, right } => {
-                self.analyze_name_assign_left(func_id, left);
-                self.analyze_name_expr(func_id, right);
+                self.analyze_name_assign_left(left);
+                self.analyze_name_expr(right);
             }
             StmtKind::AssignOp {
                 operator: _,
                 left,
                 right,
             } => {
-                self.analyze_name_assign_left(func_id, left);
-                self.analyze_name_expr(func_id, right);
+                self.analyze_name_assign_left(left);
+                self.analyze_name_expr(right);
             }
             StmtKind::AssignUnpack { left, right } => {
                 for left in left {
-                    self.analyze_name_assign_left(func_id, left);
+                    self.analyze_name_assign_left(left);
                 }
-                self.analyze_name_expr(func_id, right);
+                self.analyze_name_expr(right);
             }
             StmtKind::AssignMulti { left, right } => {
                 for left in left {
-                    self.analyze_name_assign_left(func_id, left);
+                    self.analyze_name_assign_left(left);
                 }
                 for right in right {
-                    self.analyze_name_expr(func_id, right);
+                    self.analyze_name_expr(right);
                 }
             }
-            StmtKind::Block(block) => self.analyze_name_block(func_id, block),
-            StmtKind::Expr(expr) => self.analyze_name_expr(func_id, expr),
+            StmtKind::Block(block) => self.analyze_name_block(block),
+            StmtKind::Expr(expr) => self.analyze_name_expr(expr),
         }
     }
 
-    fn analyze_name_expr(&mut self, func_id: usize, ast_node: &mut Expr) {
-        match &mut ast_node.kind {
+    fn analyze_name_expr(&mut self, ast_node: &Expr) {
+        match &ast_node.kind {
             ExprKind::Lit(_) => (),
-            ExprKind::Ident(ident) => self.load_name(func_id, &ident.name),
-            ExprKind::Function { .. } => {
-                let func_id = self.func_id + self.func_list.len() + 1;
-                if let ExprKind::Function {
-                    kind,
-                    params,
-                    variadic,
-                    body,
-                } = mem::replace(&mut ast_node.kind, ExprKind::FunctionId(func_id))
-                {
-                    let mut func =
-                        Function::new(func_id, kind, params, variadic, body, Some(self.func_id));
-                    let mut analyzer = SemanticAnalyzer::new(&mut func);
-                    self.func_list.push(func);
-                    self.func_list.append(&mut analyzer.func_list);
-                }
-            }
+            ExprKind::Ident(ident) => self.load_name(&ident.name),
+            ExprKind::Function { .. } => panic!(),
             ExprKind::FunctionId(_) => (),
             ExprKind::Table { properties } => {
                 for TableProperty { key, value, .. } in properties {
-                    self.analyze_name_expr(func_id, key);
-                    self.analyze_name_expr(func_id, value);
+                    self.analyze_name_expr(key);
+                    self.analyze_name_expr(value);
                 }
             }
             ExprKind::List { items } => {
                 for item in items {
-                    self.analyze_name_expr(func_id, item);
+                    self.analyze_name_expr(item);
                 }
             }
             ExprKind::Unary {
                 operator: _,
                 argument,
-            } => self.analyze_name_expr(func_id, argument),
+            } => self.analyze_name_expr(argument),
             ExprKind::Binary {
                 operator: _,
                 left,
                 right,
             } => {
-                self.analyze_name_expr(func_id, left);
-                self.analyze_name_expr(func_id, right);
+                self.analyze_name_expr(left);
+                self.analyze_name_expr(right);
             }
             ExprKind::Member {
                 table,
                 property,
                 safe: _,
             } => {
-                self.analyze_name_expr(func_id, table);
-                self.analyze_name_member_property(func_id, property);
+                self.analyze_name_expr(table);
+                self.analyze_name_member_property(property);
             }
-            ExprKind::MetaMember { table, safe: _ } => self.analyze_name_expr(func_id, table),
+            ExprKind::MetaMember { table, safe: _ } => self.analyze_name_expr(table),
             ExprKind::Call {
                 callee,
                 arguments,
                 kind: _,
             } => {
-                self.analyze_name_expr(func_id, callee);
+                self.analyze_name_expr(callee);
                 for arg in arguments {
-                    self.analyze_name_expr(func_id, arg);
+                    self.analyze_name_expr(arg);
                 }
             }
         }
     }
 
-    fn analyze_name_assign_left(&mut self, func_id: usize, ast_node: &mut AssignLeft) {
+    fn analyze_name_assign_left(&mut self, ast_node: &AssignLeft) {
         match ast_node {
-            AssignLeft::Ident(ident) => self.store_name(func_id, &ident.name),
+            AssignLeft::Ident(ident) => self.store_name(&ident.name),
             AssignLeft::Member { table, property } => {
-                self.analyze_name_expr(func_id, table);
-                self.analyze_name_member_property(func_id, property);
+                self.analyze_name_expr(table);
+                self.analyze_name_member_property(property);
             }
-            AssignLeft::MetaMember { table } => self.analyze_name_expr(func_id, table),
+            AssignLeft::MetaMember { table } => self.analyze_name_expr(table),
         }
     }
 
-    fn analyze_name_member_property(&mut self, func_id: usize, ast_node: &mut MemberKind) {
+    fn analyze_name_member_property(&mut self, ast_node: &MemberKind) {
         match ast_node {
-            MemberKind::Bracket(expr) => self.analyze_name_expr(func_id, expr),
-            MemberKind::Dot(ident) | MemberKind::DoubleColon(ident) => {
-                self.load_name(func_id, &ident.name)
-            }
+            MemberKind::Bracket(expr) => self.analyze_name_expr(expr),
+            MemberKind::Dot(_) | MemberKind::DoubleColon(_) => (),
         }
     }
 
-    fn load_name(&mut self, func_id: usize, name: &str) {
-        if self.func_list[func_id].local_names.contains(name)
-            || self.func_list[func_id]
-                .global_names
-                .contains(&GlobalNameInfo::from(name.to_owned()))
-            || self.func_list[func_id]
-                .upvalue_names
-                .contains(&UpvalueNameInfo::from(name.to_owned()))
-        {
+    fn load_name(&mut self, name: &str) {
+        if self.current().names.contains_key(name) {
             return;
         }
-        if self.func_list[func_id].kind != FunctionKind::Closure {
-            self.func_list[func_id]
-                .global_names
-                .insert(GlobalNameInfo::from(name.to_owned()));
-        } else {
-            let mut base_func_count = 0;
-            let mut base_func = &mut self.func_list[func_id];
-            loop {
-                if let Some(func) = base_func.base_function {
-                    base_func = &mut self.func_list[func];
-                    base_func_count += 1;
-                } else {
-                    self.func_list[func_id]
-                        .global_names
-                        .insert(GlobalNameInfo::from(name.to_owned()));
-                    break;
-                }
-                if let Some(upvalue_name) = base_func
-                    .upvalue_names
-                    .get(&UpvalueNameInfo::from(name.to_owned()))
-                {
-                    let func_count = upvalue_name.func_count + base_func_count;
-                    let upvalue_id = upvalue_name.upvalue_id;
-                    self.func_list[func_id]
-                        .upvalue_names
-                        .insert(UpvalueNameInfo {
-                            name: name.to_owned(),
-                            func_count,
-                            upvalue_id,
-                        });
-                    break;
-                }
-                if base_func.local_names.contains(name) {
-                    base_func.local_names.remove(name);
-                    base_func.upvalue_names.insert(UpvalueNameInfo {
-                        name: name.to_owned(),
-                        func_count: 0,
-                        upvalue_id: base_func.def_upvalue_count,
-                    });
-                    let upvalue_id = base_func.def_upvalue_count;
-                    base_func.def_upvalue_count += 1;
-                    self.func_list[func_id]
-                        .upvalue_names
-                        .insert(UpvalueNameInfo {
-                            name: name.to_owned(),
-                            func_count: base_func_count,
-                            upvalue_id,
-                        });
-                    break;
-                }
-                if base_func.kind != FunctionKind::Closure {
-                    self.func_list[func_id]
-                        .global_names
-                        .insert(GlobalNameInfo::from(name.to_owned()));
-                    break;
-                }
-            }
+
+        if self.current().kind != FunctionKind::Closure {
+            self.current_mut()
+                .names
+                .insert(name.to_owned(), NameKind::Global { is_writable: false });
+            return;
         }
+
+        self.find_upvalue(name, NameKind::Global { is_writable: false });
     }
 
-    fn store_name(&mut self, func_id: usize, name: &str) {
-        if self.func_list[func_id].local_names.contains(name)
-            || self.func_list[func_id]
-                .upvalue_names
-                .contains(&UpvalueNameInfo::from(name.to_owned()))
-        {
-            return;
-        } else if let Some(name_info) = self.func_list[func_id]
-            .global_names
-            .get(&GlobalNameInfo::from(name.to_owned()))
-        {
-            if name_info.is_writable {
-                return;
-            }
+    fn store_name(&mut self, name: &str) {
+        match self.current().names.get(name) {
+            Some(NameKind::Local)
+            | Some(NameKind::Global { is_writable: true })
+            | Some(NameKind::Upvalue { .. }) => return,
+            Some(NameKind::Global { is_writable: false }) | None => (),
         }
-        if self.func_list[func_id].kind != FunctionKind::Closure {
-            self.func_list[func_id].local_names.insert(name.to_owned());
-        } else {
-            let mut base_func_count = 0;
-            let mut base_func = &mut self.func_list[func_id];
-            loop {
-                if let Some(func) = base_func.base_function {
-                    base_func = &mut self.func_list[func];
-                    base_func_count += 1;
-                } else {
-                    self.func_list[func_id].local_names.insert(name.to_owned());
-                    break;
-                }
-                if let Some(upvalue_name) = base_func
-                    .upvalue_names
-                    .get(&UpvalueNameInfo::from(name.to_owned()))
-                {
-                    let func_count = upvalue_name.func_count + base_func_count;
-                    let upvalue_id = upvalue_name.upvalue_id;
-                    self.func_list[func_id]
-                        .upvalue_names
-                        .insert(UpvalueNameInfo {
-                            name: name.to_owned(),
+
+        if self.current().kind != FunctionKind::Closure {
+            self.current_mut()
+                .names
+                .insert(name.to_owned(), NameKind::Local);
+            return;
+        }
+
+        self.find_upvalue(name, NameKind::Local);
+    }
+
+    fn find_upvalue(&mut self, name: &str, default: NameKind) {
+        let mut base_func_count = 0;
+        let mut base_func = self.current_mut();
+        loop {
+            if let Some(func) = base_func.base_function {
+                base_func = &mut self.func_list[func];
+                base_func_count += 1;
+            } else {
+                self.current_mut().names.insert(name.to_owned(), default);
+                break;
+            }
+
+            match base_func.names.get(name).cloned() {
+                Some(NameKind::Upvalue {
+                    func_count,
+                    upvalue_id,
+                }) => {
+                    let func_count = func_count + base_func_count;
+                    self.current_mut().names.insert(
+                        name.to_owned(),
+                        NameKind::Upvalue {
                             func_count,
                             upvalue_id,
-                        });
+                        },
+                    );
                     break;
                 }
-                if base_func.local_names.contains(name) {
-                    base_func.local_names.remove(name);
-                    base_func.upvalue_names.insert(UpvalueNameInfo {
-                        name: name.to_owned(),
-                        func_count: 0,
-                        upvalue_id: base_func.def_upvalue_count,
-                    });
+                Some(NameKind::Local) => {
+                    base_func.names.insert(
+                        name.to_owned(),
+                        NameKind::Upvalue {
+                            func_count: 0,
+                            upvalue_id: base_func.def_upvalue_count,
+                        },
+                    );
                     let upvalue_id = base_func.def_upvalue_count;
                     base_func.def_upvalue_count += 1;
-                    self.func_list[func_id]
-                        .upvalue_names
-                        .insert(UpvalueNameInfo {
-                            name: name.to_owned(),
+                    self.current_mut().names.insert(
+                        name.to_owned(),
+                        NameKind::Upvalue {
                             func_count: base_func_count,
                             upvalue_id,
-                        });
+                        },
+                    );
                     break;
                 }
-                if base_func.kind != FunctionKind::Closure {
-                    self.func_list[func_id].local_names.insert(name.to_owned());
-                    break;
-                }
+                _ => (),
+            }
+
+            if base_func.kind != FunctionKind::Closure {
+                self.current_mut().names.insert(name.to_owned(), default);
+                break;
             }
         }
     }

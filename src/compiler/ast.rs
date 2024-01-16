@@ -8,8 +8,9 @@ use crate::{
 };
 
 /// Kind of function.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FunctionKind {
+    #[default]
     Function,
     Closure,
     Do,
@@ -167,7 +168,7 @@ impl fmt::Display for StmtKind {
 }
 
 /// A block.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Block {
     pub body: Vec<Stmt>,
     pub start: Location,
