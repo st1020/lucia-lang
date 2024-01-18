@@ -8,6 +8,7 @@ use super::{
     ast::*,
     lexer::LexerError,
     token::{LiteralKind, Token, TokenKind, TokenType},
+    typing::{LiteralType, Type},
 };
 
 macro_rules! unexpected_token_error {
@@ -218,7 +219,7 @@ impl<'a> Parser<'a> {
                 arguments: {
                     let mut temp = Vec::new();
                     while !self.check_noexpect(&TokenKind::EOL) {
-                        temp.push(self.parse_ident()?);
+                        temp.push(self.parse_typed_ident()?);
                         if self.check(&TokenKind::EOL) {
                             break;
                         }
@@ -327,6 +328,25 @@ impl<'a> Parser<'a> {
                         end: right.end,
                         kind: StmtKind::AssignUnpack { left, right },
                     }
+                }
+            } else if self.eat(&TokenKind::Colon) {
+                if let ExprKind::Ident(ident) = ast_node.kind {
+                    let types = self.parse_type()?;
+                    self.expect(&TokenKind::Assign)?;
+                    let right = self.parse_expr(1)?;
+                    Stmt {
+                        start: ast_node.start,
+                        end: right.end,
+                        kind: StmtKind::Assign {
+                            left: AssignLeft::Ident(TypedIdent {
+                                ident: *ident,
+                                t: Some(types),
+                            }),
+                            right,
+                        },
+                    }
+                } else {
+                    return Err(ParserError::ParseAssignStmtError);
                 }
             } else if self.eat(&TokenKind::Assign) {
                 let right = self.parse_expr(1)?;
@@ -614,6 +634,8 @@ impl<'a> Parser<'a> {
                     params: Vec::new(),
                     variadic: None,
                     body: self.parse_block()?,
+                    returns: None,
+                    throws: None,
                 },
                 end: self.prev_token.end,
             }))
@@ -716,11 +738,19 @@ impl<'a> Parser<'a> {
                     let mut temp = Vec::new();
                     while !self.eat_noexpect(&end_token) {
                         if self.eat_noexpect(&TokenKind::Mul) {
-                            variadic = Some(Box::new(self.parse_ident()?));
+                            variadic = Some(if is_closure {
+                                self.parse_atom_typed_ident()?
+                            } else {
+                                self.parse_typed_ident()?
+                            });
                             self.expect(&end_token)?;
                             break;
                         }
-                        temp.push(self.parse_ident()?);
+                        temp.push(if is_closure {
+                            self.parse_atom_typed_ident()?
+                        } else {
+                            self.parse_typed_ident()?
+                        });
                         self.eat_eol();
                         if self.eat(&end_token) {
                             break;
@@ -731,6 +761,16 @@ impl<'a> Parser<'a> {
                     temp
                 },
                 variadic,
+                returns: if self.eat(&TokenKind::Arrow) {
+                    Some(self.parse_type()?)
+                } else {
+                    None
+                },
+                throws: if self.eat(&TokenKind::Throw) {
+                    Some(self.parse_type()?)
+                } else {
+                    None
+                },
                 body: self.parse_block()?,
             },
             end: self.prev_token.end,
@@ -748,6 +788,145 @@ impl<'a> Parser<'a> {
         } else {
             unexpected_token_error!(self)
         }
+    }
+
+    // Parse typed ident.
+    fn parse_typed_ident(&mut self) -> Result<TypedIdent, ParserError> {
+        let ident = self.parse_ident()?;
+        let mut t = None;
+        if self.eat_noexpect(&TokenKind::Colon) {
+            t = Some(self.parse_type()?);
+        }
+        Ok(TypedIdent { ident, t })
+    }
+
+    // Parse typed ident with atom type.
+    fn parse_atom_typed_ident(&mut self) -> Result<TypedIdent, ParserError> {
+        let ident = self.parse_ident()?;
+        let mut t = None;
+        if self.eat_noexpect(&TokenKind::Colon) {
+            t = Some(self.parse_type_atom()?);
+        }
+        Ok(TypedIdent { ident, t })
+    }
+
+    /// Parse type.
+    fn parse_type(&mut self) -> Result<Type, ParserError> {
+        let mut t = self.parse_type_atom()?;
+        while self.eat(&TokenKind::VBar) {
+            t = t.union(&self.parse_type_atom()?);
+        }
+        Ok(t)
+    }
+
+    /// Parse atom type.
+    fn parse_type_atom(&mut self) -> Result<Type, ParserError> {
+        if self.eat(&TokenKind::Null) {
+            Ok(Type::Null)
+        } else if self.eat(&TokenKind::True) {
+            Ok(Type::Literal(LiteralType::Bool(true)))
+        } else if self.eat(&TokenKind::False) {
+            Ok(Type::Literal(LiteralType::Bool(false)))
+        } else if let Some(v) = self.eat_literal() {
+            Ok(Type::Literal(match v {
+                LiteralKind::Int(v) => LiteralType::Int(v?),
+                LiteralKind::Float(v) => LiteralType::Float(Float(v?)),
+                LiteralKind::Str(v) => LiteralType::Str(v?),
+            }))
+        } else if let Some(v) = self.eat_ident() {
+            let t = match v.as_str() {
+                "never" => Type::Never,
+                "any" => Type::Any,
+                "bool" => Type::Bool,
+                "int" => Type::Int,
+                "float" => Type::Float,
+                "str" => Type::Str,
+                _ => Type::UserData(v),
+            };
+            if self.eat(&TokenKind::Question) {
+                Ok(t.union(&Type::Null))
+            } else {
+                Ok(t)
+            }
+        } else if self.eat(&TokenKind::OpenBrace) {
+            self.parse_type_table()
+        } else if self.eat(&TokenKind::Fn) {
+            self.parse_type_func()
+        } else if self.eat(&TokenKind::OpenParen) {
+            let t = self.parse_type()?;
+            self.expect(&TokenKind::CloseParen)?;
+            Ok(t)
+        } else {
+            unexpected_token_error!(self)
+        }
+    }
+
+    /// Parse table type.
+    fn parse_type_table(&mut self) -> Result<Type, ParserError> {
+        let mut pairs = Vec::new();
+        let mut others = None;
+        self.eat_eol();
+        while !self.eat_noexpect(&TokenKind::CloseBrace) {
+            if self.eat(&TokenKind::OpenBracket) {
+                if others.is_some() {
+                    unexpected_token_error!(self)
+                }
+                let key = self.parse_type()?;
+                self.expect(&TokenKind::CloseBracket)?;
+                self.expect(&TokenKind::Colon)?;
+                let value = self.parse_type()?;
+                others = Some((Box::new(key), Box::new(value)))
+            } else {
+                let key = self.parse_ident()?;
+                self.expect(&TokenKind::Colon)?;
+                let value = self.parse_type()?;
+                pairs.push((LiteralType::Str(key.name), value));
+            }
+            self.eat_eol();
+            if self.eat(&TokenKind::CloseBrace) {
+                break;
+            }
+            self.expect(&TokenKind::Comma)?;
+            self.eat_eol();
+        }
+        Ok(Type::Table { pairs, others })
+    }
+
+    /// Parse function type.
+    fn parse_type_func(&mut self) -> Result<Type, ParserError> {
+        self.expect(&TokenKind::OpenParen)?;
+        let mut variadic = Type::Null;
+        Ok(Type::Function {
+            params: {
+                let mut temp = Vec::new();
+                while !self.eat_noexpect(&TokenKind::CloseParen) {
+                    if self.eat_noexpect(&TokenKind::Mul) {
+                        variadic = self.parse_type()?;
+                        self.expect(&TokenKind::CloseParen)?;
+                        break;
+                    }
+                    temp.push(self.parse_type()?);
+                    self.eat_eol();
+                    if self.eat(&TokenKind::CloseParen) {
+                        break;
+                    }
+                    self.expect(&TokenKind::Comma)?;
+                    self.eat_eol();
+                }
+                temp
+            },
+            variadic: Box::new(variadic),
+            returns: if self.eat(&TokenKind::Arrow) {
+                Box::new(self.parse_type()?)
+            } else {
+                Box::new(Type::Null)
+            },
+            throws: if self.eat(&TokenKind::Throw) {
+                Box::new(self.parse_type()?)
+            } else {
+                Box::new(Type::Any)
+            },
+        })
     }
 }
 

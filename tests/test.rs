@@ -676,6 +676,33 @@ fn gcd_pref() {
 }
 
 #[test]
+fn test_type_hint() {
+    let input = "
+    t1: int? = 1
+    t2: int | str = 1
+    t3: any | int = 1
+    t4: fn() -> null = fn(){}
+    t5: fn(int, str) -> bool = fn(a, b){return true}
+    t6: fn(int, str, *bool) -> bool = fn(a, b, *args){return true}
+    t7: {} = {}
+    t8: {a: int, b: str} = {'a': 1, 'b': '1'}
+    t9: {[int]: str} = ['test', 'test']
+    t10: {a: int, b: str, [int]: str} = {'a': 1, 'b': '1', 0: 'test'}
+    ";
+    let ast = compiler::parser::Parser::new(&mut compiler::lexer::tokenize(input))
+        .parse()
+        .unwrap();
+    println!("{}", ast);
+
+    let functions = compiler::analyzer::analyze_with_type_check(ast).unwrap();
+    for (name, kind) in functions[0].names.iter() {
+        if let compiler::analyzer::NameKind::Local { t: Some(t) } = kind {
+            println!("{name}: {t}");
+        }
+    }
+}
+
+#[test]
 fn temp() {
     let input = "
     // import std::io::{println}

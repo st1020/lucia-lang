@@ -2,10 +2,9 @@
 
 use std::fmt;
 
-use crate::{
-    compiler::parser::ParserError,
-    utils::{escape_str, Float, Join, Location},
-};
+use crate::utils::{escape_str, Float, Join, Location};
+
+use super::{parser::ParserError, typing::Type};
 
 /// Kind of function.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -79,7 +78,7 @@ pub enum StmtKind {
         argument: Box<Expr>,
     },
     Global {
-        arguments: Vec<Ident>,
+        arguments: Vec<TypedIdent>,
     },
     Import {
         path: Vec<Ident>,
@@ -233,9 +232,11 @@ pub enum ExprKind {
     Ident(Box<Ident>),
     Function {
         kind: FunctionKind,
-        params: Vec<Ident>,
-        variadic: Option<Box<Ident>>,
+        params: Vec<TypedIdent>,
+        variadic: Option<TypedIdent>,
         body: Box<Block>,
+        returns: Option<Type>,
+        throws: Option<Type>,
     },
     FunctionId(usize),
     Table {
@@ -279,31 +280,37 @@ impl fmt::Display for ExprKind {
                 params,
                 variadic,
                 body,
+                returns,
+                throws,
             } => {
-                if let Some(variadic) = variadic {
-                    match kind {
-                        FunctionKind::Function => write!(
-                            f,
-                            "fn ({}, {}) {}",
-                            params.iter().join(", "),
-                            variadic,
-                            body
-                        ),
-                        FunctionKind::Closure => {
-                            write!(f, "|{}, {}| {}", params.iter().join(", "), variadic, body)
-                        }
-                        FunctionKind::Do => panic!(),
-                    }
+                let params_str = params.iter().join(", ");
+                let variadic_str = if let Some(variadic) = variadic {
+                    format!(" ,*{}", variadic)
                 } else {
-                    match kind {
-                        FunctionKind::Function => {
-                            write!(f, "fn ({}) {}", params.iter().join(", "), body)
-                        }
-                        FunctionKind::Closure => {
-                            write!(f, "|{}| {}", params.iter().join(", "), body)
-                        }
-                        FunctionKind::Do => write!(f, "do {body}"),
-                    }
+                    "".to_string()
+                };
+                let returns_str = if let Some(returns) = returns {
+                    format!(" -> {}", returns)
+                } else {
+                    "".to_string()
+                };
+                let throws_str = if let Some(throws) = throws {
+                    format!(" throw {}", throws)
+                } else {
+                    "".to_string()
+                };
+                match kind {
+                    FunctionKind::Function => write!(
+                        f,
+                        "fn ({}{}){}{} {}",
+                        params_str, variadic_str, returns_str, throws_str, body
+                    ),
+                    FunctionKind::Closure => write!(
+                        f,
+                        "|{}{}|{}{} {}",
+                        params_str, variadic_str, returns_str, throws_str, body
+                    ),
+                    FunctionKind::Do => write!(f, "do {body}"),
                 }
             }
             ExprKind::FunctionId(id) => write!(f, "<function: {id}>"),
@@ -581,7 +588,7 @@ impl fmt::Display for TableProperty {
 /// The left part of assign.
 #[derive(Debug, Clone)]
 pub enum AssignLeft {
-    Ident(Box<Ident>),
+    Ident(TypedIdent),
     Member {
         table: Box<Expr>,
         property: MemberKind,
@@ -603,7 +610,7 @@ impl fmt::Display for AssignLeft {
 
 impl From<Ident> for AssignLeft {
     fn from(value: Ident) -> Self {
-        AssignLeft::Ident(Box::new(value))
+        AssignLeft::Ident(TypedIdent::from(value))
     }
 }
 
@@ -612,7 +619,10 @@ impl TryFrom<Expr> for AssignLeft {
 
     fn try_from(value: Expr) -> Result<Self, Self::Error> {
         match value.kind {
-            ExprKind::Ident(ident) => Ok(AssignLeft::Ident(ident)),
+            ExprKind::Ident(ident) => Ok(AssignLeft::Ident(TypedIdent {
+                ident: *ident,
+                t: None,
+            })),
             ExprKind::Member {
                 table,
                 property,
@@ -639,7 +649,7 @@ impl TryFrom<Expr> for AssignLeft {
 impl From<AssignLeft> for Expr {
     fn from(value: AssignLeft) -> Self {
         match value {
-            AssignLeft::Ident(ident) => (*ident).into(),
+            AssignLeft::Ident(TypedIdent { ident, t: _ }) => ident.into(),
             AssignLeft::Member { table, property } => Expr {
                 start: table.start,
                 end: match &property {
@@ -658,6 +668,32 @@ impl From<AssignLeft> for Expr {
                 end: table.end,
                 kind: ExprKind::MetaMember { table, safe: false },
             },
+        }
+    }
+}
+
+/// The ident with type.
+#[derive(Debug, Clone)]
+pub struct TypedIdent {
+    pub ident: Ident,
+    pub t: Option<Type>,
+}
+
+impl fmt::Display for TypedIdent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(t) = &self.t {
+            write!(f, "{}: {}", self.ident, t)
+        } else {
+            write!(f, "{}", self.ident)
+        }
+    }
+}
+
+impl From<Ident> for TypedIdent {
+    fn from(value: Ident) -> Self {
+        TypedIdent {
+            ident: value,
+            t: None,
         }
     }
 }

@@ -128,10 +128,10 @@ impl CodeGen {
 
     fn gen_code(&mut self, func_id: usize) -> Result<Code, SyntaxError> {
         if let Some(variadic) = self.func_list[func_id].variadic.clone() {
-            self.store(func_id, &variadic)?;
+            self.store(func_id, &variadic.ident.name)?;
         }
         for param in self.func_list[func_id].params.clone().into_iter().rev() {
-            self.store(func_id, &param)?;
+            self.store(func_id, &param.ident.name)?;
         }
         self.gen_block(func_id, &self.func_list[func_id].body.clone())?;
         if self.func_list[func_id].kind == FunctionKind::Do {
@@ -187,8 +187,15 @@ impl CodeGen {
                 },
         );
         Ok(Code {
-            params: self.func_list[func_id].params.clone(),
-            variadic: self.func_list[func_id].variadic.clone(),
+            params: self.func_list[func_id]
+                .params
+                .iter()
+                .map(|x| x.ident.name.clone())
+                .collect(),
+            variadic: self.func_list[func_id]
+                .variadic
+                .clone()
+                .map(|x| x.ident.name),
             kind: self.func_list[func_id].kind,
             code: self.func_list[func_id].code.clone(),
             consts: self.func_list[func_id].consts.clone(),
@@ -593,7 +600,7 @@ impl CodeGen {
                 left,
                 right,
             } => match &left {
-                AssignLeft::Ident(ident) => {
+                AssignLeft::Ident(TypedIdent { ident, t: _ }) => {
                     self.gen_expr(func_id, &left.clone().into())?;
                     self.gen_expr(func_id, right)?;
                     self.func_list[func_id]
@@ -659,7 +666,7 @@ impl CodeGen {
         ast_node: &AssignLeft,
     ) -> Result<(), SyntaxError> {
         match ast_node {
-            AssignLeft::Ident(ident) => self.store(func_id, &ident.name)?,
+            AssignLeft::Ident(TypedIdent { ident, t: _ }) => self.store(func_id, &ident.name)?,
             AssignLeft::Member { table, property } => {
                 self.gen_expr_member_without_get(func_id, table, property)?;
                 self.func_list[func_id].code.push(property.set_opcode());

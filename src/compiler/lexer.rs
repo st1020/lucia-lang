@@ -203,6 +203,18 @@ impl Cursor<'_> {
                 _ => Div,
             },
 
+            '-' => match self.first() {
+                '>' => {
+                    self.bump();
+                    Arrow
+                }
+                '=' => {
+                    self.bump();
+                    SubAssign
+                }
+                _ => Sub,
+            },
+
             // Whitespace sequence.
             c if is_whitespace(c) => {
                 self.eat_while(is_whitespace);
@@ -250,10 +262,6 @@ impl Cursor<'_> {
                 self.bump();
                 AddAssign
             }
-            '-' if self.first() == '=' => {
-                self.bump();
-                SubAssign
-            }
             '*' if self.first() == '=' => {
                 self.bump();
                 MulAssign
@@ -286,7 +294,6 @@ impl Cursor<'_> {
             '>' => Gt,
             '|' => VBar,
             '+' => Add,
-            '-' => Sub,
             '*' => Mul,
             '%' => Rem,
             c => Unknown(c),

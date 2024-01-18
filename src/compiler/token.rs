@@ -60,6 +60,8 @@ pub enum TokenKind {
     // Two-char tokens:
     /// "::"
     DoubleColon,
+    /// "->"
+    Arrow,
     /// "=="
     Eq,
     /// "!="
@@ -170,6 +172,7 @@ impl fmt::Display for TokenKind {
             Self::True => write!(f, "True (true)"),
             Self::False => write!(f, "False (false)"),
             Self::DoubleColon => write!(f, "DoubleColon (::)"),
+            Self::Arrow => write!(f, "Arrow (->)"),
             Self::Eq => write!(f, "Eq (==)"),
             Self::NotEq => write!(f, "NotEq (!=)"),
             Self::LtEq => write!(f, "LtEq (<=)"),
