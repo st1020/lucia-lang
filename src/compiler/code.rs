@@ -125,13 +125,18 @@ impl fmt::Display for ConstValue {
     }
 }
 
+fn str_to_code(input: &str) -> Result<Code, SyntaxError> {
+    let mut tokens = lexer::tokenize(input);
+    let ast = parser::parse(&mut tokens)?;
+    let functions = analyzer::analyze(ast)?;
+    codegen::gen_code(functions)
+}
+
 impl TryFrom<&str> for Code {
     type Error = SyntaxError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        codegen::gen_code(analyzer::analyze(
-            parser::Parser::new(&mut lexer::tokenize(value)).parse()?,
-        ))
+        str_to_code(value)
     }
 }
 
@@ -139,8 +144,6 @@ impl TryFrom<&String> for Code {
     type Error = SyntaxError;
 
     fn try_from(value: &String) -> Result<Self, Self::Error> {
-        codegen::gen_code(analyzer::analyze(
-            parser::Parser::new(&mut lexer::tokenize(value)).parse()?,
-        ))
+        str_to_code(value)
     }
 }

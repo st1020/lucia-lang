@@ -11,6 +11,11 @@ use super::{
     typing::{LiteralType, Type},
 };
 
+/// Parse the token iter into AST.
+pub fn parse<T: Iterator<Item = Token>>(token_iter: &mut T) -> Result<AST, ParserError> {
+    Parser::new(token_iter).parse()
+}
+
 macro_rules! unexpected_token_error {
     ($self:expr) => {
         return Err(ParserError::UnexpectedToken {
@@ -21,22 +26,22 @@ macro_rules! unexpected_token_error {
 }
 
 /// The parser. Turns token iter into AST.
-pub struct Parser<'a> {
+struct Parser<'a, T: Iterator<Item = Token>> {
     /// The current token.
-    pub token: Token,
+    token: Token,
     /// The previous token.
-    pub prev_token: Token,
+    prev_token: Token,
     /// The token iter.
-    pub token_iter: &'a mut dyn Iterator<Item = Token>,
+    token_iter: &'a mut T,
     /// Is token iter end.
-    pub is_eof: bool,
+    is_eof: bool,
 
     expected_tokens: Vec<TokenType>,
 }
 
-impl<'a> Parser<'a> {
+impl<'a, T: Iterator<Item = Token>> Parser<'a, T> {
     /// Constructs a new `Parser` with a token iter.
-    pub fn new(token_iter: &'a mut dyn Iterator<Item = Token>) -> Self {
+    fn new(token_iter: &'a mut T) -> Self {
         let mut parser = Parser {
             token: Token::dummy(),
             prev_token: Token::dummy(),
@@ -44,17 +49,28 @@ impl<'a> Parser<'a> {
             is_eof: false,
             expected_tokens: Vec::new(),
         };
-        parser.bump();
+        parser.bump_no_skip_comment();
         parser
+    }
+
+    /// Moves to the next token, not skip comment token.
+    fn bump_no_skip_comment(&mut self) {
+        self.token = self.token_iter.next().unwrap_or_else(|| {
+            self.is_eof = true;
+            Token::dummy()
+        });
     }
 
     /// Moves to the next token.
     fn bump(&mut self) {
         self.prev_token = self.token.clone();
-        self.token = self.token_iter.next().unwrap_or_else(|| {
-            self.is_eof = true;
-            Token::dummy()
-        });
+        self.bump_no_skip_comment();
+        while let TokenKind::LineComment(_) | TokenKind::BlockComment(_) = self.token.kind {
+            if self.is_eof {
+                break;
+            }
+            self.bump_no_skip_comment();
+        }
         self.expected_tokens.clear();
     }
 
@@ -129,24 +145,41 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Parse token iter into AST (`Box<Block>`).
-    pub fn parse(&mut self) -> Result<Box<Block>, ParserError> {
-        Ok(Box::new(Block {
-            start: self.token.start,
-            body: {
-                let mut temp = Vec::new();
-                while !self.is_eof {
-                    temp.push(self.parse_stmt()?);
-                    if self.is_eof {
-                        break;
-                    }
-                    self.expect(&TokenKind::EOL)?;
-                    self.eat_eol();
+    /// Parse token iter into AST.
+    fn parse(&mut self) -> Result<AST, ParserError> {
+        Ok(AST {
+            first_comment: {
+                let mut first_comment = String::new();
+                // Skip the prefix EOL at the beginning of the file
+                while self.token.kind == TokenKind::EOL {
+                    self.bump_no_skip_comment();
                 }
-                temp
+                while let TokenKind::LineComment(v) | TokenKind::BlockComment(v) = &self.token.kind
+                {
+                    first_comment.push_str(v);
+                    first_comment.push('\n');
+                    self.bump_no_skip_comment();
+                }
+                self.eat_eol();
+                first_comment
             },
-            end: self.prev_token.end,
-        }))
+            body: Box::new(Block {
+                start: self.token.start,
+                body: {
+                    let mut temp = Vec::new();
+                    while !self.is_eof {
+                        temp.push(self.parse_stmt()?);
+                        if self.is_eof {
+                            break;
+                        }
+                        self.expect(&TokenKind::EOL)?;
+                        self.eat_eol();
+                    }
+                    temp
+                },
+                end: self.prev_token.end,
+            }),
+        })
     }
 
     /// Parse statement.
@@ -338,10 +371,10 @@ impl<'a> Parser<'a> {
                         start: ast_node.start,
                         end: right.end,
                         kind: StmtKind::Assign {
-                            left: AssignLeft::Ident(TypedIdent {
+                            left: AssignLeft::Ident(Box::new(TypedIdent {
                                 ident: *ident,
                                 t: Some(types),
-                            }),
+                            })),
                             right,
                         },
                     }
@@ -738,11 +771,11 @@ impl<'a> Parser<'a> {
                     let mut temp = Vec::new();
                     while !self.eat_noexpect(&end_token) {
                         if self.eat_noexpect(&TokenKind::Mul) {
-                            variadic = Some(if is_closure {
+                            variadic = Some(Box::new(if is_closure {
                                 self.parse_atom_typed_ident()?
                             } else {
                                 self.parse_typed_ident()?
-                            });
+                            }));
                             self.expect(&end_token)?;
                             break;
                         }
@@ -762,12 +795,12 @@ impl<'a> Parser<'a> {
                 },
                 variadic,
                 returns: if self.eat(&TokenKind::Arrow) {
-                    Some(self.parse_type()?)
+                    Some(Box::new(self.parse_type()?))
                 } else {
                     None
                 },
                 throws: if self.eat(&TokenKind::Throw) {
-                    Some(self.parse_type()?)
+                    Some(Box::new(self.parse_type()?))
                 } else {
                     None
                 },

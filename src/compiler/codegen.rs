@@ -14,6 +14,7 @@ use super::{
     code::{Code, ConstValue, FunctionKind},
     opcode::{JumpTarget, OpCode},
     parser::ParserError,
+    typing::TypeCheckError,
 };
 
 impl TryFrom<BinOp> for OpCode {
@@ -600,13 +601,13 @@ impl CodeGen {
                 left,
                 right,
             } => match &left {
-                AssignLeft::Ident(TypedIdent { ident, t: _ }) => {
+                AssignLeft::Ident(ident) => {
                     self.gen_expr(func_id, &left.clone().into())?;
                     self.gen_expr(func_id, right)?;
                     self.func_list[func_id]
                         .code
                         .push(OpCode::try_from(*operator)?);
-                    self.store(func_id, &ident.name)?;
+                    self.store(func_id, &ident.ident.name)?;
                 }
                 AssignLeft::Member { table, property } => {
                     self.gen_expr_member_without_get(func_id, table, property)?;
@@ -666,7 +667,7 @@ impl CodeGen {
         ast_node: &AssignLeft,
     ) -> Result<(), SyntaxError> {
         match ast_node {
-            AssignLeft::Ident(TypedIdent { ident, t: _ }) => self.store(func_id, &ident.name)?,
+            AssignLeft::Ident(ident) => self.store(func_id, &ident.ident.name)?,
             AssignLeft::Member { table, property } => {
                 self.gen_expr_member_without_get(func_id, table, property)?;
                 self.func_list[func_id].code.push(property.set_opcode());
@@ -777,4 +778,6 @@ pub enum SyntaxError {
     ThrowOutsideFunction,
     #[error(transparent)]
     ParserError(#[from] ParserError),
+    #[error(transparent)]
+    TypeCheckError(#[from] TypeCheckError),
 }

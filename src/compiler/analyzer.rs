@@ -18,6 +18,7 @@ use super::{
     typing::{LiteralType, Type, TypeCheckError},
 };
 
+/// The kind of name in namespace.
 #[derive(Debug, Clone)]
 pub enum NameKind {
     Local {
@@ -43,7 +44,7 @@ pub struct Function {
     /// Name of parameters.
     pub params: Vec<TypedIdent>,
     /// Name of variadic parameter.
-    pub variadic: Option<TypedIdent>,
+    pub variadic: Option<Box<TypedIdent>>,
     /// AST of the function.
     pub body: Box<Block>,
     /// The base function.
@@ -56,9 +57,9 @@ pub struct Function {
     pub def_upvalue_count: usize,
 
     // used by type check
-    pub(crate) returns_type: Option<Type>,
+    pub(crate) returns_type: Option<Box<Type>>,
     pub(crate) explicit_returns_type: bool,
-    pub(crate) throws_type: Option<Type>,
+    pub(crate) throws_type: Option<Box<Type>>,
     pub(crate) explicit_throws_type: bool,
 
     // used by codegen
@@ -93,11 +94,11 @@ impl Function {
         func_id: usize,
         kind: FunctionKind,
         params: Vec<TypedIdent>,
-        variadic: Option<TypedIdent>,
+        variadic: Option<Box<TypedIdent>>,
         body: Box<Block>,
         base_function: Option<usize>,
-        returns_type: Option<Type>,
-        throws_type: Option<Type>,
+        returns_type: Option<Box<Type>>,
+        throws_type: Option<Box<Type>>,
     ) -> Self {
         Function {
             func_id,
@@ -144,8 +145,8 @@ impl Function {
                     .map(|x| x.t.unwrap_or(Type::Any))
                     .unwrap_or(Type::Null),
             ),
-            returns: Box::new(self.returns_type.clone().unwrap_or(Type::Any)),
-            throws: Box::new(self.throws_type.clone().unwrap_or(Type::Any)),
+            returns: self.returns_type.clone().unwrap_or(Box::new(Type::Any)),
+            throws: self.throws_type.clone().unwrap_or(Box::new(Type::Any)),
         }
     }
 }
@@ -173,16 +174,15 @@ impl_names_iter!(global_names, NameKind::Global { .. });
 impl_names_iter!(upvalue_names, NameKind::Upvalue { .. });
 
 /// Semantic Analyze. Lowers the AST to `Vec<Function>`.
-pub fn analyze(ast: Box<Block>) -> Vec<Function> {
+pub fn analyze(ast: AST) -> Result<Vec<Function>, TypeCheckError> {
+    let first_comment = ast.first_comment.trim();
+    let enable_type_check =
+        first_comment.contains("type-check: on") || first_comment.contains("type-check: strict");
     let mut analyzer = SemanticAnalyzer::new(ast);
     analyzer.analyze_name();
-    analyzer.func_list
-}
-
-pub fn analyze_with_type_check(ast: Box<Block>) -> Result<Vec<Function>, TypeCheckError> {
-    let mut analyzer = SemanticAnalyzer::new(ast);
-    analyzer.analyze_name();
-    analyzer.type_check()?;
+    if enable_type_check {
+        analyzer.type_check()?;
+    }
     Ok(analyzer.func_list)
 }
 
@@ -194,7 +194,7 @@ struct SemanticAnalyzer {
 }
 
 impl SemanticAnalyzer {
-    fn new(ast: Box<Block>) -> Self {
+    fn new(ast: AST) -> Self {
         let mut analyzer = SemanticAnalyzer {
             func_list: Vec::new(),
             global_types: HashMap::new(),
@@ -205,7 +205,7 @@ impl SemanticAnalyzer {
             FunctionKind::Function,
             Vec::new(),
             None,
-            ast,
+            ast.body,
             None,
             None,
             None,
@@ -583,7 +583,7 @@ impl<'a> Handle<'a> {
 
     fn analyze_name_assign_left(&mut self, ast_node: &AssignLeft) {
         match ast_node {
-            AssignLeft::Ident(TypedIdent { ident, t }) => self.store_name(&ident.name, t.clone()),
+            AssignLeft::Ident(ident) => self.store_name(&ident.ident.name, ident.t.clone()),
             AssignLeft::Member { table, property } => {
                 self.analyze_name_expr(table);
                 self.analyze_name_member_property(property);
@@ -782,10 +782,10 @@ impl<'a> Handle<'a> {
                         return_type.expect_is_sub_type_of(&expect_return_type)?;
                     } else {
                         self.current_mut().returns_type =
-                            Some(expect_return_type.union(&return_type));
+                            Some(Box::new(expect_return_type.union(&return_type)));
                     }
                 } else {
-                    self.current_mut().returns_type = Some(return_type);
+                    self.current_mut().returns_type = Some(Box::new(return_type));
                 }
             }
             StmtKind::Throw { argument } => {
@@ -794,10 +794,11 @@ impl<'a> Handle<'a> {
                     if self.current().explicit_throws_type {
                         throw_type.expect_is_sub_type_of(&expect_throw_type)?;
                     } else {
-                        self.current_mut().throws_type = Some(expect_throw_type.union(&throw_type));
+                        self.current_mut().throws_type =
+                            Some(Box::new(expect_throw_type.union(&throw_type)));
                     }
                 } else {
-                    self.current_mut().throws_type = Some(throw_type);
+                    self.current_mut().throws_type = Some(Box::new(throw_type));
                 }
             }
             StmtKind::Global { arguments: _ } => (),
@@ -854,11 +855,11 @@ impl<'a> Handle<'a> {
         right_type: Type,
     ) -> Result<(), TypeCheckError> {
         match left {
-            AssignLeft::Ident(TypedIdent { ident, t }) => {
-                if let Some(t) = t {
-                    self.set_name_type(&ident.name, t.clone())?;
+            AssignLeft::Ident(ident) => {
+                if let Some(t) = &ident.t {
+                    self.set_name_type(&ident.ident.name, t.clone())?;
                 }
-                self.set_name_type(&ident.name, right_type)?;
+                self.set_name_type(&ident.ident.name, right_type)?;
             }
             AssignLeft::Member { table, property } => {
                 right_type.is_sub_type_of(

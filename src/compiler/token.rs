@@ -129,12 +129,12 @@ pub enum TokenKind {
     /// End of line (`\n`)
     EOL,
     /// "// comment"
-    LineComment,
+    LineComment(String),
     /// "/* block comment */"
     ///
     /// Block comments can be recursive, so the sequence like `/* /* */`
     /// will not be considered terminated and will result in a parsing error.
-    BlockComment,
+    BlockComment(String),
     /// Any whitespace characters sequence.
     Whitespace,
     /// Ident
@@ -204,12 +204,12 @@ impl fmt::Display for TokenKind {
             Self::Div => write!(f, "Div (/)"),
             Self::Rem => write!(f, "Rem (%)"),
             Self::EOL => write!(f, "EOL (\\n)"),
-            Self::LineComment => write!(f, "LineComment (// ...)"),
-            Self::BlockComment => write!(f, "BlockComment (/* ... */)"),
+            Self::LineComment(v) => write!(f, "LineComment (//{v})"),
+            Self::BlockComment(v) => write!(f, "BlockComment (/*{v}*/)"),
             Self::Whitespace => write!(f, "Whitespace ( )"),
-            Self::Ident(v) => write!(f, "Ident ({})", v),
-            Self::Literal(v) => write!(f, "Literal ({})", v),
-            Self::Unknown(v) => write!(f, "Unknown({})", v),
+            Self::Ident(v) => write!(f, "Ident ({v})"),
+            Self::Literal(v) => write!(f, "Literal ({v})"),
+            Self::Unknown(v) => write!(f, "Unknown({v})"),
         }
     }
 }
@@ -264,17 +264,9 @@ impl Token {
     /// Constructs a fake Token.
     pub fn dummy() -> Self {
         Token {
-            kind: TokenKind::Unknown(' '),
-            start: Location {
-                lineno: 1,
-                column: 1,
-                offset: 0,
-            },
-            end: Location {
-                lineno: 1,
-                column: 1,
-                offset: 0,
-            },
+            kind: TokenKind::Unknown('\0'),
+            start: Location::default(),
+            end: Location::default(),
         }
     }
 }

@@ -129,9 +129,8 @@ pub fn tokenize(input: &str) -> impl Iterator<Item = Token> + '_ {
             break None;
         } else {
             let t = cursor.advance_token();
-            match t.kind {
-                LineComment | BlockComment | Whitespace => (),
-                _ => break Some(t),
+            if t.kind != Whitespace {
+                break Some(t);
             }
         }
     })
@@ -310,15 +309,24 @@ impl Cursor<'_> {
     fn line_comment(&mut self) -> TokenKind {
         debug_assert!(self.prev() == '/' && self.first() == '/');
         self.bump();
-        self.eat_while(|c| c != '\n');
-        LineComment
+        let mut v = String::new();
+        while let Some(c) = self.bump() {
+            if c == '\n' {
+                break;
+            } else {
+                v.push(c);
+            }
+        }
+        LineComment(v)
     }
 
     fn block_comment(&mut self) -> TokenKind {
         debug_assert!(self.prev() == '/' && self.first() == '*');
         self.bump();
+        let mut v = String::new();
         let mut depth = 1usize;
         while let Some(c) = self.bump() {
+            v.push(c);
             match c {
                 '/' if self.first() == '*' => {
                     self.bump();
@@ -337,7 +345,8 @@ impl Cursor<'_> {
                 _ => (),
             }
         }
-        BlockComment
+        v.truncate(v.len() - 1);
+        BlockComment(v)
     }
 
     fn ident_or_reserved_word(&mut self, first_char: char) -> TokenKind {

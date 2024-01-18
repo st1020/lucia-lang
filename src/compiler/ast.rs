@@ -15,6 +15,23 @@ pub enum FunctionKind {
     Do,
 }
 
+/// The root AST node.
+#[derive(Debug, Clone)]
+pub struct AST {
+    pub first_comment: String,
+    pub body: Box<Block>,
+}
+
+impl fmt::Display for AST {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.first_comment.is_empty() {
+            write!(f, "{}", self.body)
+        } else {
+            write!(f, "//{}\n\n{}", self.first_comment, self.body)
+        }
+    }
+}
+
 /// A statement.
 #[derive(Debug, Clone)]
 pub struct Stmt {
@@ -233,10 +250,10 @@ pub enum ExprKind {
     Function {
         kind: FunctionKind,
         params: Vec<TypedIdent>,
-        variadic: Option<TypedIdent>,
+        variadic: Option<Box<TypedIdent>>,
         body: Box<Block>,
-        returns: Option<Type>,
-        throws: Option<Type>,
+        returns: Option<Box<Type>>,
+        throws: Option<Box<Type>>,
     },
     FunctionId(usize),
     Table {
@@ -561,7 +578,7 @@ pub enum ImportKind {
     Glob,
 }
 
-// Kind of call expression.
+/// Kind of call expression.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CallKind {
     None,
@@ -588,7 +605,7 @@ impl fmt::Display for TableProperty {
 /// The left part of assign.
 #[derive(Debug, Clone)]
 pub enum AssignLeft {
-    Ident(TypedIdent),
+    Ident(Box<TypedIdent>),
     Member {
         table: Box<Expr>,
         property: MemberKind,
@@ -610,7 +627,7 @@ impl fmt::Display for AssignLeft {
 
 impl From<Ident> for AssignLeft {
     fn from(value: Ident) -> Self {
-        AssignLeft::Ident(TypedIdent::from(value))
+        AssignLeft::Ident(Box::new(TypedIdent::from(value)))
     }
 }
 
@@ -619,10 +636,10 @@ impl TryFrom<Expr> for AssignLeft {
 
     fn try_from(value: Expr) -> Result<Self, Self::Error> {
         match value.kind {
-            ExprKind::Ident(ident) => Ok(AssignLeft::Ident(TypedIdent {
+            ExprKind::Ident(ident) => Ok(AssignLeft::Ident(Box::new(TypedIdent {
                 ident: *ident,
                 t: None,
-            })),
+            }))),
             ExprKind::Member {
                 table,
                 property,
@@ -649,7 +666,7 @@ impl TryFrom<Expr> for AssignLeft {
 impl From<AssignLeft> for Expr {
     fn from(value: AssignLeft) -> Self {
         match value {
-            AssignLeft::Ident(TypedIdent { ident, t: _ }) => ident.into(),
+            AssignLeft::Ident(ident) => ident.ident.into(),
             AssignLeft::Member { table, property } => Expr {
                 start: table.start,
                 end: match &property {

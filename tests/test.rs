@@ -138,6 +138,40 @@ println("04")
 */
 "#,
     );
+
+    let input = r#"
+import std::io::{println}
+println("Hello World!")
+"#;
+    let ast = compiler::parser::parse(&mut compiler::lexer::tokenize(input)).unwrap();
+    assert!(ast.first_comment.is_empty());
+
+    let input = r#"
+//
+"#;
+
+    let ast = compiler::parser::parse(&mut compiler::lexer::tokenize(input)).unwrap();
+    assert!(ast.first_comment == "\n");
+
+    let input = r#"
+// first_comment
+"#;
+
+    let ast = compiler::parser::parse(&mut compiler::lexer::tokenize(input)).unwrap();
+    assert!(ast.first_comment == " first_comment\n");
+
+    let input = r#"
+/* first_comment */
+"#;
+    let ast = compiler::parser::parse(&mut compiler::lexer::tokenize(input)).unwrap();
+    assert!(ast.first_comment == " first_comment \n");
+
+    let input = r#"
+// first_comment
+// first_comment
+"#;
+    let ast = compiler::parser::parse(&mut compiler::lexer::tokenize(input)).unwrap();
+    assert!(ast.first_comment == " first_comment\n first_comment\n");
 }
 
 #[test]
@@ -676,8 +710,20 @@ fn gcd_pref() {
 }
 
 #[test]
+#[should_panic]
+fn test_type_hint_error() {
+    run!(
+        r#"
+// type-check: on
+t1: int = ""
+"#
+    );
+}
+
+#[test]
 fn test_type_hint() {
     let input = "
+    // type-check: on
     t1: int? = 1
     t2: int | str = 1
     t3: any | int = 1
@@ -689,12 +735,10 @@ fn test_type_hint() {
     t9: {[int]: str} = ['test', 'test']
     t10: {a: int, b: str, [int]: str} = {'a': 1, 'b': '1', 0: 'test'}
     ";
-    let ast = compiler::parser::Parser::new(&mut compiler::lexer::tokenize(input))
-        .parse()
-        .unwrap();
+    let ast = compiler::parser::parse(&mut compiler::lexer::tokenize(input)).unwrap();
     println!("{}", ast);
 
-    let functions = compiler::analyzer::analyze_with_type_check(ast).unwrap();
+    let functions = compiler::analyzer::analyze(ast).unwrap();
     for (name, kind) in functions[0].names.iter() {
         if let compiler::analyzer::NameKind::Local { t: Some(t) } = kind {
             println!("{name}: {t}");

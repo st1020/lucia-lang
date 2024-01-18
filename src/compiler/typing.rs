@@ -308,7 +308,8 @@ impl From<LitKind> for Type {
     }
 }
 
-#[derive(Error, Debug, Clone)]
+/// Kind of TypeCheckError.
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum TypeCheckError {
     #[error("unexpected {t} is subtype of {expected} ")]
     ExpectIsSubtypeOf { t: Box<Type>, expected: Box<Type> },
