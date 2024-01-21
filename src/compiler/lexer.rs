@@ -310,12 +310,13 @@ impl Cursor<'_> {
         debug_assert!(self.prev() == '/' && self.first() == '/');
         self.bump();
         let mut v = String::new();
-        while let Some(c) = self.bump() {
-            if c == '\n' {
+        loop {
+            let c = self.first();
+            if c == '\n' || self.is_eof() {
                 break;
-            } else {
-                v.push(c);
             }
+            v.push(c);
+            self.bump();
         }
         LineComment(v)
     }
