@@ -195,7 +195,7 @@ impl<'gc> FramesState<'gc> {
                 OpCode::BuildTable(i) => {
                     let temp = frame.stack.split_off(frame.stack.len() - i * 2);
                     let table = Table::new(&ctx);
-                    for i in temp.chunks(2) {
+                    for i in temp.chunks_exact(2) {
                         table.set(ctx, i[0], i[1]);
                     }
                     frame.stack.push(Value::Table(table));
