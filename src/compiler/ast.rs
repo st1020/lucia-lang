@@ -4,7 +4,7 @@ use std::fmt;
 
 use crate::utils::{escape_str, Float, Join, Location};
 
-use super::{parser::ParserError, typing::Type};
+use super::typing::Type;
 
 /// Kind of function.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -16,7 +16,7 @@ pub enum FunctionKind {
 }
 
 /// The root AST node.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AST {
     pub first_comment: String,
     pub body: Box<Block>,
@@ -33,7 +33,7 @@ impl fmt::Display for AST {
 }
 
 /// A statement.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Stmt {
     pub kind: StmtKind,
     pub start: Location,
@@ -67,7 +67,7 @@ impl From<Expr> for Stmt {
 }
 
 /// Kind of statement.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StmtKind {
     If {
         test: Box<Expr>,
@@ -184,7 +184,7 @@ impl fmt::Display for StmtKind {
 }
 
 /// A block.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Block {
     pub body: Vec<Stmt>,
     pub start: Location,
@@ -209,7 +209,7 @@ impl fmt::Display for Block {
 }
 
 /// An expression.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Expr {
     pub kind: ExprKind,
     pub start: Location,
@@ -243,7 +243,7 @@ impl From<Ident> for Expr {
 }
 
 /// Kind of expression.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExprKind {
     Lit(Box<Lit>),
     Ident(Box<Ident>),
@@ -395,7 +395,7 @@ impl fmt::Display for ExprKind {
 }
 
 /// A literal.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Lit {
     pub value: LitKind,
     pub start: Location,
@@ -436,7 +436,7 @@ impl fmt::Display for LitKind {
 }
 
 /// An ident.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ident {
     pub name: String,
     pub start: Location,
@@ -547,7 +547,7 @@ impl BinOp {
 }
 
 /// Kind of member expression.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MemberKind {
     /// `[]`
     Bracket(Box<Expr>),
@@ -568,7 +568,7 @@ impl fmt::Display for MemberKind {
 }
 
 /// Kind of import statement.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ImportKind {
     /// `import path::xxx as xxx`
     Simple(Box<Ident>),
@@ -588,7 +588,7 @@ pub enum CallKind {
 }
 
 /// A TableProperty.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableProperty {
     pub key: Box<Expr>,
     pub value: Box<Expr>,
@@ -603,7 +603,7 @@ impl fmt::Display for TableProperty {
 }
 
 /// The left part of assign.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AssignLeft {
     Ident(Box<TypedIdent>),
     Member {
@@ -628,38 +628,6 @@ impl fmt::Display for AssignLeft {
 impl From<Ident> for AssignLeft {
     fn from(value: Ident) -> Self {
         AssignLeft::Ident(Box::new(TypedIdent::from(value)))
-    }
-}
-
-impl TryFrom<Expr> for AssignLeft {
-    type Error = ParserError;
-
-    fn try_from(value: Expr) -> Result<Self, Self::Error> {
-        match value.kind {
-            ExprKind::Ident(ident) => Ok(AssignLeft::Ident(Box::new(TypedIdent {
-                ident: *ident,
-                t: None,
-            }))),
-            ExprKind::Member {
-                table,
-                property,
-                safe,
-            } => {
-                if safe {
-                    Err(ParserError::ParseAssignStmtError)
-                } else {
-                    Ok(AssignLeft::Member { table, property })
-                }
-            }
-            ExprKind::MetaMember { table, safe } => {
-                if safe {
-                    Err(ParserError::ParseAssignStmtError)
-                } else {
-                    Ok(AssignLeft::MetaMember { table })
-                }
-            }
-            _ => Err(ParserError::ParseAssignStmtError),
-        }
     }
 }
 
@@ -690,7 +658,7 @@ impl From<AssignLeft> for Expr {
 }
 
 /// The ident with type.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypedIdent {
     pub ident: Ident,
     pub t: Option<Type>,

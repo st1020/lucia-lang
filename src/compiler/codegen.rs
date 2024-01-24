@@ -776,8 +776,8 @@ pub enum SyntaxError {
     ReturnOutsideFunction,
     #[error("throw outside function")]
     ThrowOutsideFunction,
-    #[error(transparent)]
-    ParserError(#[from] ParserError),
-    #[error(transparent)]
-    TypeCheckError(#[from] TypeCheckError),
+    #[error("parse error: {}", .0.iter().join("\n"))]
+    ParserError(Vec<ParserError>),
+    #[error("type check error: {}", .0.iter().join("\n"))]
+    TypeCheckError(Vec<TypeCheckError>),
 }

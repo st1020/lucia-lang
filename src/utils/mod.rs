@@ -8,4 +8,4 @@ mod location;
 pub use escape_str::escape_str;
 pub use float::Float;
 pub(crate) use join::Join;
-pub use location::Location;
+pub use location::{Locatable, Location};

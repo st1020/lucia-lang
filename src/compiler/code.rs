@@ -127,8 +127,14 @@ impl fmt::Display for ConstValue {
 
 fn str_to_code(input: &str) -> Result<Code, SyntaxError> {
     let mut tokens = lexer::tokenize(input);
-    let ast = parser::parse(&mut tokens)?;
-    let functions = analyzer::analyze(ast)?;
+    let ast = match parser::parse(&mut tokens) {
+        Ok(ast) => ast,
+        Err(e) => return Err(SyntaxError::ParserError(e)),
+    };
+    let functions = match analyzer::analyze(ast) {
+        Ok(functions) => functions,
+        Err(e) => return Err(SyntaxError::TypeCheckError(e)),
+    };
     codegen::gen_code(functions)
 }
 

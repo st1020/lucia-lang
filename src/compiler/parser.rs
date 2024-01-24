@@ -2,7 +2,7 @@
 
 use thiserror::Error;
 
-use crate::utils::{Float, Join};
+use crate::utils::{Float, Join, Locatable};
 
 use super::{
     ast::*,
@@ -12,7 +12,7 @@ use super::{
 };
 
 /// Parse the token iter into AST.
-pub fn parse<T: Iterator<Item = Token>>(token_iter: &mut T) -> Result<AST, ParserError> {
+pub fn parse<T: Iterator<Item = Token>>(token_iter: &mut T) -> Result<AST, Vec<ParserError>> {
     Parser::new(token_iter).parse()
 }
 
@@ -33,10 +33,9 @@ struct Parser<'a, T: Iterator<Item = Token>> {
     prev_token: Token,
     /// The token iter.
     token_iter: &'a mut T,
-    /// Is token iter end.
-    is_eof: bool,
 
     expected_tokens: Vec<TokenType>,
+    errors: Vec<ParserError>,
 }
 
 impl<'a, T: Iterator<Item = Token>> Parser<'a, T> {
@@ -46,8 +45,8 @@ impl<'a, T: Iterator<Item = Token>> Parser<'a, T> {
             token: Token::dummy(),
             prev_token: Token::dummy(),
             token_iter,
-            is_eof: false,
             expected_tokens: Vec::new(),
+            errors: Vec::new(),
         };
         parser.bump_no_skip_comment();
         parser
@@ -55,10 +54,7 @@ impl<'a, T: Iterator<Item = Token>> Parser<'a, T> {
 
     /// Moves to the next token, not skip comment token.
     fn bump_no_skip_comment(&mut self) {
-        self.token = self.token_iter.next().unwrap_or_else(|| {
-            self.is_eof = true;
-            Token::dummy()
-        });
+        self.token = self.token_iter.next().unwrap();
     }
 
     /// Moves to the next token.
@@ -66,10 +62,10 @@ impl<'a, T: Iterator<Item = Token>> Parser<'a, T> {
         self.prev_token = self.token.clone();
         self.bump_no_skip_comment();
         while let TokenKind::LineComment(_) | TokenKind::BlockComment(_) = self.token.kind {
-            if self.is_eof {
+            self.bump_no_skip_comment();
+            if self.token.kind == TokenKind::EOL {
                 break;
             }
-            self.bump_no_skip_comment();
         }
         self.expected_tokens.clear();
     }
@@ -86,8 +82,6 @@ impl<'a, T: Iterator<Item = Token>> Parser<'a, T> {
         if self.token.kind == *t {
             self.bump();
             Ok(())
-        } else if self.is_eof {
-            Err(ParserError::UnexpectedEOF)
         } else {
             self.expected_tokens.push(TokenType::Token(t.clone()));
             unexpected_token_error!(self)
@@ -135,10 +129,14 @@ impl<'a, T: Iterator<Item = Token>> Parser<'a, T> {
         }
     }
 
-    fn eat_literal(&mut self) -> Option<LiteralKind> {
-        if let TokenKind::Literal(v) = self.token.kind.clone() {
+    fn eat_literal(&mut self) -> Option<Result<LiteralKind, ParserError>> {
+        let token = self.token.clone();
+        if let TokenKind::Literal(v) = token.kind.clone() {
             self.bump();
-            Some(v)
+            Some(v.map_err(|e| ParserError::LexerError {
+                token: Box::new(token),
+                e,
+            }))
         } else {
             self.expected_tokens.push(TokenType::Literal);
             None
@@ -146,40 +144,72 @@ impl<'a, T: Iterator<Item = Token>> Parser<'a, T> {
     }
 
     /// Parse token iter into AST.
-    fn parse(&mut self) -> Result<AST, ParserError> {
-        Ok(AST {
+    fn parse(mut self) -> Result<AST, Vec<ParserError>> {
+        let ast = AST {
             first_comment: {
                 let mut first_comment = String::new();
-                // Skip the prefix EOL at the beginning of the file
-                while self.token.kind == TokenKind::EOL {
-                    self.bump_no_skip_comment();
+                loop {
+                    if let TokenKind::LineComment(v) | TokenKind::BlockComment(v) = &self.token.kind
+                    {
+                        first_comment.push_str(v);
+                        first_comment.push('\n');
+                        self.bump_no_skip_comment();
+                    } else if self.token.kind == TokenKind::EOL {
+                        self.bump_no_skip_comment();
+                    } else {
+                        break;
+                    }
                 }
-                while let TokenKind::LineComment(v) | TokenKind::BlockComment(v) = &self.token.kind
-                {
-                    first_comment.push_str(v);
-                    first_comment.push('\n');
-                    self.bump_no_skip_comment();
-                }
-                self.eat_eol();
                 first_comment
             },
             body: Box::new(Block {
                 start: self.token.start,
-                body: {
-                    let mut temp = Vec::new();
-                    while !self.is_eof {
-                        temp.push(self.parse_stmt()?);
-                        if self.is_eof {
-                            break;
-                        }
-                        self.expect(&TokenKind::EOL)?;
-                        self.eat_eol();
-                    }
-                    temp
-                },
+                body: self.parse_stmts_handle_error(&TokenKind::EOF),
                 end: self.prev_token.end,
             }),
-        })
+        };
+        if self.errors.is_empty() {
+            Ok(ast)
+        } else {
+            Err(self.errors)
+        }
+    }
+
+    /// Parse statements with error handle.
+    fn parse_stmts_handle_error(&mut self, end_token: &TokenKind) -> Vec<Stmt> {
+        let mut temp = Vec::new();
+        self.eat_eol();
+        while !self.eat_noexpect(end_token) {
+            match self.parse_stmt() {
+                Ok(stmt) => temp.push(stmt),
+                Err(e) => {
+                    self.errors.push(e);
+                    while !matches!(self.token.kind, TokenKind::EOL | TokenKind::EOF)
+                        && &self.token.kind != end_token
+                    {
+                        self.bump();
+                    }
+                }
+            }
+            if self.eat(end_token) {
+                break;
+            }
+            if let Err(e) = self.expect(&TokenKind::EOL) {
+                self.errors.push(e);
+            }
+            self.eat_eol();
+        }
+        temp
+    }
+
+    /// Parse block.
+    fn parse_block(&mut self) -> Result<Box<Block>, ParserError> {
+        self.expect(&TokenKind::OpenBrace)?;
+        Ok(Box::new(Block {
+            start: self.prev_token.start,
+            body: self.parse_stmts_handle_error(&TokenKind::CloseBrace),
+            end: self.prev_token.end,
+        }))
     }
 
     /// Parse statement.
@@ -201,7 +231,7 @@ impl<'a, T: Iterator<Item = Token>> Parser<'a, T> {
                     end: right.end,
                     kind: StmtKind::AssignOp {
                         operator: $bin_op,
-                        left: (*$ast_node).try_into()?,
+                        left: expr_to_assign_left(*$ast_node)?,
                         right,
                     },
                 }
@@ -327,11 +357,11 @@ impl<'a, T: Iterator<Item = Token>> Parser<'a, T> {
             let ast_node = self.parse_expr(1)?;
             if self.check(&TokenKind::Comma) {
                 let start = ast_node.start;
-                let mut left = vec![(*ast_node).try_into()?];
+                let mut left = vec![expr_to_assign_left(*ast_node)?];
                 loop {
                     if self.eat(&TokenKind::Comma) {
                         let ast_node = self.parse_expr(1)?;
-                        left.push((*ast_node).try_into()?);
+                        left.push(expr_to_assign_left(*ast_node)?);
                     } else {
                         self.expect(&TokenKind::Assign)?;
                         break;
@@ -347,13 +377,17 @@ impl<'a, T: Iterator<Item = Token>> Parser<'a, T> {
                             break;
                         }
                     }
-                    if left.len() != right.len() {
-                        return Err(ParserError::ParseAssignStmtError);
-                    }
-                    Stmt {
+                    let left_len = left.len();
+                    let right_len = right.len();
+                    let stmt = Stmt {
                         start,
                         end: self.prev_token.end,
                         kind: StmtKind::AssignMulti { left, right },
+                    };
+                    if left_len == right_len {
+                        stmt
+                    } else {
+                        return Err(ParserError::ParseAssignMultiStmtError(Box::new(stmt)));
                     }
                 } else {
                     Stmt {
@@ -362,8 +396,9 @@ impl<'a, T: Iterator<Item = Token>> Parser<'a, T> {
                         kind: StmtKind::AssignUnpack { left, right },
                     }
                 }
-            } else if self.eat(&TokenKind::Colon) {
+            } else if self.check(&TokenKind::Colon) {
                 if let ExprKind::Ident(ident) = ast_node.kind {
+                    self.bump();
                     let types = self.parse_type()?;
                     self.expect(&TokenKind::Assign)?;
                     let right = self.parse_expr(1)?;
@@ -379,7 +414,7 @@ impl<'a, T: Iterator<Item = Token>> Parser<'a, T> {
                         },
                     }
                 } else {
-                    return Err(ParserError::ParseAssignStmtError);
+                    unexpected_token_error!(self);
                 }
             } else if self.eat(&TokenKind::Assign) {
                 let right = self.parse_expr(1)?;
@@ -387,7 +422,7 @@ impl<'a, T: Iterator<Item = Token>> Parser<'a, T> {
                     start: ast_node.start,
                     end: right.end,
                     kind: StmtKind::Assign {
-                        left: (*ast_node).try_into()?,
+                        left: expr_to_assign_left(*ast_node)?,
                         right,
                     },
                 }
@@ -410,28 +445,6 @@ impl<'a, T: Iterator<Item = Token>> Parser<'a, T> {
             }
         };
         Ok(ast_node)
-    }
-
-    /// Parse block.
-    fn parse_block(&mut self) -> Result<Box<Block>, ParserError> {
-        self.expect(&TokenKind::OpenBrace)?;
-        self.eat_eol();
-        Ok(Box::new(Block {
-            start: self.prev_token.start,
-            body: {
-                let mut temp = Vec::new();
-                while !self.eat_noexpect(&TokenKind::CloseBrace) {
-                    temp.push(self.parse_stmt()?);
-                    if self.eat(&TokenKind::CloseBrace) {
-                        break;
-                    }
-                    self.expect(&TokenKind::EOL)?;
-                    self.eat_eol();
-                }
-                temp
-            },
-            end: self.prev_token.end,
-        }))
     }
 
     /// Parse if statement.
@@ -646,10 +659,10 @@ impl<'a, T: Iterator<Item = Token>> Parser<'a, T> {
         } else if self.eat(&TokenKind::False) {
             lit_expr!(LitKind::Bool(false))
         } else if let Some(v) = self.eat_literal() {
-            lit_expr!(match v {
-                LiteralKind::Int(v) => LitKind::Int(v?),
-                LiteralKind::Float(v) => LitKind::Float(Float(v?)),
-                LiteralKind::Str(v) => LitKind::Str(v?),
+            lit_expr!(match v? {
+                LiteralKind::Int(v) => LitKind::Int(v),
+                LiteralKind::Float(v) => LitKind::Float(Float(v)),
+                LiteralKind::Str(v) => LitKind::Str(v),
             })
         } else if self.eat(&TokenKind::OpenBrace) {
             self.parse_expr_table()
@@ -684,7 +697,7 @@ impl<'a, T: Iterator<Item = Token>> Parser<'a, T> {
             if let ExprKind::Call { kind, .. } = &mut temp.kind {
                 *kind = call_kind;
             } else {
-                return Err(ParserError::ParseTryExprError);
+                return Err(ParserError::ParseTryExprError(temp));
             }
             Ok(temp)
         } else {
@@ -861,10 +874,10 @@ impl<'a, T: Iterator<Item = Token>> Parser<'a, T> {
         } else if self.eat(&TokenKind::False) {
             Ok(Type::Literal(LiteralType::Bool(false)))
         } else if let Some(v) = self.eat_literal() {
-            Ok(Type::Literal(match v {
-                LiteralKind::Int(v) => LiteralType::Int(v?),
-                LiteralKind::Float(v) => LiteralType::Float(Float(v?)),
-                LiteralKind::Str(v) => LiteralType::Str(v?),
+            Ok(Type::Literal(match v? {
+                LiteralKind::Int(v) => LiteralType::Int(v),
+                LiteralKind::Float(v) => LiteralType::Float(Float(v)),
+                LiteralKind::Str(v) => LiteralType::Str(v),
             }))
         } else if let Some(v) = self.eat_ident() {
             let t = match v.as_str() {
@@ -963,6 +976,34 @@ impl<'a, T: Iterator<Item = Token>> Parser<'a, T> {
     }
 }
 
+fn expr_to_assign_left(expr: Expr) -> Result<AssignLeft, ParserError> {
+    match expr.kind.clone() {
+        ExprKind::Ident(ident) => Ok(AssignLeft::Ident(Box::new(TypedIdent {
+            ident: *ident,
+            t: None,
+        }))),
+        ExprKind::Member {
+            table,
+            property,
+            safe,
+        } => {
+            if safe {
+                Err(ParserError::ParseAssignStmtError(Box::new(expr)))
+            } else {
+                Ok(AssignLeft::Member { table, property })
+            }
+        }
+        ExprKind::MetaMember { table, safe } => {
+            if safe {
+                Err(ParserError::ParseAssignStmtError(Box::new(expr)))
+            } else {
+                Ok(AssignLeft::MetaMember { table })
+            }
+        }
+        _ => Err(ParserError::ParseAssignStmtError(Box::new(expr))),
+    }
+}
+
 /// Kind of ParserError.
 #[derive(Error, Debug, Clone, PartialEq)]
 pub enum ParserError {
@@ -971,12 +1012,34 @@ pub enum ParserError {
         token: Box<Token>,
         expected: Vec<TokenType>,
     },
-    #[error("unexpected EOF")]
-    UnexpectedEOF,
     #[error("parse assign statement error")]
-    ParseAssignStmtError,
+    ParseAssignStmtError(Box<Expr>),
+    #[error("parse assign multi statement error: {}", .0)]
+    ParseAssignMultiStmtError(Box<Stmt>),
     #[error("parse try expression error")]
-    ParseTryExprError,
-    #[error(transparent)]
-    LexerError(#[from] LexerError),
+    ParseTryExprError(Box<Expr>),
+    #[error("parse try expression error")]
+    LexerError { token: Box<Token>, e: LexerError },
+}
+
+impl Locatable for ParserError {
+    fn start(&self) -> crate::utils::Location {
+        match self {
+            ParserError::UnexpectedToken { token, expected: _ } => token.start,
+            ParserError::ParseAssignStmtError(expr) => expr.start,
+            ParserError::ParseAssignMultiStmtError(stmt) => stmt.start,
+            ParserError::ParseTryExprError(expr) => expr.start,
+            ParserError::LexerError { token, e: _ } => token.start,
+        }
+    }
+
+    fn end(&self) -> crate::utils::Location {
+        match self {
+            ParserError::UnexpectedToken { token, expected: _ } => token.end,
+            ParserError::ParseAssignStmtError(expr) => expr.end,
+            ParserError::ParseAssignMultiStmtError(stmt) => stmt.end,
+            ParserError::ParseTryExprError(expr) => expr.end,
+            ParserError::LexerError { token, e: _ } => token.end,
+        }
+    }
 }

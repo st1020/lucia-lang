@@ -174,16 +174,20 @@ impl_names_iter!(global_names, NameKind::Global { .. });
 impl_names_iter!(upvalue_names, NameKind::Upvalue { .. });
 
 /// Semantic Analyze. Lowers the AST to `Vec<Function>`.
-pub fn analyze(ast: AST) -> Result<Vec<Function>, TypeCheckError> {
+pub fn analyze(ast: AST) -> Result<Vec<Function>, Vec<TypeCheckError>> {
     let first_comment = ast.first_comment.trim();
     let enable_type_check =
         first_comment.contains("type-check: on") || first_comment.contains("type-check: strict");
     let mut analyzer = SemanticAnalyzer::new(ast);
     analyzer.analyze_name();
     if enable_type_check {
-        analyzer.type_check()?;
+        analyzer.type_check();
     }
-    Ok(analyzer.func_list)
+    if analyzer.errors.is_empty() {
+        Ok(analyzer.func_list)
+    } else {
+        Err(analyzer.errors)
+    }
 }
 
 #[derive(Debug)]
@@ -191,6 +195,7 @@ struct SemanticAnalyzer {
     func_list: Vec<Function>,
     global_types: HashMap<String, Option<Type>>,
     upvalue_types: HashMap<(usize, String), Option<Type>>,
+    errors: Vec<TypeCheckError>,
 }
 
 impl SemanticAnalyzer {
@@ -199,6 +204,7 @@ impl SemanticAnalyzer {
             func_list: Vec::new(),
             global_types: HashMap::new(),
             upvalue_types: HashMap::new(),
+            errors: Vec::new(),
         };
         Handle::new(0, &mut analyzer).build(Function::new(
             0,
@@ -237,13 +243,12 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn type_check(&mut self) -> Result<(), TypeCheckError> {
+    fn type_check(&mut self) {
         for func_id in 0..self.func_list.len() {
             let mut body = mem::take(&mut self.func_list[func_id].body);
-            Handle::new(func_id, self).type_check_block(&mut body)?;
+            Handle::new(func_id, self).type_check_block(&mut body);
             mem::swap(&mut self.func_list[func_id].body, &mut body);
         }
-        Ok(())
     }
 }
 
@@ -698,11 +703,12 @@ impl<'a> Handle<'a> {
 }
 
 impl<'a> Handle<'a> {
-    fn type_check_block(&mut self, ast_node: &mut Block) -> Result<(), TypeCheckError> {
+    fn type_check_block(&mut self, ast_node: &mut Block) {
         for stmt in &mut ast_node.body {
-            self.type_check_stmt(stmt)?;
+            if let Err(e) = self.type_check_stmt(stmt) {
+                self.analyzer.errors.push(e)
+            }
         }
-        Ok(())
     }
 
     fn type_check_stmt(&mut self, ast_node: &mut Stmt) -> Result<(), TypeCheckError> {
@@ -714,18 +720,18 @@ impl<'a> Handle<'a> {
             } => {
                 self.type_check_expr(test)?
                     .expect_is_sub_type_of(&Type::Bool)?;
-                self.type_check_block(consequent)?;
+                self.type_check_block(consequent);
                 if let Some(alternate) = alternate {
                     self.type_check_stmt(alternate)?;
                 }
             }
             StmtKind::Loop { body } => {
-                self.type_check_block(body)?;
+                self.type_check_block(body);
             }
             StmtKind::While { test, body } => {
                 self.type_check_expr(test)?
                     .expect_is_sub_type_of(&Type::Bool)?;
-                self.type_check_block(body)?;
+                self.type_check_block(body);
             }
             StmtKind::For { left, right, body } => {
                 let mut right_type = match self.type_check_expr(right)? {
@@ -771,7 +777,7 @@ impl<'a> Handle<'a> {
                         )?;
                     }
                 }
-                self.type_check_block(body)?;
+                self.type_check_block(body);
             }
             StmtKind::Break => (),
             StmtKind::Continue => (),
@@ -840,7 +846,7 @@ impl<'a> Handle<'a> {
                 }
             }
             StmtKind::Block(block) => {
-                self.type_check_block(block)?;
+                self.type_check_block(block);
             }
             StmtKind::Expr(expr) => {
                 self.type_check_expr(expr)?;

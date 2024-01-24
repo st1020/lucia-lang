@@ -128,6 +128,8 @@ pub enum TokenKind {
     // other
     /// End of line (`\n`)
     EOL,
+    /// End of file.
+    EOF,
     /// "// comment"
     LineComment(String),
     /// "/* block comment */"
@@ -140,7 +142,7 @@ pub enum TokenKind {
     /// Ident
     Ident(String),
     /// "12", "1.0e-40", ""123"". See `LiteralKind` for more details.
-    Literal(LiteralKind),
+    Literal(Result<LiteralKind, LexerError>),
     /// Unknown token, not expected by the lexer, e.g. "№"
     Unknown(char),
 }
@@ -204,11 +206,12 @@ impl fmt::Display for TokenKind {
             Self::Div => write!(f, "Div (/)"),
             Self::Rem => write!(f, "Rem (%)"),
             Self::EOL => write!(f, "EOL (\\n)"),
+            Self::EOF => write!(f, "EOF"),
             Self::LineComment(v) => write!(f, "LineComment (//{v})"),
             Self::BlockComment(v) => write!(f, "BlockComment (/*{v}*/)"),
             Self::Whitespace => write!(f, "Whitespace ( )"),
             Self::Ident(v) => write!(f, "Ident ({v})"),
-            Self::Literal(v) => write!(f, "Literal ({v})"),
+            Self::Literal(v) => write!(f, "Literal ({v:?})"),
             Self::Unknown(v) => write!(f, "Unknown({v})"),
         }
     }
@@ -218,28 +221,19 @@ impl fmt::Display for TokenKind {
 #[derive(Debug, Clone, PartialEq)]
 pub enum LiteralKind {
     /// "12", "0o100", "0b110"
-    Int(Result<i64, LexerError>),
+    Int(i64),
     /// "12.34", "0b100.100"
-    Float(Result<f64, LexerError>),
+    Float(f64),
     /// ""abc"", ""abc"
-    Str(Result<String, LexerError>),
+    Str(String),
 }
 
 impl fmt::Display for LiteralKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LiteralKind::Int(v) => match v {
-                Ok(v) => write!(f, "{}", v),
-                Err(v) => write!(f, "{}", v),
-            },
-            LiteralKind::Float(v) => match v {
-                Ok(v) => write!(f, "{}", v),
-                Err(v) => write!(f, "{}", v),
-            },
-            LiteralKind::Str(v) => match v {
-                Ok(v) => write!(f, "{}", v),
-                Err(v) => write!(f, "{}", v),
-            },
+            LiteralKind::Int(v) => write!(f, "{}", v),
+            LiteralKind::Float(v) => write!(f, "{}", v),
+            LiteralKind::Str(v) => write!(f, "{}", v),
         }
     }
 }

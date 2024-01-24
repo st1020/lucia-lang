@@ -32,3 +32,9 @@ impl Default for Location {
         }
     }
 }
+
+pub trait Locatable {
+    fn start(&self) -> Location;
+
+    fn end(&self) -> Location;
+}

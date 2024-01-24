@@ -126,7 +126,11 @@ pub fn tokenize(input: &str) -> impl Iterator<Item = Token> + '_ {
     let mut cursor = Cursor::new(input);
     std::iter::from_fn(move || loop {
         if cursor.is_eof() {
-            break None;
+            break Some(Token::new(
+                TokenKind::EOF,
+                cursor.location(),
+                cursor.location(),
+            ));
         } else {
             let t = cursor.advance_token();
             if t.kind != Whitespace {
@@ -418,7 +422,7 @@ impl Cursor<'_> {
                     value.push('0');
                 }
                 // Just a 0.
-                _ => return Literal(Int(Ok(0))),
+                _ => return Literal(Ok(Int(0))),
             };
         } else {
             value.push(first_digit);
@@ -432,13 +436,13 @@ impl Cursor<'_> {
                 }
                 '.' if base == Base::Decimal => {
                     if has_point {
-                        return Literal(Float(Err(LexerError::NumberFormatError)));
+                        return Literal(Err(LexerError::NumberFormatError));
                     }
                     has_point = true;
                 }
                 'e' | 'E' if base == Base::Decimal => {
                     if has_exponent {
-                        return Literal(Float(Err(LexerError::NumberFormatError)));
+                        return Literal(Err(LexerError::NumberFormatError));
                     }
                     has_exponent = true;
                 }
@@ -455,11 +459,11 @@ impl Cursor<'_> {
         if has_point || has_exponent {
             // only support decimal float literal
             if base != Base::Decimal {
-                Literal(Float(Err(LexerError::NumberFormatError)))
+                Literal(Err(LexerError::NumberFormatError))
             } else {
                 match value.parse::<f64>() {
-                    Ok(v) => Literal(Float(Ok(v))),
-                    Err(e) => Literal(Float(Err(LexerError::ParseFloatError(e)))),
+                    Ok(v) => Literal(Ok(Float(v))),
+                    Err(e) => Literal(Err(LexerError::ParseFloatError(e))),
                 }
             }
         } else {
@@ -472,8 +476,8 @@ impl Cursor<'_> {
                     Base::Decimal => 10,
                 },
             ) {
-                Ok(v) => Literal(Int(Ok(v))),
-                Err(e) => Literal(Int(Err(LexerError::ParseIntError(e)))),
+                Ok(v) => Literal(Ok(Int(v))),
+                Err(e) => Literal(Err(LexerError::ParseIntError(e))),
             }
         }
     }
@@ -501,13 +505,13 @@ impl Cursor<'_> {
                 };
                 match t {
                     Ok(c) => value.push(c),
-                    Err(e) => return Literal(Str(Err(LexerError::EscapeError(e)))),
+                    Err(e) => return Literal(Err(LexerError::EscapeError(e))),
                 }
             } else {
-                return Literal(Str(Err(LexerError::UnterminatedStringError)));
+                return Literal(Err(LexerError::UnterminatedStringError));
             }
         }
-        Literal(Str(Ok(value)))
+        Literal(Ok(Str(value)))
     }
 
     fn scan_escape(&mut self) -> std::result::Result<char, EscapeError> {

@@ -151,27 +151,27 @@ println("Hello World!")
 "#;
 
     let ast = compiler::parser::parse(&mut compiler::lexer::tokenize(input)).unwrap();
-    assert!(ast.first_comment == "\n");
+    assert_eq!(ast.first_comment, "\n");
 
     let input = r#"
 // first_comment
 "#;
 
     let ast = compiler::parser::parse(&mut compiler::lexer::tokenize(input)).unwrap();
-    assert!(ast.first_comment == " first_comment\n");
+    assert_eq!(ast.first_comment, " first_comment\n");
 
     let input = r#"
 /* first_comment */
 "#;
     let ast = compiler::parser::parse(&mut compiler::lexer::tokenize(input)).unwrap();
-    assert!(ast.first_comment == " first_comment \n");
+    assert_eq!(ast.first_comment, " first_comment \n");
 
     let input = r#"
 // first_comment
 // first_comment
 "#;
     let ast = compiler::parser::parse(&mut compiler::lexer::tokenize(input)).unwrap();
-    assert!(ast.first_comment == " first_comment\n first_comment\n");
+    assert_eq!(ast.first_comment, " first_comment\n first_comment\n");
 }
 
 #[test]
@@ -744,6 +744,37 @@ fn test_type_hint() {
             println!("{name}: {t}");
         }
     }
+}
+
+#[test]
+fn test_parse_error() {
+    let input = r#"
+1 +
+
+println(1 + 1)
+
+1 -
+"#;
+    let parse_error = compiler::parser::parse(&mut compiler::lexer::tokenize(input))
+        .err()
+        .unwrap();
+    assert_eq!(parse_error.len(), 2);
+}
+
+#[test]
+fn test_type_check_error() {
+    let input = r#"
+// type-check: on
+t1: int = "" // error
+t2: int = 1 // ok
+t3: int = 0.1 // error
+"#;
+    let parse_error = compiler::analyzer::analyze(
+        compiler::parser::parse(&mut compiler::lexer::tokenize(input)).unwrap(),
+    )
+    .err()
+    .unwrap();
+    assert_eq!(parse_error.len(), 2);
 }
 
 #[test]
