@@ -18,20 +18,15 @@ use super::{
     typing::{LiteralType, Type, TypeCheckError},
 };
 
-/// The kind of name in namespace.
 #[derive(Debug, Clone)]
-pub enum NameKind {
-    Local {
-        t: Option<Type>,
-    },
-    Global {
-        is_writable: bool,
-    },
-    Upvalue {
-        func_count: usize,
-        upvalue_id: usize,
-        func_id: usize,
-    },
+pub struct GlobalName {
+    pub is_writable: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpvalueName {
+    pub defined_func_id: usize,
+    pub base_closure_upvalue_id: usize,
 }
 
 /// A Function.
@@ -50,11 +45,12 @@ pub struct Function {
     /// The base function.
     pub base_function: Option<usize>,
 
-    /// Names.
-    pub names: IndexMap<String, NameKind>,
-
-    /// The count of upvalues defined in the function.
-    pub def_upvalue_count: usize,
+    /// Local names.
+    pub local_names: IndexMap<String, Option<Type>>,
+    /// Global names.
+    pub global_names: IndexMap<String, GlobalName>,
+    /// Upvalue names.
+    pub upvalue_names: IndexMap<String, UpvalueName>,
 
     // used by type check
     pub(crate) returns_type: Option<Box<Type>>,
@@ -80,10 +76,11 @@ impl fmt::Display for Function {
             writeln!(f, "params: ({})", self.params.iter().join(", "))?;
         }
         writeln!(f, "base_function: {:?}", self.base_function)?;
-        writeln!(f, "def_upvalue_count: {}", self.def_upvalue_count)?;
         writeln!(f, "body: {}", self.body)?;
 
-        writeln!(f, "names: {:?}", self.names)?;
+        writeln!(f, "local_names: {:?}", self.local_names)?;
+        writeln!(f, "global_names: {:?}", self.global_names)?;
+        writeln!(f, "upvalue_names: {:?}", self.upvalue_names)?;
         Ok(())
     }
 }
@@ -107,8 +104,9 @@ impl Function {
             variadic,
             body,
             base_function,
-            names: IndexMap::new(),
-            def_upvalue_count: 0,
+            local_names: IndexMap::new(),
+            global_names: IndexMap::new(),
+            upvalue_names: IndexMap::new(),
             explicit_returns_type: returns_type.is_some(),
             returns_type,
             explicit_throws_type: throws_type.is_some(),
@@ -121,15 +119,25 @@ impl Function {
         }
     }
 
-    pub fn upvalues(&self) -> impl Iterator<Item = (String, usize, usize)> + '_ {
-        self.names.iter().filter_map(|(k, v)| match v {
-            NameKind::Upvalue {
-                func_count,
-                upvalue_id,
-                func_id: _,
-            } => Some((k.clone(), *func_count, *upvalue_id)),
-            _ => None,
-        })
+    pub fn upvalues(&self) -> impl Iterator<Item = (String, Option<usize>)> + '_ {
+        self.upvalue_names.iter().map(
+            |(
+                k,
+                UpvalueName {
+                    defined_func_id,
+                    base_closure_upvalue_id,
+                },
+            )| {
+                (
+                    k.clone(),
+                    if defined_func_id == &self.func_id {
+                        None
+                    } else {
+                        Some(*base_closure_upvalue_id)
+                    },
+                )
+            },
+        )
     }
 
     fn to_type(&self) -> Type {
@@ -150,28 +158,6 @@ impl Function {
         }
     }
 }
-
-macro_rules! impl_names_iter {
-    ($name:ident, $pattern:pat) => {
-        impl Function {
-            pub fn $name(&self) -> impl Iterator<Item = &String> + '_ {
-                self.names.iter().filter_map(
-                    |(k, v)| {
-                        if matches!(v, $pattern) {
-                            Some(k)
-                        } else {
-                            None
-                        }
-                    },
-                )
-            }
-        }
-    };
-}
-
-impl_names_iter!(local_names, NameKind::Local { .. });
-impl_names_iter!(global_names, NameKind::Global { .. });
-impl_names_iter!(upvalue_names, NameKind::Upvalue { .. });
 
 /// Semantic Analyze. Lowers the AST to `Vec<Function>`.
 pub fn analyze(ast: AST) -> Result<Vec<Function>, Vec<TypeCheckError>> {
@@ -223,18 +209,16 @@ impl SemanticAnalyzer {
         for func_id in 0..self.func_list.len() {
             for param in self.func_list[func_id].params.clone() {
                 self.func_list[func_id]
-                    .names
-                    .insert(param.ident.name, NameKind::Local { t: param.t });
+                    .local_names
+                    .insert(param.ident.name, param.t);
             }
             if let Some(variadic) = self.func_list[func_id].variadic.clone() {
-                self.func_list[func_id].names.insert(
+                self.func_list[func_id].local_names.insert(
                     variadic.ident.name,
-                    NameKind::Local {
-                        t: variadic.t.map(|t| Type::Table {
-                            pairs: Vec::new(),
-                            others: Some((Box::new(Type::Int), Box::new(t))),
-                        }),
-                    },
+                    variadic.t.map(|t| Type::Table {
+                        pairs: Vec::new(),
+                        others: Some((Box::new(Type::Int), Box::new(t))),
+                    }),
                 );
             }
             let mut body = mem::take(&mut self.func_list[func_id].body);
@@ -478,10 +462,9 @@ impl<'a> Handle<'a> {
             StmtKind::Throw { argument } => self.analyze_name_expr(argument),
             StmtKind::Global { arguments } => {
                 for arg in arguments {
-                    self.current_mut().names.insert(
-                        arg.ident.name.clone(),
-                        NameKind::Global { is_writable: true },
-                    );
+                    self.current_mut()
+                        .global_names
+                        .insert(arg.ident.name.clone(), GlobalName { is_writable: true });
                     if !self.analyzer.global_types.contains_key(&arg.ident.name) {
                         self.analyzer
                             .global_types
@@ -492,14 +475,14 @@ impl<'a> Handle<'a> {
             StmtKind::Import { path: _, kind } => match kind {
                 ImportKind::Simple(alias) => {
                     self.current_mut()
-                        .names
-                        .insert(alias.name.clone(), NameKind::Global { is_writable: false });
+                        .global_names
+                        .insert(alias.name.clone(), GlobalName { is_writable: false });
                 }
                 ImportKind::Nested(items) => {
                     for (_, alias) in items {
                         self.current_mut()
-                            .names
-                            .insert(alias.name.clone(), NameKind::Global { is_writable: false });
+                            .global_names
+                            .insert(alias.name.clone(), GlobalName { is_writable: false });
                     }
                 }
                 ImportKind::Glob => (),
@@ -605,99 +588,106 @@ impl<'a> Handle<'a> {
     }
 
     fn load_name(&mut self, name: &str) {
-        if self.current().names.contains_key(name) {
+        if self.current().local_names.contains_key(name)
+            || self.current().global_names.contains_key(name)
+            || self.current().upvalue_names.contains_key(name)
+        {
             return;
         }
 
         if self.current().kind != FunctionKind::Closure {
             self.current_mut()
-                .names
-                .insert(name.to_owned(), NameKind::Global { is_writable: false });
+                .global_names
+                .insert(name.to_owned(), GlobalName { is_writable: false });
             return;
         }
 
-        self.find_upvalue(name, NameKind::Global { is_writable: false });
+        self.find_upvalue(name, |handle| {
+            handle
+                .current_mut()
+                .global_names
+                .insert(name.to_owned(), GlobalName { is_writable: false });
+        });
     }
 
     fn store_name(&mut self, name: &str, t: Option<Type>) {
-        match self.current().names.get(name) {
-            Some(NameKind::Local { .. })
-            | Some(NameKind::Global { is_writable: true })
-            | Some(NameKind::Upvalue { .. }) => return,
-            Some(NameKind::Global { is_writable: false }) | None => (),
-        }
-
-        if self.current().kind != FunctionKind::Closure {
-            self.current_mut()
-                .names
-                .insert(name.to_owned(), NameKind::Local { t });
+        if self.current().local_names.contains_key(name)
+            || matches!(
+                self.current().global_names.get(name),
+                Some(GlobalName { is_writable: true })
+            )
+            || self.current().upvalue_names.contains_key(name)
+        {
             return;
         }
 
-        self.find_upvalue(name, NameKind::Local { t });
+        if self.current().kind != FunctionKind::Closure {
+            self.current_mut().local_names.insert(name.to_owned(), t);
+            return;
+        }
+
+        self.find_upvalue(name, |handle| {
+            handle
+                .current_mut()
+                .local_names
+                .insert(name.to_owned(), t.clone());
+        });
     }
 
-    fn find_upvalue(&mut self, name: &str, default: NameKind) {
-        let mut base_func_count = 0;
+    fn find_upvalue<T: Fn(&mut Self)>(&mut self, name: &str, default: T) {
+        let mut func_id_stack = vec![self.func_id];
         let mut base_func = self.current_mut();
         loop {
             if let Some(func) = base_func.base_function {
                 base_func = &mut self.analyzer.func_list[func];
-                base_func_count += 1;
+                func_id_stack.push(base_func.func_id);
             } else {
-                self.current_mut().names.insert(name.to_owned(), default);
+                default(self);
                 break;
             }
 
-            match base_func.names.get(name).cloned() {
-                Some(NameKind::Upvalue {
-                    func_count,
-                    upvalue_id,
-                    func_id,
-                }) => {
-                    let func_count = func_count + base_func_count;
-                    self.current_mut().names.insert(
-                        name.to_owned(),
-                        NameKind::Upvalue {
-                            func_count,
-                            upvalue_id,
-                            func_id,
-                        },
-                    );
-                    break;
-                }
-                Some(NameKind::Local { t }) => {
-                    let func_id = base_func.func_id;
-                    self.analyzer
-                        .upvalue_types
-                        .insert((func_id, name.to_owned()), t);
-                    base_func.names.insert(
-                        name.to_owned(),
-                        NameKind::Upvalue {
-                            func_count: 0,
-                            upvalue_id: base_func.def_upvalue_count,
-                            func_id,
-                        },
-                    );
-                    let upvalue_id = base_func.def_upvalue_count;
-                    base_func.def_upvalue_count += 1;
-                    self.current_mut().names.insert(
-                        name.to_owned(),
-                        NameKind::Upvalue {
-                            func_count: base_func_count,
-                            upvalue_id,
-                            func_id,
-                        },
-                    );
-                    break;
-                }
-                _ => (),
+            let defined_func_id;
+            if let Some(t) = base_func.local_names.remove(name) {
+                defined_func_id = base_func.func_id;
+                self.analyzer
+                    .upvalue_types
+                    .insert((defined_func_id, name.to_owned()), t);
+                base_func.upvalue_names.insert(
+                    name.to_owned(),
+                    UpvalueName {
+                        defined_func_id,
+                        base_closure_upvalue_id: 0,
+                    },
+                );
+            } else if let Some(UpvalueName {
+                defined_func_id: func_id,
+                base_closure_upvalue_id: _,
+            }) = base_func.upvalue_names.get(name)
+            {
+                defined_func_id = *func_id;
+            } else if base_func.kind != FunctionKind::Closure {
+                default(self);
+                break;
+            } else {
+                continue;
             }
 
-            if base_func.kind != FunctionKind::Closure {
-                self.current_mut().names.insert(name.to_owned(), default);
-                break;
+            let mut base_func_id = func_id_stack.pop().unwrap();
+            for func_id in func_id_stack.into_iter().rev() {
+                let base_closure_upvalue_id = self.analyzer.func_list[base_func_id]
+                    .upvalue_names
+                    .get_index_of(name)
+                    .unwrap();
+                self.analyzer.func_list[func_id].upvalue_names.insert(
+                    name.to_owned(),
+                    UpvalueName {
+                        defined_func_id,
+                        base_closure_upvalue_id,
+                    },
+                );
+                base_func_id = func_id;
             }
+            break;
         }
     }
 }
@@ -1090,26 +1080,27 @@ impl<'a> Handle<'a> {
     }
 
     fn get_name_type(&self, name: &str) -> Option<Type> {
-        self.current()
-            .names
-            .get(name)
-            .map(|kind| match kind {
-                NameKind::Local { t } => t,
-                NameKind::Global { is_writable: _ } => {
-                    self.analyzer.global_types.get(name).unwrap_or(&None)
-                }
-                NameKind::Upvalue {
-                    func_count: _,
-                    upvalue_id: _,
-                    func_id,
-                } => self
-                    .analyzer
-                    .upvalue_types
-                    .get(&(*func_id, name.to_owned()))
-                    .unwrap_or(&None),
-            })
-            .unwrap_or(&None)
-            .clone()
+        if let Some(t) = self.current().local_names.get(name) {
+            t.clone()
+        } else if self.current().global_names.contains_key(name) {
+            self.analyzer
+                .global_types
+                .get(name)
+                .cloned()
+                .unwrap_or(None)
+        } else if let Some(UpvalueName {
+            defined_func_id,
+            base_closure_upvalue_id: _,
+        }) = self.current().upvalue_names.get(name)
+        {
+            self.analyzer
+                .upvalue_types
+                .get(&(*defined_func_id, name.to_owned()))
+                .cloned()
+                .unwrap_or(None)
+        } else {
+            None
+        }
     }
 
     fn set_name_type(&mut self, name: &str, t: Type) -> Result<(), TypeCheckError> {
@@ -1123,21 +1114,19 @@ impl<'a> Handle<'a> {
                 Type::Literal(LiteralType::Str(_)) => Type::Str,
                 _ => t,
             };
-            match self.current_mut().names.get_mut(name).unwrap() {
-                NameKind::Local { t: x } => *x = Some(t),
-                NameKind::Global { is_writable: _ } => {
-                    self.analyzer.global_types.insert(name.to_owned(), Some(t));
-                }
-                NameKind::Upvalue {
-                    func_count: _,
-                    upvalue_id: _,
-                    func_id,
-                } => {
-                    let func_id = *func_id;
-                    self.analyzer
-                        .upvalue_types
-                        .insert((func_id, name.to_owned()), Some(t));
-                }
+            if let Some(x) = self.current_mut().local_names.get_mut(name) {
+                *x = Some(t);
+            } else if self.current().global_names.contains_key(name) {
+                self.analyzer.global_types.insert(name.to_owned(), Some(t));
+            } else if let Some(UpvalueName {
+                defined_func_id,
+                base_closure_upvalue_id: _,
+            }) = self.current().upvalue_names.get(name)
+            {
+                let func_id = *defined_func_id;
+                self.analyzer
+                    .upvalue_types
+                    .insert((func_id, name.to_owned()), Some(t));
             }
         }
 

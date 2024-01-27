@@ -108,18 +108,7 @@ impl<'gc> FramesState<'gc> {
                     frame.stack.push(v);
                 }
                 OpCode::LoadUpvalue(i) => {
-                    let (_, func_count, upvalue_id) = function.upvalue_names[i];
-                    if func_count == 0 {
-                        frame.stack.push(frame.closure.upvalues[upvalue_id].get());
-                    } else {
-                        let mut base_closure = frame.closure.base_closure;
-                        for _ in 0..(func_count - 1) {
-                            base_closure = base_closure.unwrap().base_closure;
-                        }
-                        frame
-                            .stack
-                            .push(base_closure.unwrap().upvalues[upvalue_id].get());
-                    }
+                    frame.stack.push(frame.closure.upvalues[i].get());
                 }
                 OpCode::LoadConst(i) => {
                     frame.stack.push(match &function.consts[i] {
@@ -153,17 +142,7 @@ impl<'gc> FramesState<'gc> {
                     );
                 }
                 OpCode::StoreUpvalue(i) => {
-                    let (_, func_count, upvalue_id) = function.upvalue_names[i];
-                    if func_count == 0 {
-                        frame.closure.upvalues[upvalue_id].set(&ctx, frame.stack.pop().unwrap());
-                    } else {
-                        let mut base_closure = frame.closure.base_closure;
-                        for _ in 0..(func_count - 1) {
-                            base_closure = base_closure.unwrap().base_closure;
-                        }
-                        base_closure.unwrap().upvalues[upvalue_id]
-                            .set(&ctx, frame.stack.pop().unwrap());
-                    }
+                    frame.closure.upvalues[i].set(&ctx, frame.stack.pop().unwrap());
                 }
                 OpCode::Import(i) => {
                     if let ConstValue::Str(v) = &function.consts[i] {

@@ -35,10 +35,8 @@ pub struct Code {
     /// List of global names.
     pub global_names: Vec<String>,
     /// List of Upvalue information.
-    pub upvalue_names: Vec<(String, usize, usize)>,
+    pub upvalue_names: Vec<(String, Option<usize>)>,
 
-    /// The count of upvalues defined in the function.
-    pub def_upvalue_count: usize,
     /// The required virtual machine stack space.
     pub stack_size: usize,
 }
@@ -65,7 +63,7 @@ impl fmt::Display for Code {
                         format!(" ({})", self.global_names[*i]),
                     OpCode::LoadUpvalue(i) | OpCode::StoreUpvalue(i) => {
                         let t = &self.upvalue_names[*i];
-                        format!(" ({}, {}, {})", t.0, t.1, t.2)
+                        format!(" ({}, {:?})", t.0, t.1)
                     }
                     OpCode::LoadConst(i) | OpCode::Import(i) | OpCode::ImportFrom(i) =>
                         format!(" ({})", self.consts[*i]),

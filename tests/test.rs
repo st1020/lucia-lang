@@ -739,8 +739,8 @@ fn test_type_hint() {
     println!("{}", ast);
 
     let functions = compiler::analyzer::analyze(ast).unwrap();
-    for (name, kind) in functions[0].names.iter() {
-        if let compiler::analyzer::NameKind::Local { t: Some(t) } = kind {
+    for (name, t) in &functions[0].local_names {
+        if let Some(t) = t {
             println!("{name}: {t}");
         }
     }

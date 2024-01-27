@@ -84,19 +84,11 @@ impl CodeGen {
     }
 
     fn load(&mut self, func_id: usize, name: &str) -> Result<(), SyntaxError> {
-        macro_rules! find_name_index {
-            ($name:ident) => {
-                self.func_list[func_id]
-                    .$name()
-                    .enumerate()
-                    .find_map(|(i, x)| if x == name { Some(i) } else { None })
-            };
-        }
-        let t = if let Some(i) = find_name_index!(local_names) {
+        let t = if let Some(i) = self.func_list[func_id].local_names.get_index_of(name) {
             OpCode::LoadLocal(i)
-        } else if let Some(i) = find_name_index!(global_names) {
+        } else if let Some(i) = self.func_list[func_id].global_names.get_index_of(name) {
             OpCode::LoadGlobal(i)
-        } else if let Some(i) = find_name_index!(upvalue_names) {
+        } else if let Some(i) = self.func_list[func_id].upvalue_names.get_index_of(name) {
             OpCode::LoadUpvalue(i)
         } else {
             return Err(SyntaxError::IllegalAst);
@@ -106,19 +98,11 @@ impl CodeGen {
     }
 
     fn store(&mut self, func_id: usize, name: &str) -> Result<(), SyntaxError> {
-        macro_rules! find_name_index {
-            ($name:ident) => {
-                self.func_list[func_id]
-                    .$name()
-                    .enumerate()
-                    .find_map(|(i, x)| if x == name { Some(i) } else { None })
-            };
-        }
-        let t = if let Some(i) = find_name_index!(local_names) {
+        let t = if let Some(i) = self.func_list[func_id].local_names.get_index_of(name) {
             OpCode::StoreLocal(i)
-        } else if let Some(i) = find_name_index!(global_names) {
+        } else if let Some(i) = self.func_list[func_id].global_names.get_index_of(name) {
             OpCode::StoreGlobal(i)
-        } else if let Some(i) = find_name_index!(upvalue_names) {
+        } else if let Some(i) = self.func_list[func_id].upvalue_names.get_index_of(name) {
             OpCode::StoreUpvalue(i)
         } else {
             return Err(SyntaxError::IllegalAst);
@@ -200,10 +184,17 @@ impl CodeGen {
             kind: self.func_list[func_id].kind,
             code: self.func_list[func_id].code.clone(),
             consts: self.func_list[func_id].consts.clone(),
-            local_names: self.func_list[func_id].local_names().cloned().collect(),
-            global_names: self.func_list[func_id].global_names().cloned().collect(),
+            local_names: self.func_list[func_id]
+                .local_names
+                .keys()
+                .cloned()
+                .collect(),
+            global_names: self.func_list[func_id]
+                .global_names
+                .keys()
+                .cloned()
+                .collect(),
             upvalue_names: self.func_list[func_id].upvalues().collect(),
-            def_upvalue_count: self.func_list[func_id].def_upvalue_count,
             stack_size,
         })
     }

@@ -5,7 +5,10 @@ use std::{
 
 use gc_arena::{lock::Lock, Collect, Gc, Mutation};
 
-use crate::{compiler::code::Code, objects::Value};
+use crate::{
+    compiler::code::{Code, FunctionKind},
+    objects::Value,
+};
 
 #[derive(Debug, Clone, Copy, Collect)]
 #[collect(no_drop)]
@@ -41,14 +44,19 @@ impl<'gc> AsRef<ClosureInner<'gc>> for Closure<'gc> {
 
 impl<'gc> Closure<'gc> {
     pub fn new(mc: &Mutation<'gc>, function: Code, base_closure: Option<Closure<'gc>>) -> Self {
-        Closure(Gc::new(
-            mc,
-            ClosureInner {
-                upvalues: vec![Gc::new(mc, Lock::new(Value::Null)); function.def_upvalue_count],
-                function,
-                base_closure,
-            },
-        ))
+        let mut upvalues = vec![UpValue::new(mc, Value::Null); function.upvalue_names.len()];
+
+        if function.kind == FunctionKind::Closure {
+            if let Some(base_closure) = base_closure {
+                for (i, (_, base_closure_upvalue_id)) in function.upvalue_names.iter().enumerate() {
+                    if let Some(base_closure_upvalue_id) = base_closure_upvalue_id {
+                        upvalues[i] = base_closure.upvalues[*base_closure_upvalue_id];
+                    }
+                }
+            }
+        }
+
+        Closure(Gc::new(mc, ClosureInner { upvalues, function }))
     }
 
     pub fn from_inner(inner: Gc<'gc, ClosureInner<'gc>>) -> Self {
@@ -64,6 +72,29 @@ impl<'gc> Closure<'gc> {
 #[collect(no_drop)]
 pub struct ClosureInner<'gc> {
     pub function: Code,
-    pub base_closure: Option<Closure<'gc>>,
-    pub upvalues: Vec<Gc<'gc, Lock<Value<'gc>>>>,
+    pub upvalues: Vec<UpValue<'gc>>,
+}
+
+#[derive(Debug, Clone, Copy, Collect)]
+#[collect(no_drop)]
+pub struct UpValue<'gc>(pub Gc<'gc, Lock<Value<'gc>>>);
+
+impl<'gc> UpValue<'gc> {
+    pub fn new(mc: &Mutation<'gc>, value: Value<'gc>) -> Self {
+        UpValue(Gc::new(mc, Lock::new(value)))
+    }
+}
+
+impl<'gc> AsRef<Gc<'gc, Lock<Value<'gc>>>> for UpValue<'gc> {
+    fn as_ref(&self) -> &Gc<'gc, Lock<Value<'gc>>> {
+        &self.0
+    }
+}
+
+impl<'gc> Deref for UpValue<'gc> {
+    type Target = Gc<'gc, Lock<Value<'gc>>>;
+
+    fn deref(&self) -> &Gc<'gc, Lock<Value<'gc>>> {
+        &self.0
+    }
 }
