@@ -647,7 +647,7 @@ impl<'a> Handle<'a> {
             }
 
             let defined_func_id;
-            if let Some(t) = base_func.local_names.remove(name) {
+            if let Some(t) = base_func.local_names.shift_remove(name) {
                 defined_func_id = base_func.func_id;
                 self.analyzer
                     .upvalue_types

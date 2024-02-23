@@ -88,7 +88,7 @@ impl<'gc> Table<'gc> {
             }
         }
         if value.is_null() {
-            entries.map.remove(&key);
+            entries.map.shift_remove(&key);
         } else {
             entries.map.insert(key, value);
         }
