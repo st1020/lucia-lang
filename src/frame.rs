@@ -341,7 +341,7 @@ impl<'gc> FramesState<'gc> {
             e.traceback = Some(self.traceback());
         }
         if e.kind.recoverable() {
-            for (c, f) in self.frames.iter_mut().rev().enumerate() {
+            for (c, f) in self.frames.iter_mut().enumerate().rev() {
                 if let Frame::Lua(LuciaFrame {
                     catch_error, stack, ..
                 }) = f
@@ -361,12 +361,12 @@ impl<'gc> FramesState<'gc> {
                                 },
                             );
                             stack.push(table.into_value(ctx));
-                            self.frames.truncate(c);
+                            self.frames.truncate(c + 1);
                             return;
                         }
                         CatchErrorKind::TryOption => {
                             stack.push(Value::Null);
-                            self.frames.truncate(c);
+                            self.frames.truncate(c + 1);
                             return;
                         }
                         CatchErrorKind::TryPanic => {
