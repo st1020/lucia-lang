@@ -12,10 +12,15 @@ use crate::{
 #[derive(Clone, Collect)]
 #[collect(no_drop)]
 pub struct State<'gc> {
+    /// Global variables.
     pub globals: Table<'gc>,
+    /// Builtin variables.
     pub builtins: Table<'gc>,
+    /// Importable libraries.
     pub libs: Table<'gc>,
+    /// Registry of static values.
     pub registry: Registry<'gc>,
+    /// All stack frames.
     pub frames: Frames<'gc>,
 }
 

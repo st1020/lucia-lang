@@ -328,7 +328,7 @@ impl<'gc> FramesState<'gc> {
                 }
                 OpCode::Throw => {
                     let tos = frame.stack.pop().unwrap();
-                    return Err((tos).into());
+                    return Err(tos.into());
                 }
                 OpCode::ReturnCall(i) => {
                     let args = frame.stack.split_off(frame.stack.len() - i);
