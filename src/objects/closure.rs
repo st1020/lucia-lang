@@ -5,10 +5,7 @@ use std::{
 
 use gc_arena::{lock::Lock, Collect, Gc, Mutation};
 
-use crate::{
-    compiler::code::{Code, FunctionKind},
-    objects::Value,
-};
+use crate::{compiler::code::Code, objects::Value};
 
 #[derive(Debug, Clone, Copy, Collect)]
 #[collect(no_drop)]
@@ -44,15 +41,18 @@ impl<'gc> AsRef<ClosureInner<'gc>> for Closure<'gc> {
 
 impl<'gc> Closure<'gc> {
     pub fn new(mc: &Mutation<'gc>, function: Code, base_closure: Option<Closure<'gc>>) -> Self {
-        let mut upvalues = vec![UpValue::new(mc, Value::Null); function.upvalue_names.len()];
+        let mut upvalues = Vec::with_capacity(function.upvalue_names.len());
 
-        if function.kind == FunctionKind::Closure {
-            if let Some(base_closure) = base_closure {
-                for (i, (_, base_closure_upvalue_id)) in function.upvalue_names.iter().enumerate() {
-                    if let Some(base_closure_upvalue_id) = base_closure_upvalue_id {
-                        upvalues[i] = base_closure.upvalues[*base_closure_upvalue_id];
-                    }
-                }
+        if let Some(base_closure) = base_closure {
+            for (_, base_closure_upvalue_id) in &function.upvalue_names {
+                upvalues.push(base_closure_upvalue_id.map_or_else(
+                    || UpValue::new(mc, Value::Null),
+                    |id| base_closure.upvalues[id],
+                ));
+            }
+        } else {
+            for _ in 0..function.upvalue_names.len() {
+                upvalues.push(UpValue::new(mc, Value::Null));
             }
         }
 
