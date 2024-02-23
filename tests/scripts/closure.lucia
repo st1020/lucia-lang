@@ -1,0 +1,13 @@
+t = 0
+add = |x| {
+    t += x
+}
+sub = |x| {
+    t -= x
+}
+
+assert(t == 0)
+add(1)
+assert(t == 1)
+sub(2)
+assert(t == -1)

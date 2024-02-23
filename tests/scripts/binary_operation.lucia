@@ -1,0 +1,41 @@
+// arithmetic expr int
+assert(1 + 1 == 2)
+assert(1 + 1 == 2)
+assert(1 - 1 == 0)
+assert(2 * 3 == 6)
+assert(6 / 2 == 3)
+assert(5 / 2 == 2)
+assert(5 % 2 == 1)
+
+// test arithmetic expr float
+assert(1.0 + 1.0 == 2.0)
+assert(1.0 - 1.0 == 0.0)
+assert(2.0 * 3.0 == 6.0)
+assert(6.0 / 2.0 == 3.0)
+assert(5.0 / 2.0 == 2.5)
+assert(5.0 % 2.0 == 1.0)
+
+// test complex arithmetic expr
+assert(1 + 1 * 2 == 3)
+assert((1 + 1) * 2 == 4)
+assert((1 + 1) * 2 + 1 * 2 == 6)
+assert(((1 + 1) * 2 + 1) * 2 == 10)
+
+// test logic operation
+assert(true == true)
+assert(false == false)
+assert(true and false == false)
+assert(true or false == true)
+assert(not true == false)
+assert(true and false or true == true)
+assert(true or true and not true == true)
+
+// test compare operation
+assert(1 == 1 == true)
+assert(1 != 2 == true)
+assert(1 < 2 == true)
+assert(2 > 1 == true)
+assert(1 >= 1 == true)
+assert(2 >= 1 == true)
+assert(1 <= 1 == true)
+assert(1 <= 2 == true)

@@ -1,0 +1,19 @@
+fn add(a, b) {
+    return a + b
+}
+assert(add(1, 2) == 3)
+
+add = fn(a, b) {
+    return a + b
+}
+assert(add(1, 2) == 3)
+
+global gcd
+fn gcd(x, y) {
+    if y == 0 {
+        return x
+    } else {
+        return gcd(y, x % y)
+    }
+}
+assert(gcd(54, 24) == 6)

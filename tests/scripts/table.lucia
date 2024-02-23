@@ -1,0 +1,18 @@
+a = {
+    "a": 1,
+    "b": 2,
+}
+assert(a["a"] == 1)
+assert(a.a == 1)
+assert(a::a == 1)
+
+
+a = {
+    "a": 1,
+    "get_a": fn (self) {
+        return self.a
+    }
+}
+other_a = {"a": 2}
+assert(a.get_a() == 1)
+assert(a::get_a(other_a) == 2)

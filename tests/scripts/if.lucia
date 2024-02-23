@@ -1,0 +1,26 @@
+fn test1(t) {
+    if t {
+        return 1
+    } else {
+        return 2
+    }
+}
+
+assert(test1(true) == 1)
+assert(test1(false) == 2)
+
+
+fn test2(i, j) {
+    if i {
+        return 1
+    } else if j {
+        return 2
+    } else {
+        return 3
+    }
+}
+
+assert(test2(true, true) == 1)
+assert(test2(true, false) == 1)
+assert(test2(false, true) == 2)
+assert(test2(false, false) == 3)

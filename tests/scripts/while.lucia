@@ -1,0 +1,35 @@
+fn test1() {
+    a = 0
+    while a < 10 {
+        a += 1
+    }
+    assert(a == 10)
+}
+
+fn test2() {
+    a = 0
+    while a < 10 {
+        a += 1
+        if a == 5 {
+            break
+        }
+    }
+    assert(a == 5)
+}
+
+fn test3() {
+    a = 0
+    b = 0
+    while a < 10 {
+        a += 1
+        if a == 10 {
+            continue
+        }
+        b += 1
+    }
+    assert(b == 9)
+}
+
+test1()
+test2()
+test3()

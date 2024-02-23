@@ -1,7 +1,7 @@
 [package]
 name = "lucia-lang"
 version = "0.2.0"
-authors = ["st1020 <stone_1020@qq.com>"]
+authors = ["st1020 <me@st1020.com>"]
 edition = "2021"
 description = "Lucia programming language"
 readme = "README.md"
@@ -15,6 +15,13 @@ unicode-ident = "1.0"
 thiserror = "1.0"
 indexmap = "2.0"
 gc-arena = "0.5"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "scripts"
+harness = false
 
 [profile.release]
 opt-level = 3

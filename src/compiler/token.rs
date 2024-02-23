@@ -238,6 +238,30 @@ impl fmt::Display for LiteralKind {
     }
 }
 
+impl From<i64> for LiteralKind {
+    fn from(value: i64) -> Self {
+        LiteralKind::Int(value)
+    }
+}
+
+impl From<f64> for LiteralKind {
+    fn from(value: f64) -> Self {
+        LiteralKind::Float(value)
+    }
+}
+
+impl From<String> for LiteralKind {
+    fn from(value: String) -> Self {
+        LiteralKind::Str(value)
+    }
+}
+
+impl From<&str> for LiteralKind {
+    fn from(value: &str) -> Self {
+        LiteralKind::Str(value.to_string())
+    }
+}
+
 /// Parsed token.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Token {

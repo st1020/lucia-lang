@@ -1,0 +1,39 @@
+import std::io::{println}
+
+global Cat
+
+Cat = do {
+    meow_times = 0
+    play_times = 0
+
+    fn new() {
+        obj = {}
+        obj[#] = {
+            "__getattr__": fn(self, key) {
+                if self[key] != null {
+                    return self[key]
+                }
+                return Cat[key]
+            }
+        }
+        return obj
+    }
+
+    fn meow(self) {
+        self.meow_times += 1
+        println("meow~")
+    }
+
+    fn play(self) {
+        self.play_times += 1
+        println("Playing...")
+    }
+}
+
+cat = Cat::new()
+cat.meow()
+cat.play()
+cat.meow()
+
+assert(cat.meow_times == 2)
+assert(cat.play_times == 1)

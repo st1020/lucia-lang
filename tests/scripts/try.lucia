@@ -1,0 +1,35 @@
+fn div(a: int, b: int) -> int throw str {
+    if b == 0 {
+        throw "division by zero"
+    }
+    return a / b
+}
+
+
+// try
+// v: int, err: str
+v, err = try div(42, 2)
+assert(v == 21)
+assert(err == null)
+
+v, err = try div(42, 0)
+assert(v == null)
+assert(err == "division by zero")
+
+
+// try?
+// v: int | null
+v = try? div(42, 2)
+assert(v == 21)
+
+v = try? div(42, 0)
+assert(v == null)
+
+
+// try!
+// v: int
+v = try! div(42, 2)
+assert(v == 21)
+
+// will panic hear
+// v = try! div(42, 0)

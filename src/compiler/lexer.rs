@@ -655,3 +655,51 @@ impl fmt::Display for EscapeError {
         fmt::Debug::fmt(self, f)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    macro_rules! check_first_literal_token {
+        ($input:expr, $value:expr $(,)?) => {
+            if let TokenKind::Literal(Ok(literal_kind)) = tokenize($input).next().unwrap().kind {
+                assert_eq!(literal_kind, $value.into())
+            } else {
+                panic!("first token not a literal")
+            }
+        };
+    }
+
+    #[test]
+    fn test_string_escape() {
+        check_first_literal_token!(r#" "\"" "#, "\"");
+        check_first_literal_token!(r#" "\n" "#, "\n");
+        check_first_literal_token!(r#" "\r" "#, "\r");
+        check_first_literal_token!(r#" "\t" "#, "\t");
+        check_first_literal_token!(r#" "\\" "#, "\\");
+        check_first_literal_token!(r#" "\'" "#, "\'");
+        check_first_literal_token!(r#" "\0" "#, "\0");
+        check_first_literal_token!(r#" "\x21" "#, "!"); // ASCII 0x21 is "!"
+        check_first_literal_token!(r#" "\u{4F60}\u{597D}\u{2764}" "#, "你好❤");
+    }
+
+    #[test]
+    fn test_number_int() {
+        check_first_literal_token!("0", 0);
+        check_first_literal_token!("1", 1);
+        check_first_literal_token!("100_000_000", 100_000_000);
+        check_first_literal_token!("0b1010", 10);
+        check_first_literal_token!("0o1010", 520);
+        check_first_literal_token!("0xABCD", 43981);
+    }
+
+    #[test]
+    fn test_number_float() {
+        check_first_literal_token!("0.0", 0.);
+        check_first_literal_token!("1.0", 1.);
+        check_first_literal_token!("1.0001", 1.0001);
+        check_first_literal_token!("1.2e2", 120.);
+        check_first_literal_token!("1.2E2", 120.);
+        check_first_literal_token!("12e1", 120.);
+    }
+}

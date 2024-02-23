@@ -1,0 +1,41 @@
+import std::table::{keys, values}
+
+t = {1: 123, 2: 456}
+
+flag = 0
+for k in keys(t) {
+    if flag == 0 {
+        assert(k == 1)
+    } else if flag == 1 {
+        assert(k == 2)
+    } else {
+        assert(false)
+    }
+    flag += 1
+}
+
+flag = 0
+for v in values(t) {
+    if flag == 0 {
+        assert(v == 123)
+    } else if flag == 1 {
+        assert(v == 456)
+    } else {
+        assert(false)
+    }
+    flag += 1
+}
+
+flag = 0
+for k, v in t {
+    if flag == 0 {
+        assert(k == 1)
+        assert(v == 123)
+    } else if flag == 1 {
+        assert(k == 2)
+        assert(v == 456)
+    } else {
+        assert(false)
+    }
+    flag += 1
+}

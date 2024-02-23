@@ -1,0 +1,7 @@
+v, err = try assert(1 == 1)
+assert(v == true)
+assert(err == null)
+
+v, err = try assert(1 != 1)
+assert(v == null)
+assert(err != null)

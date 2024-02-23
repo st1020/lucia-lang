@@ -1,0 +1,5 @@
+fn f(a, *b) {
+    assert(a == 1)
+    assert(b == [2, 3])
+}
+f(1, 2, 3)

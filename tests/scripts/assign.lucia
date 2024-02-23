@@ -1,0 +1,29 @@
+a = 1
+assert(a == 1)
+
+a = 2
+assert(a == 2)
+
+a = "1"
+assert(a == "1")
+
+a = 1
+a += 1
+assert(a == 2)
+
+a = 1
+a -= 1
+assert(a == 0)
+
+a = 2
+a *= 3
+assert(a == 6)
+
+a = 6
+a /= 2
+assert(a == 3)
+
+a = 5
+a %= 2
+assert(a == 1)
+
