@@ -1,0 +1,8 @@
+fn add(a, b) {
+    return a + b
+}
+i = 0
+while i < 100000 {
+    add(i, i)
+    i += 1
+}
