@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, ops::Deref};
+use std::{borrow::Borrow, fmt, ops::Deref};
 
 use gc_arena::{Collect, Gc, Mutation};
 
@@ -25,6 +25,12 @@ impl<'gc> AsRef<Error<'gc>> for GcError<'gc> {
 impl<'gc> Borrow<Error<'gc>> for GcError<'gc> {
     fn borrow(&self) -> &Error<'gc> {
         &self.0
+    }
+}
+
+impl<'gc> fmt::Display for GcError<'gc> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 

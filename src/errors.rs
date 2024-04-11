@@ -14,12 +14,12 @@ use crate::{
     frame::{Frame, FrameMode},
     meta_ops::MetaMethod,
     objects::{Closure, Value, ValueType},
+    utils::{Indent, Join},
 };
 
 /// Lucia error.
 #[derive(Error, Debug, Clone, Collect)]
 #[collect(no_drop)]
-#[error("{kind}")]
 pub struct Error<'gc> {
     pub kind: ErrorKind<'gc>,
     pub traceback: Option<Vec<Frame<'gc>>>,
@@ -36,6 +36,31 @@ impl<'gc> Eq for Error<'gc> {}
 impl<'gc> Hash for Error<'gc> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.kind.hash(state);
+    }
+}
+
+impl<'gc> fmt::Display for Error<'gc> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Error: {}", self.kind)?;
+        if let Some(traceback) = &self.traceback {
+            writeln!(f, "Traceback:")?;
+            for (i, frame) in traceback.iter().rev().enumerate() {
+                match frame {
+                    Frame::Lua(frame) => {
+                        writeln!(f, "[{}] lucia frame", i)?;
+                        writeln!(f, "{}", frame.indent(4))?;
+                    }
+                    Frame::Callback(callback, args) => {
+                        writeln!(f, "[{}] callback frame", i)?;
+                        writeln!(f, "    callback: {:?}", callback)?;
+                        writeln!(f, "    args: {}", args.iter().join(", "))?;
+                    }
+                    Frame::Calling => (),
+                }
+            }
+            writeln!(f)?;
+        }
+        Ok(())
     }
 }
 

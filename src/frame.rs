@@ -1,7 +1,7 @@
 use std::{
     cell::RefMut,
     cmp::Ordering,
-    fmt::{self, Debug},
+    fmt,
     hash::{Hash, Hasher},
 };
 
@@ -10,6 +10,7 @@ use gc_arena::{lock::RefLock, Collect, Gc, Mutation};
 use crate::{
     errors::{Error, ErrorKind},
     objects::{Callback, CallbackReturn, Closure, Function, IntoValue, Table, Value},
+    utils::Join,
     Context,
 };
 
@@ -17,7 +18,7 @@ use crate::{
 #[collect(no_drop)]
 pub struct Frames<'gc>(pub(crate) Gc<'gc, RefLock<FramesState<'gc>>>);
 
-impl<'gc> Debug for Frames<'gc> {
+impl<'gc> fmt::Debug for Frames<'gc> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         fmt.debug_tuple("Frames")
             .field(&(&self.0 as *const _))
@@ -50,6 +51,12 @@ pub enum FrameMode {
     Running,
 }
 
+impl fmt::Display for FrameMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 #[derive(Debug, Clone, Copy, Collect, PartialEq, Eq, Hash)]
 #[collect[require_static]]
 pub enum CatchErrorKind {
@@ -59,7 +66,7 @@ pub enum CatchErrorKind {
     TryPanic,
 }
 
-impl fmt::Display for FrameMode {
+impl fmt::Display for CatchErrorKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self)
     }
@@ -207,6 +214,38 @@ pub struct LuciaFrame<'gc> {
     pub locals: Vec<Value<'gc>>,
     pub stack: Vec<Value<'gc>>,
     pub catch_error: CatchErrorKind,
+}
+
+impl<'gc> fmt::Display for LuciaFrame<'gc> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "pc: {}", self.pc)?;
+        writeln!(f, "{}", self.closure.function)?;
+        writeln!(
+            f,
+            "upvalues: [{}]",
+            self.closure
+                .function
+                .upvalue_names
+                .iter()
+                .zip(self.closure.upvalues.iter())
+                .map(|((name, _), value)| format!("{name}: {value}"))
+                .join(", ")
+        )?;
+        writeln!(
+            f,
+            "locals: [{}]",
+            self.closure
+                .function
+                .local_names
+                .iter()
+                .zip(self.locals.iter())
+                .map(|(name, value)| format!("{name}: {value}"))
+                .join(", ")
+        )?;
+        writeln!(f, "stack: [{}]", self.stack.iter().join(", "))?;
+        write!(f, "catch_error: {:?}", self.catch_error)?;
+        Ok(())
+    }
 }
 
 #[derive(Collect, Debug, Clone)]

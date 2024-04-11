@@ -4,7 +4,7 @@ use std::fmt;
 
 use gc_arena::Collect;
 
-use crate::utils::Float;
+use crate::utils::{Float, Join};
 
 pub use super::ast::FunctionKind;
 use super::{
@@ -50,27 +50,29 @@ impl fmt::Display for Code {
         }
         writeln!(f, "kind: {}", self.kind)?;
         writeln!(f, "stack_size: {}", self.stack_size)?;
-        let mut code_str = String::new();
-        for (i, code) in self.code.iter().enumerate() {
-            code_str.push_str(&format!(
-                "{:>12} {}{}\n",
-                i,
-                code,
-                match code {
-                    OpCode::LoadLocal(i) | OpCode::StoreLocal(i) =>
-                        format!(" ({})", self.local_names[*i]),
-                    OpCode::LoadGlobal(i) | OpCode::StoreGlobal(i) =>
-                        format!(" ({})", self.global_names[*i]),
-                    OpCode::LoadUpvalue(i) | OpCode::StoreUpvalue(i) => {
-                        let t = &self.upvalue_names[*i];
-                        format!(" ({}, {:?})", t.0, t.1)
+        let code_str = self
+            .code
+            .iter()
+            .enumerate()
+            .map(|(i, code)| {
+                format!(
+                    "{i:>12} {code}{}",
+                    match code {
+                        OpCode::LoadLocal(i) | OpCode::StoreLocal(i) =>
+                            format!(" ({})", self.local_names[*i]),
+                        OpCode::LoadGlobal(i) | OpCode::StoreGlobal(i) =>
+                            format!(" ({})", self.global_names[*i]),
+                        OpCode::LoadUpvalue(i) | OpCode::StoreUpvalue(i) => {
+                            let t = &self.upvalue_names[*i];
+                            format!(" ({}, {:?})", t.0, t.1)
+                        }
+                        OpCode::LoadConst(i) | OpCode::Import(i) | OpCode::ImportFrom(i) =>
+                            format!(" ({})", self.consts[*i]),
+                        _ => "".to_string(),
                     }
-                    OpCode::LoadConst(i) | OpCode::Import(i) | OpCode::ImportFrom(i) =>
-                        format!(" ({})", self.consts[*i]),
-                    _ => "".to_string(),
-                }
-            ));
-        }
+                )
+            })
+            .join("\n");
         write!(f, "code:\n{}", code_str)
     }
 }

@@ -1,4 +1,5 @@
 use std::{
+    fmt,
     hash::{Hash, Hasher},
     ops::Deref,
 };
@@ -96,5 +97,11 @@ impl<'gc> Deref for UpValue<'gc> {
 
     fn deref(&self) -> &Gc<'gc, Lock<Value<'gc>>> {
         &self.0
+    }
+}
+
+impl<'gc> fmt::Display for UpValue<'gc> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.get())
     }
 }
