@@ -867,20 +867,20 @@ impl<'a, T: Iterator<Item = Token>> Parser<'a, T> {
 
     /// Parse atom type.
     fn parse_type_atom(&mut self) -> Result<Type, ParserError> {
-        if self.eat(&TokenKind::Null) {
-            Ok(Type::Null)
+        let t = if self.eat(&TokenKind::Null) {
+            Type::Null
         } else if self.eat(&TokenKind::True) {
-            Ok(Type::Literal(LiteralType::Bool(true)))
+            Type::Literal(LiteralType::Bool(true))
         } else if self.eat(&TokenKind::False) {
-            Ok(Type::Literal(LiteralType::Bool(false)))
+            Type::Literal(LiteralType::Bool(false))
         } else if let Some(v) = self.eat_literal() {
-            Ok(Type::Literal(match v? {
+            Type::Literal(match v? {
                 LiteralKind::Int(v) => LiteralType::Int(v),
                 LiteralKind::Float(v) => LiteralType::Float(Float(v)),
                 LiteralKind::Str(v) => LiteralType::Str(v),
-            }))
+            })
         } else if let Some(v) = self.eat_ident() {
-            let t = match v.as_str() {
+            match v.as_str() {
                 "never" => Type::Never,
                 "any" => Type::Any,
                 "bool" => Type::Bool,
@@ -888,22 +888,22 @@ impl<'a, T: Iterator<Item = Token>> Parser<'a, T> {
                 "float" => Type::Float,
                 "str" => Type::Str,
                 _ => Type::UserData(v),
-            };
-            if self.eat(&TokenKind::Question) {
-                Ok(t.union(&Type::Null))
-            } else {
-                Ok(t)
             }
         } else if self.eat(&TokenKind::OpenBrace) {
-            self.parse_type_table()
+            self.parse_type_table()?
         } else if self.eat(&TokenKind::Fn) {
-            self.parse_type_func()
+            self.parse_type_func()?
         } else if self.eat(&TokenKind::OpenParen) {
             let t = self.parse_type()?;
             self.expect(&TokenKind::CloseParen)?;
-            Ok(t)
+            t
         } else {
             unexpected_token_error!(self)
+        };
+        if self.eat(&TokenKind::Question) {
+            Ok(t.union(&Type::Null))
+        } else {
+            Ok(t)
         }
     }
 
