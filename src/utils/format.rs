@@ -18,3 +18,14 @@ pub(crate) trait Join<Item: Display>: Iterator<Item = Item> {
 }
 
 impl<T: ?Sized, Item: Display> Join<Item> for T where T: Iterator<Item = Item> {}
+
+pub(crate) trait Indent: Display {
+    fn indent(&self, indent: usize) -> String {
+        format!("{}", self)
+            .split('\n')
+            .map(|x| format!("{}{}", " ".repeat(indent), x))
+            .join("\n")
+    }
+}
+
+impl<T: Display> Indent for T {}

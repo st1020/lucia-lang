@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use crate::utils::{escape_str, Float, Join, Location};
+use crate::utils::{escape_str, Float, Indent, Join, Location};
 
 use super::typing::Type;
 
@@ -195,14 +195,7 @@ impl fmt::Display for Block {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{{")?;
         for stmt in &self.body {
-            writeln!(
-                f,
-                "{}",
-                format!("{}", stmt)
-                    .split('\n')
-                    .map(|x| format!("    {x}"))
-                    .join("\n")
-            )?;
+            writeln!(f, "{}", stmt.indent(4))?;
         }
         write!(f, "}}")
     }
@@ -335,32 +328,14 @@ impl fmt::Display for ExprKind {
                 if properties.is_empty() {
                     write!(f, "{{}}")
                 } else {
-                    write!(
-                        f,
-                        "{{\n{}\n}}",
-                        properties
-                            .iter()
-                            .join(",\n")
-                            .split('\n')
-                            .map(|x| format!("    {x}"))
-                            .join("\n")
-                    )
+                    write!(f, "{{\n{}\n}}", properties.iter().join(",\n").indent(4))
                 }
             }
             ExprKind::List { items } => {
                 if items.is_empty() {
                     write!(f, "[]")
                 } else {
-                    write!(
-                        f,
-                        "[\n{}\n]",
-                        items
-                            .iter()
-                            .join(",\n")
-                            .split('\n')
-                            .map(|x| format!("    {x}"))
-                            .join("\n")
-                    )
+                    write!(f, "[\n{}\n]", items.iter().join(",\n").indent(4))
                 }
             }
             ExprKind::Unary { operator, argument } => write!(f, "{operator} {argument}"),
