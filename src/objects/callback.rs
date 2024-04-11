@@ -179,7 +179,7 @@ mod tests {
     fn test_dyn_callback() {
         #[derive(Collect)]
         #[collect(require_static)]
-        struct CB(i64);
+        struct CB();
 
         impl<'gc> CallbackFn<'gc> for CB {
             fn call(
@@ -195,7 +195,7 @@ mod tests {
         let arena = Arena::<Rootable![State<'_>]>::new(|mc| State::new(mc));
         arena.mutate(|mc, state| {
             let ctx = state.ctx(mc);
-            let dyn_callback = Callback::new(mc, CB(17));
+            let dyn_callback = Callback::new(mc, CB());
             assert_eq!(
                 dyn_callback.call(ctx, Vec::new()),
                 Ok(CallbackReturn::Return(Value::Int(42)))
