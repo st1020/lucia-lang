@@ -445,6 +445,17 @@ impl Cursor<'_> {
                         return Literal(Err(LexerError::NumberFormatError));
                     }
                     has_exponent = true;
+
+                    value.push(t);
+                    self.bump();
+
+                    let first_char_after_exponent = self.first();
+                    if first_char_after_exponent == '+' || first_char_after_exponent == '-' {
+                        value.push(first_char_after_exponent);
+                        self.bump();
+                    }
+
+                    continue;
                 }
                 '0'..='1' if base == Base::Binary => {}
                 '0'..='7' if base == Base::Octal => {}
