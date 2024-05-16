@@ -1,0 +1,91 @@
+import std::io::{print, println}
+
+global width, height, cells, copy_list, init, get, set, next_generation, next_generation_all, display
+
+width: int = 0
+height: int = 0
+cells: {[int]: bool} = []
+
+fn copy_list(list: {[int]: bool}) -> {[int]: bool} {
+    new_list = []
+    for i in range(0, len(list)) {
+        new_list[i] = list[i]
+    }
+    return new_list
+}
+
+fn init(w: int, h: int) {
+    global width, height, cells
+    width = w
+    height = h
+    for i in range(0, width * height) {
+        cells[i] = false
+    }
+}
+
+fn get(x: int, y: int) -> bool {
+    return cells[y * width + x]
+}
+
+fn set(x: int, y: int, value: bool) {
+    cells[y * width + x] = value
+}
+
+fn next_generation(x: int, y: int) -> bool {
+    alive_neighbors = 0
+    for dx in range(-1, 2) {
+        for dy in range(-1, 2) {
+            if dx == 0 and dy == 0 {
+                continue
+            }
+            nx = x + dx
+            ny = y + dy
+            if nx < width and ny < height and get(nx, ny) {
+                alive_neighbors += 1
+            }
+        }
+    }
+
+    if get(x, y) and (alive_neighbors == 2 or alive_neighbors == 3) {
+        return true
+    } else if not get(x, y) and alive_neighbors == 3 {
+        return true
+    } else {
+        return false
+    }
+}
+
+fn next_generation_all() {
+    global cells
+    new_cells = copy_list(cells)
+    for y in range(0, height) {
+        for x in range(0, width) {
+            new_cells[y * width + x] = next_generation(x, y)
+        }
+    }
+    cells = new_cells
+}
+
+fn display() {
+    for y in range(0, height) {
+        for x in range(0, width) {
+            if get(x, y) {
+                print("██")
+            } else {
+                print("  ")
+            }
+        }
+        println()
+    }
+}
+
+init(40, 20)
+set(20, 10, true)
+set(21, 10, true)
+set(22, 10, true)
+display()
+for i in range(0, 10) {
+    println("generation", i)
+    next_generation_all()
+    display()
+}

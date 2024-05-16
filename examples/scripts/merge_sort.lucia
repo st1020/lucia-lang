@@ -1,0 +1,67 @@
+import std::io::{print, println}
+
+global merge_sort, merge
+
+fn merge_sort(arr, start: int, end: int) {
+    if start < end {
+        mid = (start + end) / 2
+        merge_sort(arr, start, mid)
+        merge_sort(arr, mid + 1, end)
+        merge(arr, start, mid, end)
+    }
+}
+
+fn merge(arr, start: int, mid: int, end: int) {
+    n1 = mid - start + 1
+    n2 = end - mid
+
+    left = []
+    right = []
+
+    for i in range(0, n1) {
+        left[i] = arr[start + i]
+    }
+
+    for j in range(0, n2) {
+        right[j] = arr[mid + 1 + j]
+    }
+
+    i = 0
+    j = 0
+    k = start
+
+    while i < n1 and j < n2 {
+        if left[i] <= right[j] {
+            arr[k] = left[i]
+            i += 1
+        } else {
+            arr[k] = right[j]
+            j += 1
+        }
+        k += 1
+    }
+
+    while i < n1 {
+        arr[k] = left[i]
+        i += 1
+        k += 1
+    }
+
+    while j < n2 {
+        arr[k] = right[j]
+        j += 1
+        k += 1
+    }
+}
+
+fn print_array(arr) {
+    for i in range(0, len(arr)) {
+        print(arr[i], "")
+    }
+    println()
+}
+
+arr = [12, 11, 13, 5, 6, 7]
+print_array(arr)
+merge_sort(arr, 0, len(arr) - 1)
+print_array(arr)
