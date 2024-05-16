@@ -53,7 +53,9 @@ impl<'gc> Table<'gc> {
         let entries = &self.0.borrow().entries;
         if let Value::Int(key) = key {
             if let Ok(key) = usize::try_from(key) {
-                return *entries.array.get(key).unwrap_or(&Value::Null);
+                if key < entries.array.len() {
+                    return entries.array[key];
+                }
             }
         }
         *entries.map.get(&key).unwrap_or(&Value::Null)
