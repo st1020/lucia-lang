@@ -196,6 +196,9 @@ impl<'a, T: Iterator<Item = Token>> Parser<'a, T> {
             }
             if let Err(e) = self.expect(&TokenKind::EOL) {
                 self.errors.push(e);
+                if self.check_noexpect(&TokenKind::EOF) {
+                    break;
+                }
             }
             self.eat_eol();
         }
