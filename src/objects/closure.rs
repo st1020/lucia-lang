@@ -6,7 +6,7 @@ use std::{
 
 use gc_arena::{lock::Lock, Collect, Gc, Mutation};
 
-use crate::{compiler::code::Code, objects::Value};
+use crate::{compiler::code::Code, frame::LuciaFrame, objects::Value};
 
 #[derive(Debug, Clone, Copy, Collect)]
 #[collect(no_drop)]
@@ -41,15 +41,15 @@ impl<'gc> AsRef<ClosureInner<'gc>> for Closure<'gc> {
 }
 
 impl<'gc> Closure<'gc> {
-    pub fn new(mc: &Mutation<'gc>, function: Code, base_closure: Option<Closure<'gc>>) -> Self {
+    pub fn new(mc: &Mutation<'gc>, function: Code, frame: Option<&LuciaFrame<'gc>>) -> Self {
         let mut upvalues = Vec::with_capacity(function.upvalue_names.len());
 
-        if let Some(base_closure) = base_closure {
+        if let Some(frame) = frame {
             for (_, base_closure_upvalue_id) in &function.upvalue_names {
-                upvalues.push(base_closure_upvalue_id.map_or_else(
-                    || UpValue::new(mc, Value::Null),
-                    |id| base_closure.upvalues[id],
-                ));
+                upvalues.push(
+                    base_closure_upvalue_id
+                        .map_or_else(|| UpValue::new(mc, Value::Null), |id| frame.upvalues[id]),
+                );
             }
         } else {
             for _ in 0..function.upvalue_names.len() {

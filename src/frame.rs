@@ -9,7 +9,7 @@ use gc_arena::{lock::RefLock, Collect, Gc, Mutation};
 
 use crate::{
     errors::{Error, ErrorKind},
-    objects::{Callback, CallbackReturn, Closure, Function, IntoValue, Table, Value},
+    objects::{Callback, CallbackReturn, Closure, Function, IntoValue, Table, UpValue, Value},
     utils::Join,
     Context,
 };
@@ -212,6 +212,7 @@ pub struct LuciaFrame<'gc> {
     pub pc: usize,
     pub closure: Closure<'gc>,
     pub locals: Vec<Value<'gc>>,
+    pub upvalues: Vec<UpValue<'gc>>,
     pub stack: Vec<Value<'gc>>,
     pub catch_error: CatchErrorKind,
 }
@@ -303,10 +304,20 @@ impl<'gc> LuciaFrame<'gc> {
                 }
             }
         }
+
+        let mut upvalues = Vec::with_capacity(function.upvalue_names.len());
+        for (_, base_closure_upvalue_id) in &function.upvalue_names {
+            upvalues.push(base_closure_upvalue_id.map_or_else(
+                || UpValue::new(&ctx, Value::Null),
+                |id| closure.upvalues[id],
+            ));
+        }
+
         Ok(LuciaFrame {
             pc: 0,
             closure,
             locals: vec![Value::Null; function.local_names.len()],
+            upvalues,
             stack,
             catch_error: CatchErrorKind::None,
         })

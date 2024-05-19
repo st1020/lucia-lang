@@ -108,7 +108,7 @@ impl<'gc> FramesState<'gc> {
                     frame.stack.push(v);
                 }
                 OpCode::LoadUpvalue(i) => {
-                    frame.stack.push(frame.closure.upvalues[i].get());
+                    frame.stack.push(frame.upvalues[i].get());
                 }
                 OpCode::LoadConst(i) => {
                     frame.stack.push(match &function.consts[i] {
@@ -117,18 +117,11 @@ impl<'gc> FramesState<'gc> {
                         ConstValue::Int(v) => Value::Int(*v),
                         ConstValue::Float(v) => Value::Float(*v),
                         ConstValue::Str(v) => Value::Str(Str::new(&ctx, v.clone())),
-                        ConstValue::Func(v) => {
-                            let base_closure = if v.kind == FunctionKind::Closure {
-                                Some(frame.closure)
-                            } else {
-                                None
-                            };
-                            Value::Function(Function::Closure(Closure::new(
-                                &ctx,
-                                v.clone(),
-                                base_closure,
-                            )))
-                        }
+                        ConstValue::Func(v) => Value::Function(Function::Closure(Closure::new(
+                            &ctx,
+                            v.clone(),
+                            Some(frame),
+                        ))),
                     });
                 }
                 OpCode::StoreLocal(i) => {
@@ -142,7 +135,7 @@ impl<'gc> FramesState<'gc> {
                     );
                 }
                 OpCode::StoreUpvalue(i) => {
-                    frame.closure.upvalues[i].set(&ctx, frame.stack.pop().unwrap());
+                    frame.upvalues[i].set(&ctx, frame.stack.pop().unwrap());
                 }
                 OpCode::Import(i) => {
                     if let ConstValue::Str(v) = &function.consts[i] {
