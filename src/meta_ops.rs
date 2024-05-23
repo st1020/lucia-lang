@@ -3,6 +3,7 @@
 use std::fmt;
 
 use gc_arena::Collect;
+use smol_str::ToSmolStr;
 
 use crate::{
     errors::{Error, ErrorKind},
@@ -293,7 +294,7 @@ pub fn add<'gc>(
         (Value::Float(v1), Value::Float(v2)) => Ok(MetaResult::Value((v1 + v2).into())),
         (Value::Str(v1), Value::Str(v2)) => Ok(MetaResult::Value(Value::Str(Str::new(
             &ctx,
-            v1.to_string() + &v2.to_string(),
+            (v1.to_string() + v2.as_ref()).into(),
         )))),
         _ => Err(meta_operator_error!(ctx, MetaMethod::Add, v1, v2)),
     }
@@ -415,7 +416,7 @@ pub fn str<'gc>(ctx: Context<'gc>, v: Value<'gc>) -> Result<MetaResult<'gc, 1>, 
         }
     }
 
-    Ok(MetaResult::Value(v.to_string().into_value(ctx)))
+    Ok(MetaResult::Value(v.to_smolstr().into_value(ctx)))
 }
 
 pub fn repr<'gc>(ctx: Context<'gc>, v: Value<'gc>) -> Result<MetaResult<'gc, 1>, Error<'gc>> {

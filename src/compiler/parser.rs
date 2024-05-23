@@ -1,5 +1,6 @@
 //! The parser.
 
+use smol_str::SmolStr;
 use thiserror::Error;
 
 use crate::utils::{Float, Join, Locatable};
@@ -119,7 +120,7 @@ impl<'a, T: Iterator<Item = Token>> Parser<'a, T> {
         is_present
     }
 
-    fn eat_ident(&mut self) -> Option<String> {
+    fn eat_ident(&mut self) -> Option<SmolStr> {
         if let TokenKind::Ident(v) = self.token.kind.clone() {
             self.bump();
             Some(v)
@@ -160,7 +161,7 @@ impl<'a, T: Iterator<Item = Token>> Parser<'a, T> {
                         break;
                     }
                 }
-                first_comment
+                first_comment.into()
             },
             body: Box::new(Block {
                 start: self.token.start,

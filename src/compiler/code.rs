@@ -3,6 +3,7 @@
 use std::fmt;
 
 use gc_arena::Collect;
+use smol_str::SmolStr;
 
 use crate::utils::{Float, Join};
 
@@ -20,9 +21,9 @@ use super::{
 #[collect(require_static)]
 pub struct Code {
     /// Name of parameters.
-    pub params: Vec<String>,
+    pub params: Vec<SmolStr>,
     /// Name of variadic parameter.
-    pub variadic: Option<String>,
+    pub variadic: Option<SmolStr>,
     /// Function kind.
     pub kind: FunctionKind,
     /// Bytecode, a list of OpCodes.
@@ -31,11 +32,11 @@ pub struct Code {
     /// List of constants used in the bytecode.
     pub consts: Vec<ConstValue>,
     /// List of local names.
-    pub local_names: Vec<String>,
+    pub local_names: Vec<SmolStr>,
     /// List of global names.
-    pub global_names: Vec<String>,
+    pub global_names: Vec<SmolStr>,
     /// List of Upvalue information.
-    pub upvalue_names: Vec<(String, Option<usize>)>,
+    pub upvalue_names: Vec<(SmolStr, Option<usize>)>,
 
     /// The required virtual machine stack space.
     pub stack_size: usize,
@@ -107,7 +108,7 @@ pub enum ConstValue {
     /// "12.34", "0b100.100"
     Float(Float),
     /// ""abc"", ""abc"
-    Str(String),
+    Str(SmolStr),
     /// A function.
     Func(Code),
 }

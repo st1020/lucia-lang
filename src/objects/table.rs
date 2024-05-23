@@ -5,6 +5,7 @@ use std::{
 
 use gc_arena::{lock::RefLock, Collect, Gc, Mutation};
 use indexmap::IndexMap;
+use smol_str::{format_smolstr, SmolStr};
 
 use crate::{
     objects::{IntoValue, Value},
@@ -118,21 +119,21 @@ impl<'gc> Table<'gc> {
     }
 
     /// Return the repr string fo the table.
-    pub(crate) fn repr_table(self, t: &Value<'gc>) -> String {
+    pub(crate) fn repr_table(self, t: &Value<'gc>) -> SmolStr {
         let mut temp = Vec::new();
         for i in 0..self.len() {
             if let Some((k, v)) = self.get_index(i) {
                 temp.push(format!(
                     "{}: {}",
                     if k.is(t) {
-                        "<table>".to_string()
+                        SmolStr::new_static("<table>")
                     } else if let Value::Table(k_t) = k {
                         k_t.repr_table(t)
                     } else {
                         k.repr()
                     },
                     if v.is(t) {
-                        "<table>".to_string()
+                        SmolStr::new_static("<table>")
                     } else if let Value::Table(v_t) = v {
                         v_t.repr_table(t)
                     } else {
@@ -141,7 +142,7 @@ impl<'gc> Table<'gc> {
                 ))
             }
         }
-        format!("{{{}}}", temp.join(", "))
+        format_smolstr!("{{{}}}", temp.join(", "))
     }
 }
 

@@ -566,7 +566,7 @@ impl CodeGen {
             }
             StmtKind::Import { path, kind } => {
                 let path_str = path.iter().map(|x| x.name.as_str()).join("::");
-                let t = self.add_const(func_id, ConstValue::Str(path_str));
+                let t = self.add_const(func_id, ConstValue::Str(path_str.into()));
                 self.func_list[func_id].code.push(OpCode::Import(t));
                 match kind {
                     ImportKind::Simple(alias) => self.store(func_id, &alias.name)?,

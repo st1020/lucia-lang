@@ -6,6 +6,7 @@ use std::{
 };
 
 use gc_arena::{lock::RefLock, Collect, Gc, Mutation};
+use smol_str::ToSmolStr;
 
 use crate::{
     errors::{Error, ErrorKind},
@@ -407,7 +408,7 @@ impl<'gc> FramesState<'gc> {
                                 if let ErrorKind::LuciaError(v) = e.kind {
                                     v
                                 } else {
-                                    e.to_string().into_value(ctx)
+                                    e.to_smolstr().into_value(ctx)
                                 },
                             );
                             stack.push(table.into_value(ctx));

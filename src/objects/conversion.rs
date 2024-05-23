@@ -1,3 +1,5 @@
+use smol_str::SmolStr;
+
 use crate::{
     errors::{Error, ErrorKind},
     objects::{
@@ -61,6 +63,12 @@ impl<'gc> From<Callback<'gc>> for Value<'gc> {
     }
 }
 
+impl<'gc, T: Into<Value<'gc>>> From<Option<T>> for Value<'gc> {
+    fn from(value: Option<T>) -> Self {
+        value.map_or(Value::Null, |v| v.into())
+    }
+}
+
 pub trait IntoValue<'gc> {
     fn into_value(self, ctx: Context<'gc>) -> Value<'gc>;
 }
@@ -71,24 +79,15 @@ impl<'gc, T: Into<Value<'gc>>> IntoValue<'gc> for T {
     }
 }
 
-impl<'gc> IntoValue<'gc> for &'static str {
-    fn into_value(self, ctx: Context<'gc>) -> Value<'gc> {
-        Value::Str(Str::new(&ctx, self.to_string()))
-    }
-}
-
-impl<'gc> IntoValue<'gc> for String {
+impl<'gc> IntoValue<'gc> for SmolStr {
     fn into_value(self, ctx: Context<'gc>) -> Value<'gc> {
         Value::Str(Str::new(&ctx, self))
     }
 }
 
-impl<'gc, T: IntoValue<'gc>> IntoValue<'gc> for Option<T> {
+impl<'gc> IntoValue<'gc> for &'static str {
     fn into_value(self, ctx: Context<'gc>) -> Value<'gc> {
-        match self {
-            Some(t) => t.into_value(ctx),
-            None => Value::Null,
-        }
+        Value::Str(Str::new(&ctx, SmolStr::new_static(self)))
     }
 }
 

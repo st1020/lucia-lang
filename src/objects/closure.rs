@@ -34,12 +34,6 @@ impl<'gc> Deref for Closure<'gc> {
     }
 }
 
-impl<'gc> AsRef<ClosureInner<'gc>> for Closure<'gc> {
-    fn as_ref(&self) -> &ClosureInner<'gc> {
-        &self.0
-    }
-}
-
 impl<'gc> Closure<'gc> {
     pub fn new(mc: &Mutation<'gc>, function: Code, frame: Option<&LuciaFrame<'gc>>) -> Self {
         let mut upvalues = Vec::with_capacity(function.upvalue_names.len());
@@ -83,12 +77,6 @@ pub struct UpValue<'gc>(pub Gc<'gc, Lock<Value<'gc>>>);
 impl<'gc> UpValue<'gc> {
     pub fn new(mc: &Mutation<'gc>, value: Value<'gc>) -> Self {
         UpValue(Gc::new(mc, Lock::new(value)))
-    }
-}
-
-impl<'gc> AsRef<Gc<'gc, Lock<Value<'gc>>>> for UpValue<'gc> {
-    fn as_ref(&self) -> &Gc<'gc, Lock<Value<'gc>>> {
-        &self.0
     }
 }
 

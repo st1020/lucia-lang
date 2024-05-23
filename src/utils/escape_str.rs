@@ -24,7 +24,7 @@ pub fn escape_str(value: &str, ascii_only: bool) -> String {
             '"' => ans.push_str("\\\""),
             '\'' => ans.push_str("\\\'"),
             '\x20'..='\x7e' if ascii_only => ans.push(c),
-            _ if ascii_only => ans.push_str(&c.escape_default().to_string()),
+            _ if ascii_only => c.escape_default().for_each(|c| ans.push(c)),
             _ => ans.push(c),
         }
     }

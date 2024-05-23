@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+use smol_str::SmolStr;
+
 use crate::utils::{escape_str, Float, Indent, Join, Location};
 
 use super::typing::Type;
@@ -18,7 +20,7 @@ pub enum FunctionKind {
 /// The root AST node.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AST {
-    pub first_comment: String,
+    pub first_comment: SmolStr,
     pub body: Box<Block>,
 }
 
@@ -395,7 +397,7 @@ pub enum LitKind {
     /// "12.34", "0b100.100"
     Float(Float),
     /// ""abc"", ""abc"
-    Str(String),
+    Str(SmolStr),
 }
 
 impl fmt::Display for LitKind {
@@ -413,7 +415,7 @@ impl fmt::Display for LitKind {
 /// An ident.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ident {
-    pub name: String,
+    pub name: SmolStr,
     pub start: Location,
     pub end: Location,
 }

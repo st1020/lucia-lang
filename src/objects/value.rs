@@ -1,6 +1,7 @@
 use std::{fmt, num::NonZeroUsize};
 
 use gc_arena::{Collect, Gc};
+use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 
 use crate::{
     objects::{Callback, Closure, Str, Table, UserData},
@@ -104,13 +105,13 @@ impl<'gc> Value<'gc> {
         matches!(self, Self::Null)
     }
 
-    pub fn repr(&self) -> String {
+    pub fn repr(&self) -> SmolStr {
         if let Self::Str(s) = self {
-            format!("\"{}\"", escape_str(s, false))
+            format_smolstr!("\"{}\"", escape_str(s, false))
         } else if let Self::Table(t) = self {
             t.repr_table(self)
         } else {
-            self.to_string()
+            self.to_smolstr()
         }
     }
 }

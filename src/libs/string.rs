@@ -1,3 +1,5 @@
+use smol_str::{StrExt, ToSmolStr};
+
 use crate::{
     check_args,
     objects::{Callback, CallbackReturn, IntoValue, Table, TableEntries, Value},
@@ -14,7 +16,7 @@ pub fn string_lib(ctx: Context<'_>) -> Table<'_> {
             Ok(CallbackReturn::Return(
                 s.chars()
                     .nth(i.try_into().unwrap())
-                    .map_or(Value::Null, |x| x.to_string().into_value(ctx)),
+                    .map_or(Value::Null, |x| x.to_smolstr().into_value(ctx)),
             ))
         }),
     );
@@ -24,7 +26,7 @@ pub fn string_lib(ctx: Context<'_>) -> Table<'_> {
         Callback::from_fn(&ctx, |ctx, args| {
             let (s,) = check_args!(args, Str);
             Ok(CallbackReturn::Return(
-                TableEntries::from_iter(s.chars().map(|x| x.to_string().into_value(ctx)))
+                TableEntries::from_iter(s.chars().map(|x| x.to_smolstr().into_value(ctx)))
                     .into_value(ctx),
             ))
         }),
@@ -35,7 +37,7 @@ pub fn string_lib(ctx: Context<'_>) -> Table<'_> {
         Callback::from_fn(&ctx, |ctx, args| {
             let (s,) = check_args!(args, Str);
             Ok(CallbackReturn::Return(
-                TableEntries::from_iter(s.lines().map(|x| x.to_string().into_value(ctx)))
+                TableEntries::from_iter(s.lines().map(|x| x.to_smolstr().into_value(ctx)))
                     .into_value(ctx),
             ))
         }),
@@ -45,9 +47,7 @@ pub fn string_lib(ctx: Context<'_>) -> Table<'_> {
         "contains",
         Callback::from_fn(&ctx, |_ctx, args| {
             let (s1, s2) = check_args!(args, Str, Str);
-            Ok(CallbackReturn::Return(
-                (s1.contains(&s2.to_string())).into(),
-            ))
+            Ok(CallbackReturn::Return((s1.contains(s2.as_ref())).into()))
         }),
     );
     t.set(
@@ -55,9 +55,7 @@ pub fn string_lib(ctx: Context<'_>) -> Table<'_> {
         "starts_with",
         Callback::from_fn(&ctx, |_ctx, args| {
             let (s1, s2) = check_args!(args, Str, Str);
-            Ok(CallbackReturn::Return(
-                (s1.starts_with(&s2.to_string())).into(),
-            ))
+            Ok(CallbackReturn::Return((s1.starts_with(s2.as_ref())).into()))
         }),
     );
     t.set(
@@ -65,9 +63,7 @@ pub fn string_lib(ctx: Context<'_>) -> Table<'_> {
         "ends_with",
         Callback::from_fn(&ctx, |_ctx, args| {
             let (s1, s2) = check_args!(args, Str, Str);
-            Ok(CallbackReturn::Return(
-                (s1.ends_with(&s2.to_string())).into(),
-            ))
+            Ok(CallbackReturn::Return((s1.ends_with(s2.as_ref())).into()))
         }),
     );
     t.set(
@@ -76,8 +72,7 @@ pub fn string_lib(ctx: Context<'_>) -> Table<'_> {
         Callback::from_fn(&ctx, |_ctx, args| {
             let (s1, s2) = check_args!(args, Str, Str);
             Ok(CallbackReturn::Return(
-                (s1.find(&s2.to_string()))
-                    .map_or(Value::Null, |x| Value::Int(x.try_into().unwrap())),
+                (s1.find(s2.as_ref())).map_or(Value::Null, |x| Value::Int(x.try_into().unwrap())),
             ))
         }),
     );
@@ -86,15 +81,15 @@ pub fn string_lib(ctx: Context<'_>) -> Table<'_> {
         "split",
         Callback::from_fn(&ctx, |ctx, args| {
             let (s, pat, count) = check_args!(args, Str, Str | Int);
-            let pat = &pat.to_string();
+            let pat = pat.as_ref();
             Ok(CallbackReturn::Return(if let Some(count) = count {
                 TableEntries::from_iter(
                     s.splitn(count.try_into().unwrap(), pat)
-                        .map(|x| x.to_string().into_value(ctx)),
+                        .map(|x| x.to_smolstr().into_value(ctx)),
                 )
                 .into_value(ctx)
             } else {
-                TableEntries::from_iter(s.split(pat).map(|x| x.to_string().into_value(ctx)))
+                TableEntries::from_iter(s.split(pat).map(|x| x.to_smolstr().into_value(ctx)))
                     .into_value(ctx)
             }))
         }),
@@ -104,7 +99,9 @@ pub fn string_lib(ctx: Context<'_>) -> Table<'_> {
         "trim",
         Callback::from_fn(&ctx, |ctx, args| {
             let (s,) = check_args!(args, Str);
-            Ok(CallbackReturn::Return(s.trim().to_string().into_value(ctx)))
+            Ok(CallbackReturn::Return(
+                s.trim().to_smolstr().into_value(ctx),
+            ))
         }),
     );
     t.set(
@@ -113,7 +110,7 @@ pub fn string_lib(ctx: Context<'_>) -> Table<'_> {
         Callback::from_fn(&ctx, |ctx, args| {
             let (s,) = check_args!(args, Str);
             Ok(CallbackReturn::Return(
-                s.trim_start().to_string().into_value(ctx),
+                s.trim_start().to_smolstr().into_value(ctx),
             ))
         }),
     );
@@ -123,7 +120,7 @@ pub fn string_lib(ctx: Context<'_>) -> Table<'_> {
         Callback::from_fn(&ctx, |ctx, args| {
             let (s,) = check_args!(args, Str);
             Ok(CallbackReturn::Return(
-                s.trim_end().to_string().into_value(ctx),
+                s.trim_end().to_smolstr().into_value(ctx),
             ))
         }),
     );
@@ -133,8 +130,8 @@ pub fn string_lib(ctx: Context<'_>) -> Table<'_> {
         Callback::from_fn(&ctx, |ctx, args| {
             let (s1, s2) = check_args!(args, Str, Str);
             Ok(CallbackReturn::Return(
-                s1.strip_prefix(&s2.to_string())
-                    .map_or(s1.into_value(ctx), |x| x.to_string().into_value(ctx)),
+                s1.strip_prefix(s2.as_ref())
+                    .map_or(s1.into_value(ctx), |x| x.to_smolstr().into_value(ctx)),
             ))
         }),
     );
@@ -144,8 +141,8 @@ pub fn string_lib(ctx: Context<'_>) -> Table<'_> {
         Callback::from_fn(&ctx, |ctx, args| {
             let (s1, s2) = check_args!(args, Str, Str);
             Ok(CallbackReturn::Return(
-                s1.strip_suffix(&s2.to_string())
-                    .map_or(s1.into_value(ctx), |x| x.to_string().into_value(ctx)),
+                s1.strip_suffix(s2.as_ref())
+                    .map_or(s1.into_value(ctx), |x| x.to_smolstr().into_value(ctx)),
             ))
         }),
     );
@@ -163,14 +160,10 @@ pub fn string_lib(ctx: Context<'_>) -> Table<'_> {
         Callback::from_fn(&ctx, |ctx, args| {
             let (s, from, to, count) = check_args!(args, Str, Str, Str | Int);
             Ok(CallbackReturn::Return(if let Some(count) = count {
-                s.replacen(
-                    &from.to_string(),
-                    &to.to_string(),
-                    count.try_into().unwrap(),
-                )
-                .into_value(ctx)
+                s.replacen_smolstr(from.as_ref(), to.as_ref(), count.try_into().unwrap())
+                    .into_value(ctx)
             } else {
-                s.replace(&from.to_string(), &to.to_string())
+                s.replace_smolstr(from.as_ref(), to.as_ref())
                     .into_value(ctx)
             }))
         }),
@@ -180,7 +173,9 @@ pub fn string_lib(ctx: Context<'_>) -> Table<'_> {
         "to_lowercase",
         Callback::from_fn(&ctx, |ctx, args| {
             let (s,) = check_args!(args, Str);
-            Ok(CallbackReturn::Return(s.to_lowercase().into_value(ctx)))
+            Ok(CallbackReturn::Return(
+                s.to_lowercase_smolstr().into_value(ctx),
+            ))
         }),
     );
     t.set(
@@ -188,7 +183,9 @@ pub fn string_lib(ctx: Context<'_>) -> Table<'_> {
         "to_uppercase",
         Callback::from_fn(&ctx, |ctx, args| {
             let (s,) = check_args!(args, Str);
-            Ok(CallbackReturn::Return(s.to_uppercase().into_value(ctx)))
+            Ok(CallbackReturn::Return(
+                s.to_uppercase_smolstr().into_value(ctx),
+            ))
         }),
     );
     t.set(
@@ -197,7 +194,7 @@ pub fn string_lib(ctx: Context<'_>) -> Table<'_> {
         Callback::from_fn(&ctx, |ctx, args| {
             let (s,) = check_args!(args, Str);
             Ok(CallbackReturn::Return(
-                s.to_ascii_lowercase().into_value(ctx),
+                s.to_ascii_lowercase_smolstr().into_value(ctx),
             ))
         }),
     );
@@ -207,7 +204,7 @@ pub fn string_lib(ctx: Context<'_>) -> Table<'_> {
         Callback::from_fn(&ctx, |ctx, args| {
             let (s,) = check_args!(args, Str);
             Ok(CallbackReturn::Return(
-                s.to_ascii_uppercase().into_value(ctx),
+                s.to_ascii_uppercase_smolstr().into_value(ctx),
             ))
         }),
     );
@@ -217,7 +214,7 @@ pub fn string_lib(ctx: Context<'_>) -> Table<'_> {
         Callback::from_fn(&ctx, |ctx, args| {
             let (s, i) = check_args!(args, Str, Int);
             Ok(CallbackReturn::Return(
-                s.repeat(i.try_into().unwrap()).into_value(ctx),
+                s.repeat(i.try_into().unwrap()).to_smolstr().into_value(ctx),
             ))
         }),
     );

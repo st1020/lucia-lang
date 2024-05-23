@@ -2,6 +2,7 @@
 
 use std::{fmt, ops::BitOr};
 
+use smol_str::SmolStr;
 use thiserror::Error;
 
 use crate::utils::{Float, Join};
@@ -14,7 +15,7 @@ pub enum LiteralType {
     Bool(bool),
     Int(i64),
     Float(Float),
-    Str(String),
+    Str(SmolStr),
 }
 
 impl fmt::Display for LiteralType {
@@ -58,7 +59,7 @@ pub enum Type {
         throws: Box<Type>,
     },
     // UserData Types
-    UserData(String),
+    UserData(SmolStr),
 
     // Union Types
     Union(Vec<Type>),

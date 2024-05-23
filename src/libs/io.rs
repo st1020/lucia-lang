@@ -1,5 +1,7 @@
 use std::io;
 
+use smol_str::ToSmolStr;
+
 use crate::{
     check_args,
     objects::{Callback, CallbackReturn, IntoValue, Table, Value},
@@ -43,7 +45,7 @@ pub fn io_lib(ctx: Context<'_>) -> Table<'_> {
             Ok(CallbackReturn::Return(
                 t.strip_suffix('\n')
                     .unwrap_or(&t)
-                    .to_string()
+                    .to_smolstr()
                     .into_value(ctx),
             ))
         }),

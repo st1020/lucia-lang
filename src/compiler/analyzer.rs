@@ -8,6 +8,7 @@
 use std::{collections::HashMap, fmt, mem};
 
 use indexmap::IndexMap;
+use smol_str::SmolStr;
 
 use crate::utils::Join;
 
@@ -46,11 +47,11 @@ pub struct Function {
     pub base_function: Option<usize>,
 
     /// Local names.
-    pub local_names: IndexMap<String, Option<Type>>,
+    pub local_names: IndexMap<SmolStr, Option<Type>>,
     /// Global names.
-    pub global_names: IndexMap<String, GlobalName>,
+    pub global_names: IndexMap<SmolStr, GlobalName>,
     /// Upvalue names.
-    pub upvalue_names: IndexMap<String, UpvalueName>,
+    pub upvalue_names: IndexMap<SmolStr, UpvalueName>,
 
     // used by type check
     pub(crate) returns_type: Option<Box<Type>>,
@@ -119,7 +120,7 @@ impl Function {
         }
     }
 
-    pub fn upvalues(&self) -> impl Iterator<Item = (String, Option<usize>)> + '_ {
+    pub fn upvalues(&self) -> impl Iterator<Item = (SmolStr, Option<usize>)> + '_ {
         self.upvalue_names.iter().map(
             |(
                 k,
@@ -179,8 +180,8 @@ pub fn analyze(ast: AST) -> Result<Vec<Function>, Vec<TypeCheckError>> {
 #[derive(Debug)]
 struct SemanticAnalyzer {
     func_list: Vec<Function>,
-    global_types: HashMap<String, Option<Type>>,
-    upvalue_types: HashMap<(usize, String), Option<Type>>,
+    global_types: HashMap<SmolStr, Option<Type>>,
+    upvalue_types: HashMap<(usize, SmolStr), Option<Type>>,
     errors: Vec<TypeCheckError>,
 }
 
@@ -598,7 +599,7 @@ impl<'a> Handle<'a> {
         if self.current().kind != FunctionKind::Closure {
             self.current_mut()
                 .global_names
-                .insert(name.to_owned(), GlobalName { is_writable: false });
+                .insert(name.into(), GlobalName { is_writable: false });
             return;
         }
 
@@ -606,7 +607,7 @@ impl<'a> Handle<'a> {
             handle
                 .current_mut()
                 .global_names
-                .insert(name.to_owned(), GlobalName { is_writable: false });
+                .insert(name.into(), GlobalName { is_writable: false });
         });
     }
 
@@ -622,7 +623,7 @@ impl<'a> Handle<'a> {
         }
 
         if self.current().kind != FunctionKind::Closure {
-            self.current_mut().local_names.insert(name.to_owned(), t);
+            self.current_mut().local_names.insert(name.into(), t);
             return;
         }
 
@@ -630,7 +631,7 @@ impl<'a> Handle<'a> {
             handle
                 .current_mut()
                 .local_names
-                .insert(name.to_owned(), t.clone());
+                .insert(name.into(), t.clone());
         });
     }
 
@@ -651,9 +652,9 @@ impl<'a> Handle<'a> {
                 defined_func_id = base_func.func_id;
                 self.analyzer
                     .upvalue_types
-                    .insert((defined_func_id, name.to_owned()), t);
+                    .insert((defined_func_id, name.into()), t);
                 base_func.upvalue_names.insert(
-                    name.to_owned(),
+                    name.into(),
                     UpvalueName {
                         defined_func_id,
                         base_closure_upvalue_id: 0,
@@ -679,7 +680,7 @@ impl<'a> Handle<'a> {
                     .get_index_of(name)
                     .unwrap();
                 self.analyzer.func_list[func_id].upvalue_names.insert(
-                    name.to_owned(),
+                    name.into(),
                     UpvalueName {
                         defined_func_id,
                         base_closure_upvalue_id,
@@ -1095,7 +1096,7 @@ impl<'a> Handle<'a> {
         {
             self.analyzer
                 .upvalue_types
-                .get(&(*defined_func_id, name.to_owned()))
+                .get(&(*defined_func_id, name.into()))
                 .cloned()
                 .unwrap_or(None)
         } else {
@@ -1117,7 +1118,7 @@ impl<'a> Handle<'a> {
             if let Some(x) = self.current_mut().local_names.get_mut(name) {
                 *x = Some(t);
             } else if self.current().global_names.contains_key(name) {
-                self.analyzer.global_types.insert(name.to_owned(), Some(t));
+                self.analyzer.global_types.insert(name.into(), Some(t));
             } else if let Some(UpvalueName {
                 defined_func_id,
                 base_closure_upvalue_id: _,
@@ -1126,7 +1127,7 @@ impl<'a> Handle<'a> {
                 let func_id = *defined_func_id;
                 self.analyzer
                     .upvalue_types
-                    .insert((func_id, name.to_owned()), Some(t));
+                    .insert((func_id, name.into()), Some(t));
             }
         }
 

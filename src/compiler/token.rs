@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+use smol_str::SmolStr;
+
 use crate::utils::Location;
 
 use super::lexer::LexerError;
@@ -131,16 +133,16 @@ pub enum TokenKind {
     /// End of file.
     EOF,
     /// "// comment"
-    LineComment(String),
+    LineComment(SmolStr),
     /// "/* block comment */"
     ///
     /// Block comments can be recursive, so the sequence like `/* /* */`
     /// will not be considered terminated and will result in a parsing error.
-    BlockComment(String),
+    BlockComment(SmolStr),
     /// Any whitespace characters sequence.
     Whitespace,
     /// Ident
-    Ident(String),
+    Ident(SmolStr),
     /// "12", "1.0e-40", ""123"". See `LiteralKind` for more details.
     Literal(Result<LiteralKind, LexerError>),
     /// Unknown token, not expected by the lexer, e.g. "№"
@@ -225,7 +227,7 @@ pub enum LiteralKind {
     /// "12.34", "0b100.100"
     Float(f64),
     /// ""abc"", ""abc"
-    Str(String),
+    Str(SmolStr),
 }
 
 impl fmt::Display for LiteralKind {
@@ -250,15 +252,15 @@ impl From<f64> for LiteralKind {
     }
 }
 
-impl From<String> for LiteralKind {
-    fn from(value: String) -> Self {
+impl From<SmolStr> for LiteralKind {
+    fn from(value: SmolStr) -> Self {
         LiteralKind::Str(value)
     }
 }
 
-impl From<&str> for LiteralKind {
-    fn from(value: &str) -> Self {
-        LiteralKind::Str(value.to_string())
+impl From<&'static str> for LiteralKind {
+    fn from(value: &'static str) -> Self {
+        LiteralKind::Str(SmolStr::new_static(value))
     }
 }
 

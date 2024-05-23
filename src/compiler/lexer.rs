@@ -322,7 +322,7 @@ impl Cursor<'_> {
             v.push(c);
             self.bump();
         }
-        LineComment(v)
+        LineComment(v.into())
     }
 
     fn block_comment(&mut self) -> TokenKind {
@@ -351,7 +351,7 @@ impl Cursor<'_> {
             }
         }
         v.truncate(v.len() - 1);
-        BlockComment(v)
+        BlockComment(v.into())
     }
 
     fn ident_or_reserved_word(&mut self, first_char: char) -> TokenKind {
@@ -391,7 +391,7 @@ impl Cursor<'_> {
             "null" => Null,
             "true" => True,
             "false" => False,
-            _ => Ident(value),
+            _ => Ident(value.into()),
         }
     }
 
@@ -522,7 +522,7 @@ impl Cursor<'_> {
                 return Literal(Err(LexerError::UnterminatedStringError));
             }
         }
-        Literal(Ok(Str(value)))
+        Literal(Ok(Str(value.into())))
     }
 
     fn scan_escape(&mut self) -> std::result::Result<char, EscapeError> {

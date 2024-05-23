@@ -1,4 +1,4 @@
-use std::{borrow::Borrow, fmt, ops::Deref};
+use std::{fmt, ops};
 
 use gc_arena::{Collect, Gc, Mutation};
 
@@ -8,22 +8,10 @@ use crate::errors::Error;
 #[collect(no_drop)]
 pub struct GcError<'gc>(pub Gc<'gc, Error<'gc>>);
 
-impl<'gc> Deref for GcError<'gc> {
+impl<'gc> ops::Deref for GcError<'gc> {
     type Target = Error<'gc>;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<'gc> AsRef<Error<'gc>> for GcError<'gc> {
-    fn as_ref(&self) -> &Error<'gc> {
-        &self.0
-    }
-}
-
-impl<'gc> Borrow<Error<'gc>> for GcError<'gc> {
-    fn borrow(&self) -> &Error<'gc> {
         &self.0
     }
 }
