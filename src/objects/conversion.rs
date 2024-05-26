@@ -138,6 +138,18 @@ impl<'gc, T: Into<Value<'gc>>> From<Option<T>> for Value<'gc> {
     }
 }
 
+impl<'gc> From<()> for Value<'gc> {
+    fn from(_: ()) -> Self {
+        Value::Null
+    }
+}
+
+impl<'gc> IntoValue<'gc> for () {
+    fn into_value(self, _: Context<'gc>) -> Value<'gc> {
+        Value::Null
+    }
+}
+
 impl<'gc> IntoValue<'gc> for Value<'gc> {
     fn into_value(self, _: Context<'gc>) -> Value<'gc> {
         self

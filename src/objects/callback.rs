@@ -44,6 +44,15 @@ impl<'gc> IntoCallbackReturn<'gc> for CallbackReturn<'gc> {
     }
 }
 
+impl<'gc, const N: usize> IntoCallbackReturn<'gc> for MetaResult<'gc, N> {
+    fn into_callback_return(self, _ctx: Context<'gc>) -> CallbackReturn<'gc> {
+        match self {
+            MetaResult::Value(v) => CallbackReturn::Return(v),
+            MetaResult::Call(f, args) => CallbackReturn::TailCall(f, Vec::from(args)),
+        }
+    }
+}
+
 impl<'gc, T: IntoValue<'gc>> IntoCallbackReturn<'gc> for T {
     fn into_callback_return(self, ctx: Context<'gc>) -> CallbackReturn<'gc> {
         CallbackReturn::Return(self.into_value(ctx))
@@ -120,18 +129,18 @@ impl<'gc> Callback<'gc> {
         Self(unsafe { Gc::cast::<CallbackInner>(hc) })
     }
 
-    pub fn from_fn<F>(mc: &Mutation<'gc>, call: F) -> Callback<'gc>
+    pub fn from_fn<F, T>(mc: &Mutation<'gc>, call: F) -> Callback<'gc>
+    where
+        F: 'static + IntoCallback<'gc, T>,
+    {
+        Self::from_fn_raw(mc, move |ctx, args| call.call(ctx, args))
+    }
+
+    pub fn from_fn_raw<F>(mc: &Mutation<'gc>, call: F) -> Callback<'gc>
     where
         F: 'static + Fn(Context<'gc>, Vec<Value<'gc>>) -> CallbackResult<'gc>,
     {
         Self::from_fn_with(mc, (), move |_, ctx, args| call(ctx, args))
-    }
-
-    pub fn from_fn_ext<F, T>(mc: &Mutation<'gc>, call: F) -> Callback<'gc>
-    where
-        F: 'static + IntoCallback<'gc, T>,
-    {
-        Self::from_fn_with(mc, (), move |_, ctx, args| call.call(ctx, args))
     }
 
     pub fn from_fn_with<R, F>(mc: &Mutation<'gc>, root: R, call: F) -> Callback<'gc>
@@ -215,21 +224,7 @@ impl<'gc> ops::DerefMut for Varargs<'gc> {
 
 pub trait IntoCallback<'gc, Marker> {
     fn call(&self, ctx: Context<'gc>, args: Vec<Value<'gc>>) -> CallbackResult<'gc>;
-
-    fn as_callback(&'static self, mc: &Mutation<'gc>) -> Callback<'gc> {
-        Callback::from_fn(mc, move |ctx, args| self.call(ctx, args))
-    }
 }
-
-// impl<'gc, Func, Ret> IntoCallback<'gc, fn(Context<'gc>, Vec<Value<'gc>>)> for Func
-// where
-//     Func: Fn(Context<'gc>, Vec<Value<'gc>>) -> Ret,
-//     Ret: IntoCallbackResult<'gc>,
-// {
-//     fn call(&self, ctx: Context<'gc>, args: Vec<Value<'gc>>) -> CallbackResult<'gc> {
-//         self(ctx, args).into_callback_result(ctx)
-//     }
-// }
 
 macro_rules! impl_into_callback {
     ($len:literal, $($idx:literal $t:ident),*) => {

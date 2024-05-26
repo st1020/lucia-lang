@@ -10,7 +10,10 @@ pub use io::io_lib;
 pub use string::string_lib;
 pub use table::table_lib;
 
-#[macro_export]
+/// This macro is deprecated, and was instead by the IntoCallback trait.
+/// But it takes me a lot of time to write it, so I don't want to remove it.
+#[deprecated]
+#[allow(unused_macros)]
 macro_rules! check_args {
     (@AS_EXPR $e:expr) => {$e};
 
