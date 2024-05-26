@@ -1,16 +1,22 @@
 use std::{
     fmt,
     hash::{Hash, Hasher},
+    ops,
 };
 
 use gc_arena::{Collect, Gc, Mutation};
 
 use crate::{
-    errors::Error,
+    errors::{CallArgumentsErrorKind, Error, ErrorKind},
     meta_ops::MetaResult,
-    objects::{Function, Value},
+    objects::{
+        conversion::{FromValue, IntoValue},
+        Function, Value,
+    },
     Context,
 };
+
+pub type CallbackResult<'gc> = Result<CallbackReturn<'gc>, Error<'gc>>;
 
 #[derive(Debug, PartialEq, Eq, Collect)]
 #[collect(no_drop)]
@@ -28,12 +34,40 @@ impl<'gc, const N: usize> From<MetaResult<'gc, N>> for CallbackReturn<'gc> {
     }
 }
 
+pub trait IntoCallbackReturn<'gc> {
+    fn into_callback_return(self, ctx: Context<'gc>) -> CallbackReturn<'gc>;
+}
+
+impl<'gc> IntoCallbackReturn<'gc> for CallbackReturn<'gc> {
+    fn into_callback_return(self, _ctx: Context<'gc>) -> CallbackReturn<'gc> {
+        self
+    }
+}
+
+impl<'gc, T: IntoValue<'gc>> IntoCallbackReturn<'gc> for T {
+    fn into_callback_return(self, ctx: Context<'gc>) -> CallbackReturn<'gc> {
+        CallbackReturn::Return(self.into_value(ctx))
+    }
+}
+
+pub trait IntoCallbackResult<'gc> {
+    fn into_callback_result(self, ctx: Context<'gc>) -> CallbackResult<'gc>;
+}
+
+impl<'gc, T: IntoCallbackReturn<'gc>> IntoCallbackResult<'gc> for T {
+    fn into_callback_result(self, ctx: Context<'gc>) -> CallbackResult<'gc> {
+        Ok(self.into_callback_return(ctx))
+    }
+}
+
+impl<'gc, T: IntoCallbackReturn<'gc>> IntoCallbackResult<'gc> for Result<T, Error<'gc>> {
+    fn into_callback_result(self, ctx: Context<'gc>) -> CallbackResult<'gc> {
+        self.map(|x| x.into_callback_return(ctx))
+    }
+}
+
 pub trait CallbackFn<'gc>: Collect {
-    fn call(
-        &mut self,
-        ctx: Context<'gc>,
-        args: Vec<Value<'gc>>,
-    ) -> Result<CallbackReturn<'gc>, Error<'gc>>;
+    fn call(&self, ctx: Context<'gc>, args: Vec<Value<'gc>>) -> CallbackResult<'gc>;
 }
 
 // Represents a callback as a single pointer with an inline VTable header.
@@ -42,11 +76,8 @@ pub trait CallbackFn<'gc>: Collect {
 pub struct Callback<'gc>(Gc<'gc, CallbackInner<'gc>>);
 
 pub struct CallbackInner<'gc> {
-    call: unsafe fn(
-        *const CallbackInner<'gc>,
-        Context<'gc>,
-        Vec<Value<'gc>>,
-    ) -> Result<CallbackReturn<'gc>, Error<'gc>>,
+    call:
+        unsafe fn(*const CallbackInner<'gc>, Context<'gc>, Vec<Value<'gc>>) -> CallbackResult<'gc>,
 }
 
 impl<'gc> Callback<'gc> {
@@ -91,16 +122,22 @@ impl<'gc> Callback<'gc> {
 
     pub fn from_fn<F>(mc: &Mutation<'gc>, call: F) -> Callback<'gc>
     where
-        F: 'static + Fn(Context<'gc>, Vec<Value<'gc>>) -> Result<CallbackReturn<'gc>, Error<'gc>>,
+        F: 'static + Fn(Context<'gc>, Vec<Value<'gc>>) -> CallbackResult<'gc>,
     {
         Self::from_fn_with(mc, (), move |_, ctx, args| call(ctx, args))
+    }
+
+    pub fn from_fn_ext<F, T>(mc: &Mutation<'gc>, call: F) -> Callback<'gc>
+    where
+        F: 'static + IntoCallback<'gc, T>,
+    {
+        Self::from_fn_with(mc, (), move |_, ctx, args| call.call(ctx, args))
     }
 
     pub fn from_fn_with<R, F>(mc: &Mutation<'gc>, root: R, call: F) -> Callback<'gc>
     where
         R: 'gc + Collect,
-        F: 'static
-            + Fn(&R, Context<'gc>, Vec<Value<'gc>>) -> Result<CallbackReturn<'gc>, Error<'gc>>,
+        F: 'static + Fn(&R, Context<'gc>, Vec<Value<'gc>>) -> CallbackResult<'gc>,
     {
         #[derive(Collect)]
         #[collect(no_drop)]
@@ -113,14 +150,9 @@ impl<'gc> Callback<'gc> {
         impl<'gc, R, F> CallbackFn<'gc> for RootCallback<R, F>
         where
             R: 'gc + Collect,
-            F: 'static
-                + Fn(&R, Context<'gc>, Vec<Value<'gc>>) -> Result<CallbackReturn<'gc>, Error<'gc>>,
+            F: 'static + Fn(&R, Context<'gc>, Vec<Value<'gc>>) -> CallbackResult<'gc>,
         {
-            fn call(
-                &mut self,
-                ctx: Context<'gc>,
-                args: Vec<Value<'gc>>,
-            ) -> Result<CallbackReturn<'gc>, Error<'gc>> {
+            fn call(&self, ctx: Context<'gc>, args: Vec<Value<'gc>>) -> CallbackResult<'gc> {
                 (self.call)(&self.root, ctx, args)
             }
         }
@@ -136,11 +168,7 @@ impl<'gc> Callback<'gc> {
         self.0
     }
 
-    pub fn call(
-        self,
-        ctx: Context<'gc>,
-        args: Vec<Value<'gc>>,
-    ) -> Result<CallbackReturn<'gc>, Error<'gc>> {
+    pub fn call(self, ctx: Context<'gc>, args: Vec<Value<'gc>>) -> CallbackResult<'gc> {
         unsafe { (self.0.call)(Gc::as_ptr(self.0), ctx, args) }
     }
 }
@@ -167,6 +195,152 @@ impl<'gc> Hash for Callback<'gc> {
     }
 }
 
+#[derive(Debug, Clone, Collect)]
+#[collect(no_drop)]
+pub struct Varargs<'gc>(Vec<Value<'gc>>);
+
+impl<'gc> ops::Deref for Varargs<'gc> {
+    type Target = Vec<Value<'gc>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<'gc> ops::DerefMut for Varargs<'gc> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+pub trait IntoCallback<'gc, Marker> {
+    fn call(&self, ctx: Context<'gc>, args: Vec<Value<'gc>>) -> CallbackResult<'gc>;
+
+    fn as_callback(&'static self, mc: &Mutation<'gc>) -> Callback<'gc> {
+        Callback::from_fn(mc, move |ctx, args| self.call(ctx, args))
+    }
+}
+
+// impl<'gc, Func, Ret> IntoCallback<'gc, fn(Context<'gc>, Vec<Value<'gc>>)> for Func
+// where
+//     Func: Fn(Context<'gc>, Vec<Value<'gc>>) -> Ret,
+//     Ret: IntoCallbackResult<'gc>,
+// {
+//     fn call(&self, ctx: Context<'gc>, args: Vec<Value<'gc>>) -> CallbackResult<'gc> {
+//         self(ctx, args).into_callback_result(ctx)
+//     }
+// }
+
+macro_rules! impl_into_callback {
+    ($len:literal, $($idx:literal $t:ident),*) => {
+        impl<'gc, Func, Ret, $($t,)*> IntoCallback<'gc, fn($($t,)*) -> Ret> for Func
+        where
+            Func: Fn($($t,)*) -> Ret,
+            Ret: IntoCallbackResult<'gc>,
+            $($t: FromValue<'gc>,)*
+        {
+            fn call(&self, ctx: Context<'gc>, args: Vec<Value<'gc>>) -> CallbackResult<'gc> {
+                let args_len = args.len();
+                let required = CallArgumentsErrorKind::from($len);
+                if !required.contains(&args_len) {
+                    return Err(Error::new(
+                        ErrorKind::CallArguments {
+                            value: None,
+                            required,
+                            given: args_len,
+                        },
+                    ));
+                }
+                self($($t::from_value(args[$idx])?,)*).into_callback_result(ctx)
+            }
+        }
+
+        impl<'gc, Func, Ret, $($t,)*> IntoCallback<'gc, fn($($t,)* Varargs<'gc>) -> Ret> for Func
+        where
+            Func: Fn($($t,)* Varargs<'gc>) -> Ret,
+            Ret: IntoCallbackResult<'gc>,
+            $($t: FromValue<'gc>,)*
+        {
+            fn call(&self, ctx: Context<'gc>, args: Vec<Value<'gc>>) -> CallbackResult<'gc> {
+                let args_len = args.len();
+                let required = CallArgumentsErrorKind::from(($len, None));
+                if !required.contains(&args_len) {
+                    return Err(Error::new(
+                        ErrorKind::CallArguments {
+                            value: None,
+                            required,
+                            given: args_len,
+                        },
+                    ));
+                }
+                self($($t::from_value(args[$idx])?,)* Varargs(args[$len..].to_vec())).into_callback_result(ctx)
+            }
+        }
+
+        impl<'gc, Func, Ret, $($t,)*> IntoCallback<'gc, fn(Context<'gc>, $($t,)*) -> Ret> for Func
+        where
+            Func: Fn(Context<'gc>, $($t,)*) -> Ret,
+            Ret: IntoCallbackResult<'gc>,
+            $($t: FromValue<'gc>,)*
+        {
+            fn call(&self, ctx: Context<'gc>, args: Vec<Value<'gc>>) -> CallbackResult<'gc> {
+                let args_len = args.len();
+                let required = CallArgumentsErrorKind::from($len);
+                if !required.contains(&args_len) {
+                    return Err(Error::new(
+                        ErrorKind::CallArguments {
+                            value: None,
+                            required,
+                            given: args_len,
+                        },
+                    ));
+                }
+                self(ctx, $($t::from_value(args[$idx])?,)*).into_callback_result(ctx)
+            }
+        }
+
+        impl<'gc, Func, Ret, $($t,)*> IntoCallback<'gc, fn(Context<'gc>, $($t,)* Varargs<'gc>) -> Ret> for Func
+        where
+            Func: Fn(Context<'gc>, $($t,)* Varargs<'gc>) -> Ret,
+            Ret: IntoCallbackResult<'gc>,
+            $($t: FromValue<'gc>,)*
+        {
+            fn call(&self, ctx: Context<'gc>, args: Vec<Value<'gc>>) -> CallbackResult<'gc> {
+                let args_len = args.len();
+                let required = CallArgumentsErrorKind::from(($len, None));
+                if !required.contains(&args_len) {
+                    return Err(Error::new(
+                        ErrorKind::CallArguments {
+                            value: None,
+                            required,
+                            given: args_len,
+                        },
+                    ));
+                }
+                self(ctx, $($t::from_value(args[$idx])?,)* Varargs(args[$len..].to_vec())).into_callback_result(ctx)
+            }
+        }
+    };
+}
+
+impl_into_callback!(0,);
+impl_into_callback!( 1, 0 A);
+impl_into_callback!( 2, 0 A, 1 B);
+impl_into_callback!( 3, 0 A, 1 B, 2 C);
+impl_into_callback!( 4, 0 A, 1 B, 2 C, 3 D);
+impl_into_callback!( 5, 0 A, 1 B, 2 C, 3 D, 4 E);
+impl_into_callback!( 6, 0 A, 1 B, 2 C, 3 D, 4 E, 5 F);
+impl_into_callback!( 7, 0 A, 1 B, 2 C, 3 D, 4 E, 5 F, 6 G);
+impl_into_callback!( 8, 0 A, 1 B, 2 C, 3 D, 4 E, 5 F, 6 G, 7 H);
+impl_into_callback!( 9, 0 A, 1 B, 2 C, 3 D, 4 E, 5 F, 6 G, 7 H, 8 I);
+impl_into_callback!(10, 0 A, 1 B, 2 C, 3 D, 4 E, 5 F, 6 G, 7 H, 8 I, 9 J);
+impl_into_callback!(11, 0 A, 1 B, 2 C, 3 D, 4 E, 5 F, 6 G, 7 H, 8 I, 9 J, 10 K);
+impl_into_callback!(12, 0 A, 1 B, 2 C, 3 D, 4 E, 5 F, 6 G, 7 H, 8 I, 9 J, 10 K, 11 L);
+impl_into_callback!(13, 0 A, 1 B, 2 C, 3 D, 4 E, 5 F, 6 G, 7 H, 8 I, 9 J, 10 K, 11 L, 12 M);
+impl_into_callback!(14, 0 A, 1 B, 2 C, 3 D, 4 E, 5 F, 6 G, 7 H, 8 I, 9 J, 10 K, 11 L, 12 M, 13 N);
+impl_into_callback!(15, 0 A, 1 B, 2 C, 3 D, 4 E, 5 F, 6 G, 7 H, 8 I, 9 J, 10 K, 11 L, 12 M, 13 N, 14 O);
+impl_into_callback!(16, 0 A, 1 B, 2 C, 3 D, 4 E, 5 F, 6 G, 7 H, 8 I, 9 J, 10 K, 11 L, 12 M, 13 N, 14 O, 15 P);
+
 #[cfg(test)]
 mod tests {
     use gc_arena::{Arena, Rootable};
@@ -182,11 +356,7 @@ mod tests {
         struct CB();
 
         impl<'gc> CallbackFn<'gc> for CB {
-            fn call(
-                &mut self,
-                _ctx: Context<'gc>,
-                _args: Vec<Value<'gc>>,
-            ) -> Result<CallbackReturn<'gc>, Error<'gc>> {
+            fn call(&self, _ctx: Context<'gc>, _args: Vec<Value<'gc>>) -> CallbackResult<'gc> {
                 Ok(CallbackReturn::Return(Value::Int(42)))
             }
         }

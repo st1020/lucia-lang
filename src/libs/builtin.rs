@@ -1,10 +1,10 @@
-use gc_arena::Collect;
+use gc_arena::{lock::RefLock, Collect, Gc};
 
 use crate::{
     check_args,
     errors::{Error, ErrorKind},
     meta_ops,
-    objects::{Callback, CallbackFn, CallbackReturn, IntoValue, Value},
+    objects::{Callback, CallbackReturn, IntoValue, Value},
     Context,
 };
 
@@ -103,29 +103,20 @@ pub fn load_builtin(ctx: Context<'_>) {
                 end: i64,
             }
 
-            impl<'gc> CallbackFn<'gc> for RangeIter {
-                fn call(
-                    &mut self,
-                    _ctx: Context<'gc>,
-                    _args: Vec<Value<'gc>>,
-                ) -> Result<CallbackReturn<'gc>, crate::errors::Error<'gc>> {
-                    self.value += 1;
-                    Ok(CallbackReturn::Return(if self.value == self.end {
-                        Value::Null
-                    } else {
-                        Value::Int(self.value)
-                    }))
-                }
-            }
-
             let (start, end) = check_args!(args, Int, Int);
-
             Ok(CallbackReturn::Return(
-                Callback::new(
+                Callback::from_fn_with(
                     &ctx,
-                    RangeIter {
-                        value: start - 1,
-                        end,
+                    Gc::new(&ctx, RefLock::new(RangeIter { value: start, end })),
+                    |range, ctx, _args| {
+                        let mut range = range.borrow_mut(&ctx);
+                        let value = range.value;
+                        Ok(CallbackReturn::Return(if value == range.end {
+                            Value::Null
+                        } else {
+                            range.value += 1;
+                            Value::Int(value)
+                        }))
                     },
                 )
                 .into(),

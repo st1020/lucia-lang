@@ -1,56 +1,11 @@
-use gc_arena::Collect;
+use gc_arena::{lock::RefLock, Gc};
 
 use crate::{
-    check_args, meta_ops,
-    objects::{Callback, CallbackFn, CallbackReturn, IntoValue, Table, Value},
+    check_args,
+    meta_ops::raw_iter,
+    objects::{Callback, CallbackReturn, IntoValue, Table, Value},
     Context,
 };
-
-#[derive(Collect)]
-#[collect[no_drop]]
-struct TableKeys<'gc> {
-    table: Table<'gc>,
-    index: usize,
-}
-
-impl<'gc> CallbackFn<'gc> for TableKeys<'gc> {
-    fn call(
-        &mut self,
-        _ctx: Context<'gc>,
-        _args: Vec<Value<'gc>>,
-    ) -> Result<CallbackReturn<'gc>, crate::errors::Error<'gc>> {
-        let t = Ok(CallbackReturn::Return(
-            self.table
-                .get_index(self.index)
-                .map_or(Value::Null, |(k, _)| k),
-        ));
-        self.index += 1;
-        t
-    }
-}
-
-#[derive(Collect)]
-#[collect[no_drop]]
-struct TableValues<'gc> {
-    table: Table<'gc>,
-    index: usize,
-}
-
-impl<'gc> CallbackFn<'gc> for TableValues<'gc> {
-    fn call(
-        &mut self,
-        _ctx: Context<'gc>,
-        _args: Vec<Value<'gc>>,
-    ) -> Result<CallbackReturn<'gc>, crate::errors::Error<'gc>> {
-        let t = Ok(CallbackReturn::Return(
-            self.table
-                .get_index(self.index)
-                .map_or(Value::Null, |(_, v)| v),
-        ));
-        self.index += 1;
-        t
-    }
-}
 
 pub fn table_lib(ctx: Context<'_>) -> Table<'_> {
     let t = Table::new(&ctx);
@@ -60,7 +15,18 @@ pub fn table_lib(ctx: Context<'_>) -> Table<'_> {
         Callback::from_fn(&ctx, |ctx, args| {
             let (t,) = check_args!(args, Table);
             Ok(CallbackReturn::Return(
-                Callback::new(&ctx, TableKeys { table: t, index: 0 }).into(),
+                Callback::from_fn_with(
+                    &ctx,
+                    (t, Gc::new(&ctx, RefLock::new(0usize))),
+                    |(t, i), ctx, _args| {
+                        let mut i = i.borrow_mut(&ctx);
+                        *i += 1;
+                        Ok(CallbackReturn::Return(
+                            t.get_index(*i - 1).map_or(Value::Null, |(k, _)| k),
+                        ))
+                    },
+                )
+                .into(),
             ))
         }),
     );
@@ -70,7 +36,18 @@ pub fn table_lib(ctx: Context<'_>) -> Table<'_> {
         Callback::from_fn(&ctx, |ctx, args| {
             let (t,) = check_args!(args, Table);
             Ok(CallbackReturn::Return(
-                Callback::new(&ctx, TableValues { table: t, index: 0 }).into(),
+                Callback::from_fn_with(
+                    &ctx,
+                    (t, Gc::new(&ctx, RefLock::new(0usize))),
+                    |(t, i), ctx, _args| {
+                        let mut i = i.borrow_mut(&ctx);
+                        *i += 1;
+                        Ok(CallbackReturn::Return(
+                            t.get_index(*i - 1).map_or(Value::Null, |(_, v)| v),
+                        ))
+                    },
+                )
+                .into(),
             ))
         }),
     );
@@ -106,9 +83,7 @@ pub fn table_lib(ctx: Context<'_>) -> Table<'_> {
         "raw_iter",
         Callback::from_fn(&ctx, |ctx, args| {
             let (table,) = check_args!(args, Table,);
-            Ok(CallbackReturn::Return(
-                Callback::new(&ctx, meta_ops::IterTable(table, 0)).into_value(ctx),
-            ))
+            Ok(CallbackReturn::Return(raw_iter(ctx, table).into_value(ctx)))
         }),
     );
     t

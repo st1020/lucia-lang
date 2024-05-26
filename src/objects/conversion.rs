@@ -3,65 +3,134 @@ use smol_str::SmolStr;
 use crate::{
     errors::{Error, ErrorKind},
     objects::{
-        Callback, Closure, Function, Str, Table, TableEntries, TableState, Value, ValueType,
+        Callback, Closure, Function, Str, Table, TableEntries, TableState, UserData, Value,
+        ValueType,
     },
     utils::Float,
     Context,
 };
 
-impl<'gc> From<bool> for Value<'gc> {
-    fn from(v: bool) -> Value<'gc> {
-        Value::Bool(v)
-    }
+pub trait IntoValue<'gc> {
+    fn into_value(self, ctx: Context<'gc>) -> Value<'gc>;
 }
 
-impl<'gc> From<i64> for Value<'gc> {
-    fn from(v: i64) -> Value<'gc> {
-        Value::Int(v)
-    }
+pub trait FromValue<'gc>: Sized {
+    fn from_value(value: Value<'gc>) -> Result<Self, Error<'gc>>;
 }
 
-impl<'gc> From<f64> for Value<'gc> {
-    fn from(v: f64) -> Value<'gc> {
-        Value::Float(v.into())
-    }
+macro_rules! unexpected_type_error {
+    ($expected:expr, $found:expr) => {
+        Error::new(ErrorKind::UnexpectedType {
+            expected: $expected,
+            found: $found.value_type(),
+        })
+    };
 }
 
-impl<'gc> From<Float> for Value<'gc> {
-    fn from(v: Float) -> Value<'gc> {
-        Value::Float(v)
-    }
+macro_rules! impl_base_type {
+    ($([$e:ident $t:ty]),* $(,)?) => {
+        $(
+            impl<'gc> From<$t> for Value<'gc> {
+                fn from(v: $t) -> Value<'gc> {
+                    Value::$e(v)
+                }
+            }
+
+            impl<'gc> IntoValue<'gc> for $t {
+                fn into_value(self, _: Context<'gc>) -> Value<'gc> {
+                    Value::$e(self)
+                }
+            }
+
+            impl<'gc> FromValue<'gc> for $t {
+                fn from_value(value: Value<'gc>) -> Result<Self, Error<'gc>> {
+                    if let Value::$e(v) = value {
+                        Ok(v)
+                    } else {
+                        Err(unexpected_type_error!(ValueType::$e, value))
+                    }
+                }
+            }
+        )*
+    };
+
+    ($([Function $e:ident $t:ty]),* $(,)?) => {
+        $(
+            impl<'gc> From<$t> for Value<'gc> {
+                fn from(v: $t) -> Value<'gc> {
+                    Value::Function(Function::$e(v))
+                }
+            }
+
+            impl<'gc> IntoValue<'gc> for $t {
+                fn into_value(self, _: Context<'gc>) -> Value<'gc> {
+                    Value::Function(Function::$e(self))
+                }
+            }
+
+            impl<'gc> FromValue<'gc> for $t {
+                fn from_value(value: Value<'gc>) -> Result<Self, Error<'gc>> {
+                    if let Value::Function(Function::$e(v)) = value {
+                        Ok(v)
+                    } else {
+                        Err(unexpected_type_error!(ValueType::Function, value))
+                    }
+                }
+            }
+        )*
+    };
+}
+impl_base_type! {
+    [Bool bool],
+    [Int i64],
+    [Float Float],
+    [Str Str<'gc>],
+    [Table Table<'gc>],
+    [Function Function<'gc>],
+    [UserData UserData<'gc>],
+}
+impl_base_type! {
+    [Function Closure Closure<'gc>],
+    [Function Callback Callback<'gc>],
 }
 
-impl<'gc> From<Str<'gc>> for Value<'gc> {
-    fn from(v: Str<'gc>) -> Value<'gc> {
-        Value::Str(v)
-    }
-}
+macro_rules! impl_int_into {
+    ($($i:ty),* $(,)?) => {
+        $(
+            impl<'gc> From<$i> for Value<'gc> {
+                fn from(v: $i) -> Value<'gc> {
+                    Value::Int(v.into())
+                }
+            }
 
-impl<'gc> From<Table<'gc>> for Value<'gc> {
-    fn from(v: Table<'gc>) -> Value<'gc> {
-        Value::Table(v)
-    }
+            impl<'gc> IntoValue<'gc> for $i {
+                fn into_value(self, _: Context<'gc>) -> Value<'gc> {
+                    Value::Int(self.into())
+                }
+            }
+        )*
+    };
 }
+impl_int_into!(i8, u8, i16, u16, i32, u32);
 
-impl<'gc> From<Function<'gc>> for Value<'gc> {
-    fn from(v: Function<'gc>) -> Value<'gc> {
-        Value::Function(v)
-    }
-}
+macro_rules! impl_float_into {
+    ($($i:ty),* $(,)?) => {
+        $(
+            impl<'gc> From<$i> for Value<'gc> {
+                fn from(v: $i) -> Value<'gc> {
+                    Value::Float(Float(v as f64))
+                }
+            }
 
-impl<'gc> From<Closure<'gc>> for Value<'gc> {
-    fn from(v: Closure<'gc>) -> Value<'gc> {
-        Value::Function(Function::Closure(v))
-    }
+            impl<'gc> IntoValue<'gc> for $i {
+                fn into_value(self, _: Context<'gc>) -> Value<'gc> {
+                    Value::Float(Float(self as f64))
+                }
+            }
+        )*
+    };
 }
-
-impl<'gc> From<Callback<'gc>> for Value<'gc> {
-    fn from(v: Callback<'gc>) -> Value<'gc> {
-        Value::Function(Function::Callback(v))
-    }
-}
+impl_float_into!(f32, f64);
 
 impl<'gc, T: Into<Value<'gc>>> From<Option<T>> for Value<'gc> {
     fn from(value: Option<T>) -> Self {
@@ -69,13 +138,30 @@ impl<'gc, T: Into<Value<'gc>>> From<Option<T>> for Value<'gc> {
     }
 }
 
-pub trait IntoValue<'gc> {
-    fn into_value(self, ctx: Context<'gc>) -> Value<'gc>;
+impl<'gc> IntoValue<'gc> for Value<'gc> {
+    fn into_value(self, _: Context<'gc>) -> Value<'gc> {
+        self
+    }
 }
 
-impl<'gc, T: Into<Value<'gc>>> IntoValue<'gc> for T {
-    fn into_value(self, _ctx: Context<'gc>) -> Value<'gc> {
-        self.into()
+impl<'gc, T: IntoValue<'gc>> IntoValue<'gc> for Option<T> {
+    fn into_value(self, ctx: Context<'gc>) -> Value<'gc> {
+        match self {
+            Some(t) => t.into_value(ctx),
+            None => Value::Null,
+        }
+    }
+}
+
+impl<'a, 'gc, T> IntoValue<'gc> for &'a Option<T>
+where
+    &'a T: IntoValue<'gc>,
+{
+    fn into_value(self, ctx: Context<'gc>) -> Value<'gc> {
+        match self {
+            Some(t) => t.into_value(ctx),
+            None => Value::Null,
+        }
     }
 }
 
@@ -141,19 +227,6 @@ impl<'gc, const N: usize, K: IntoValue<'gc>, V: IntoValue<'gc>> IntoValue<'gc> f
     }
 }
 
-macro_rules! unexpected_type_error {
-    ($expected:expr, $found:expr) => {
-        Error::new(ErrorKind::UnexpectedType {
-            expected: $expected,
-            found: $found.value_type(),
-        })
-    };
-}
-
-pub trait FromValue<'gc>: Sized {
-    fn from_value(value: Value<'gc>) -> Result<Self, Error<'gc>>;
-}
-
 impl<'gc> FromValue<'gc> for Value<'gc> {
     fn from_value(value: Value<'gc>) -> Result<Self, Error<'gc>> {
         Ok(value)
@@ -173,7 +246,7 @@ impl<'gc, T: FromValue<'gc>> FromValue<'gc> for Option<T> {
 impl<'gc, T: FromValue<'gc>> FromValue<'gc> for Vec<T> {
     fn from_value(value: Value<'gc>) -> Result<Self, Error<'gc>> {
         if let Value::Table(table) = value {
-            (1..=table.len())
+            (0..=table.len())
                 .map(|i| T::from_value(table.get_index(i).map_or(Value::Null, |x| x.1)))
                 .collect()
         } else {
@@ -201,7 +274,7 @@ macro_rules! impl_int_from {
         )*
     };
 }
-impl_int_from!(i64, u64, i32, u32, i16, u16, i8, u8, isize, usize);
+impl_int_from!(u64, i32, u32, i16, u16, i8, u8, isize, usize);
 
 macro_rules! impl_float_from {
     ($($f:ty),* $(,)?) => {
@@ -219,46 +292,6 @@ macro_rules! impl_float_from {
     };
 }
 impl_float_from!(f32, f64);
-
-macro_rules! impl_from {
-    ($([$e:ident $t:ty]),* $(,)?) => {
-        $(
-            impl<'gc> FromValue<'gc> for $t {
-                fn from_value( value: Value<'gc>) -> Result<Self, Error<'gc>> {
-                    if let Value::$e(v) = value {
-                        Ok(v)
-                    } else {
-                        Err(unexpected_type_error!(ValueType::$e, value))
-                    }
-                }
-            }
-        )*
-    };
-}
-impl_from! {
-    [Bool bool],
-    [Str Str<'gc>],
-    [Table Table<'gc>],
-    [Function Function<'gc>],
-}
-
-impl<'gc> FromValue<'gc> for Closure<'gc> {
-    fn from_value(value: Value<'gc>) -> Result<Self, Error<'gc>> {
-        match value {
-            Value::Function(Function::Closure(c)) => Ok(c),
-            _ => Err(unexpected_type_error!(ValueType::Function, value)),
-        }
-    }
-}
-
-impl<'gc> FromValue<'gc> for Callback<'gc> {
-    fn from_value(value: Value<'gc>) -> Result<Self, Error<'gc>> {
-        match value {
-            Value::Function(Function::Callback(c)) => Ok(c),
-            _ => Err(unexpected_type_error!(ValueType::Function, value)),
-        }
-    }
-}
 
 impl<'gc> From<Value<'gc>> for bool {
     fn from(value: Value) -> Self {

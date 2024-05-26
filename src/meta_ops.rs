@@ -2,12 +2,12 @@
 
 use std::fmt;
 
-use gc_arena::Collect;
+use gc_arena::{lock::RefLock, Collect, Gc};
 use smol_str::ToSmolStr;
 
 use crate::{
     errors::{Error, ErrorKind},
-    objects::{Callback, CallbackFn, CallbackReturn, Function, IntoValue, Str, Table, Value},
+    objects::{Callback, CallbackReturn, Function, IntoValue, Str, Table, Value},
     Context,
 };
 
@@ -119,57 +119,40 @@ pub fn call<'gc>(ctx: Context<'gc>, v: Value<'gc>) -> Result<Function<'gc>, Erro
     }
 }
 
-#[derive(Collect)]
-#[collect(no_drop)]
-pub struct IterTable<'gc>(pub Table<'gc>, pub usize);
-
-impl<'gc> CallbackFn<'gc> for IterTable<'gc> {
-    fn call(
-        &mut self,
-        ctx: Context<'gc>,
-        _args: Vec<Value<'gc>>,
-    ) -> Result<CallbackReturn<'gc>, Error<'gc>> {
-        let t = Ok(CallbackReturn::Return(self.0.get_index(self.1).map_or(
-            Value::Null,
-            |(k, v)| {
-                let t = Table::new(&ctx);
-                t.set(ctx, 0, k);
-                t.set(ctx, 1, v);
-                t.into()
-            },
-        )));
-        self.1 += 1;
-        t
-    }
-}
-
-#[derive(Collect)]
-#[collect(no_drop)]
-pub struct MetaIterTable<'gc>(pub Function<'gc>, pub Value<'gc>);
-
-impl<'gc> CallbackFn<'gc> for MetaIterTable<'gc> {
-    fn call(
-        &mut self,
-        _ctx: Context<'gc>,
-        _args: Vec<Value<'gc>>,
-    ) -> Result<CallbackReturn<'gc>, Error<'gc>> {
-        Ok(CallbackReturn::TailCall(self.0, vec![self.1]))
-    }
+pub fn raw_iter<'gc>(ctx: Context<'gc>, t: Table<'gc>) -> Callback<'gc> {
+    Callback::from_fn_with(
+        &ctx,
+        (t, Gc::new(&ctx, RefLock::new(0usize))),
+        |(t, i), ctx, _args| {
+            let mut i = i.borrow_mut(&ctx);
+            *i += 1;
+            Ok(CallbackReturn::Return(t.get_index(*i - 1).map_or(
+                Value::Null,
+                |(k, v)| {
+                    let t = Table::new(&ctx);
+                    t.set(ctx, 0, k);
+                    t.set(ctx, 1, v);
+                    t.into()
+                },
+            )))
+        },
+    )
 }
 
 pub fn iter<'gc>(ctx: Context<'gc>, v: Value<'gc>) -> Result<Function<'gc>, Error<'gc>> {
     if let Some(metatable) = v.metatable() {
         let t = metatable.get(ctx, MetaMethod::Iter);
         if !t.is_null() {
-            return Ok(Function::Callback(Callback::new(
+            return Ok(Function::Callback(Callback::from_fn_with(
                 &ctx,
-                MetaIterTable(call(ctx, t)?, v),
+                (call(ctx, t)?, v),
+                |(f, v), _ctx, _args| Ok(CallbackReturn::TailCall(*f, vec![*v])),
             )));
         }
     }
 
     match v {
-        Value::Table(v) => Ok(Function::Callback(Callback::new(&ctx, IterTable(v, 0)))),
+        Value::Table(v) => Ok(Function::Callback(raw_iter(ctx, v))),
         Value::Function(v) => Ok(v),
         _ => Err(meta_operator_error!(ctx, MetaMethod::Iter, v)),
     }
