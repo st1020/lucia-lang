@@ -253,27 +253,39 @@ impl<'gc> FramesState<'gc> {
                 }
                 OpCode::JumpPopIfFalse(JumpTarget(i)) => {
                     let tos = frame.stack.pop().unwrap();
-                    if !bool::from(tos) {
-                        frame.pc = i;
-                        continue;
+                    if let Value::Bool(v) = tos {
+                        if !v {
+                            frame.pc = i;
+                            continue;
+                        }
+                    } else {
+                        return Err(operator_error!(code, tos));
                     }
                 }
                 OpCode::JumpIfTrueOrPop(JumpTarget(i)) => {
                     let tos = frame.stack.last().unwrap();
-                    if bool::from(*tos) {
-                        frame.pc = i;
-                        continue;
+                    if let Value::Bool(v) = tos {
+                        if *v {
+                            frame.pc = i;
+                            continue;
+                        } else {
+                            frame.stack.pop().unwrap();
+                        }
                     } else {
-                        frame.stack.pop().unwrap();
+                        return Err(operator_error!(code, tos));
                     }
                 }
                 OpCode::JumpIfFalseOrPop(JumpTarget(i)) => {
                     let tos = frame.stack.last().unwrap();
-                    if !bool::from(*tos) {
-                        frame.pc = i;
-                        continue;
+                    if let Value::Bool(v) = tos {
+                        if !*v {
+                            frame.pc = i;
+                            continue;
+                        } else {
+                            frame.stack.pop().unwrap();
+                        }
                     } else {
-                        frame.stack.pop().unwrap();
+                        return Err(operator_error!(code, tos));
                     }
                 }
                 OpCode::Call(i) => {

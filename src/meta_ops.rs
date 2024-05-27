@@ -343,6 +343,8 @@ pub fn bool<'gc>(ctx: Context<'gc>, v: Value<'gc>) -> Result<MetaResult<'gc, 1>,
         Value::Bool(v) => Ok(MetaResult::Value(v.into())),
         Value::Int(v) => Ok(MetaResult::Value((v != 0).into())),
         Value::Float(v) => Ok(MetaResult::Value((v.0 != 0.0).into())),
+        Value::Str(v) => Ok(MetaResult::Value((!v.is_empty()).into())),
+        Value::Table(v) => Ok(MetaResult::Value((!v.is_empty()).into())),
         _ => Ok(MetaResult::Value(true.into())),
     }
 }

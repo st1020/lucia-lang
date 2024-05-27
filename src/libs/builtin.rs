@@ -24,13 +24,13 @@ pub fn load_builtin<'gc>(ctx: Context<'gc>) {
     builtins.set(
         ctx,
         "assert",
-        Callback::from_fn(&ctx, |v: Value<'gc>, msg: Varargs<'gc>| {
-            if !(bool::from(v)) {
+        Callback::from_fn(&ctx, |v: bool, msg: Varargs<'gc>| {
+            if !v {
                 Err(Error::new(ErrorKind::AssertError(
                     *msg.first().unwrap_or(&Value::Null),
                 )))
             } else {
-                Ok(CallbackReturn::Return(v))
+                Ok(v)
             }
         }),
     );

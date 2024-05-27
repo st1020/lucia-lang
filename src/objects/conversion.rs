@@ -304,15 +304,3 @@ macro_rules! impl_float_from {
     };
 }
 impl_float_from!(f32, f64);
-
-impl<'gc> From<Value<'gc>> for bool {
-    fn from(value: Value) -> Self {
-        match value {
-            Value::Null => false,
-            Value::Bool(v) => v,
-            Value::Int(v) => v != 0,
-            Value::Float(v) => v.0 != 0.0,
-            _ => true,
-        }
-    }
-}
