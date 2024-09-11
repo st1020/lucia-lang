@@ -1,0 +1,281 @@
+// Lucia Un-Grammar.
+//
+// Legend:
+//
+//   //          -- comment
+//   Name =      -- non-terminal definition
+//   'ident'     -- keyword or punct token (terminal)
+//   '#ident'    -- generic token (terminal)
+//   '@ident'    -- literal token (terminal)
+//   A B         -- sequence
+//   A | B       -- alternation
+//   A*          -- zero or more repetition
+//   A?          -- zero or one repetition
+//   (A)         -- same as A
+//   label:A     -- suggested name for field of AST node
+
+Root =
+  Stmt*
+
+Stmt =
+  Block
+| IfStmt
+| LoopStmt
+| WhileStmt
+| ForStmt
+| BreakStmt
+| ContinueStmt
+| ReturnStmt
+| ThrowStmt
+| GlobalStmt
+| ImportStmt
+| FnStmt
+| AssignStmt
+| AssignOpStmt
+| AssignUnpackStmt
+| AssignMultiStmt
+| Expr
+
+Block =
+  '{'
+    Stmt*
+  '}'
+
+IfStmt =
+  'if' condition:Expr then_branch:Block
+  ('else' else_branch:ElseBranch)?
+
+ElseBranch =
+  IfStmt
+| Block
+
+LoopStmt =
+  'loop'
+  loop_body:Block
+
+WhileStmt =
+  'while' condition:Expr
+  loop_body:Block
+
+ForStmt =
+  'for' target:(Name (',' Name)*) 'in' iterable:Expr
+  loop_body:Block
+
+BreakStmt =
+  'break'
+
+ContinueStmt =
+  'continue'
+
+ReturnStmt =
+  'return' Expr
+
+ThrowStmt =
+  'throw' Expr
+
+GlobalStmt =
+  'global' arguments:(TypedName (',' TypedName)*)
+
+ImportStmt =
+  'import' PackagePath ImportKind?
+
+PackagePath =
+  Name ('::' Name)*
+
+ImportKind =
+  GlobImport
+| AliasImport
+| NestedImport
+
+GlobImport =
+  '::' '*'
+
+AliasImport =
+  'as' alias:Name
+
+NestedImport =
+  '::' '{' items:(ImportItem (',' ImportItem)* ','?) '}'
+
+ImportItem =
+  Name ('as' alias:Name)?
+
+FnStmt =
+  'fn' name:Name '(' params:Param* ')' RetType?
+  body:Block
+
+Param =
+  '*'? TypedName ','?
+
+AssignStmt =
+  left:AssignLeft (':' Type)? '=' right:Expr
+
+AssignOpStmt =
+  left:AssignLeft
+  op:AssignOp
+  right:Expr
+
+AssignOp =
+  '=' | '+=' | '-=' | '*=' | '/=' | '%='
+
+AssignUnpackStmt =
+  left:AssignLeft* '=' right:Expr
+
+AssignMultiStmt =
+  left:(AssignLeft (',' AssignLeft)* ','?) '=' right:(Expr (',' Expr)* ','?)
+
+AssignLeft =
+  Name
+| MemberItemExpr
+| MemberAttrExpr
+
+Expr =
+  BinaryExpr
+| UnaryExpr
+| CallExpr
+| MemberItemExpr
+| MemberAttrExpr
+| ParenExpr
+| TableExpr
+| ListExpr
+| FnExpr
+| ClosureExpr
+| DoExpr
+| TryExpr
+| LiteralExpr
+| Name
+
+BinaryExpr =
+  left:Expr
+  op:BinaryOp
+  right:Expr
+
+BinaryOp =
+  'is' | 'and' | 'or'
+| '==' | '!=' | '<=' | '>=' | '<' | '>'
+| '+' | '-' | '*' | '/' | '%'
+
+UnaryExpr =
+  op:UnaryOp Expr
+
+UnaryOp =
+  '-' | 'not'
+
+CallExpr =
+  callee:Expr '(' arguments:(Expr (',' Expr)* ','?)? ')'
+
+MemberItemExpr =
+  table:Expr kind:MemberItem property:MemberItemProperty ']'
+
+MemberItem =
+  '[' | '?['
+
+MemberItemProperty =
+  Expr | '#'
+
+MemberAttrExpr =
+  table:Expr kind:MemberAttrKind property:MemberAttrProperty
+
+MemberAttrKind =
+  '.' | '?.' | '::'
+
+MemberAttrProperty =
+  Name | '#'
+
+ParenExpr =
+  '(' Expr ')'
+
+TableExpr =
+  '{' TableItem* '}'
+
+TableItem =
+  key:Expr ':' value:Expr ','?
+
+ListExpr =
+  '[' ListItem* ']'
+
+ListItem =
+  Expr ','?
+
+FnExpr =
+  'fn' '(' params:Param* ')' RetType?
+  body:Block
+
+ClosureExpr =
+  '|' params:Param* '|' RetType?
+  body:Block
+
+DoExpr =
+  'do'
+  body:Block
+
+TryExpr =
+  'try' TryKind? CallExpr
+
+TryKind =
+  '?' | '!'
+
+LiteralExpr = Literal
+
+Literal =
+  'null'
+| 'true'
+| 'false'
+| '@int'
+| '@float'
+| '@str'
+| '@raw_str'
+
+Name =
+  '#ident'
+
+TypedName =
+  Name (':' Type)?
+
+Type = AtomType ('|' AtomType)*
+
+// AtomType =
+//   'never'
+// | 'any'
+// | 'null'
+// | 'bool'
+// | 'int'
+// | 'float'
+// | 'str'
+// | Literal
+// | TableType
+// | FnType
+// | ParenType
+
+AtomType =
+  Name
+| Literal
+| TableType
+| FnType
+| ParenType
+
+TableType = 
+  '{' TableTypeItem* TableOtherTypeItem? '}'
+
+TableTypeItem =
+  key:Type ':' value:Type ','?
+
+TableOtherTypeItem =
+  '[' key:Type ']' ':' value:Type ','?
+
+FnType =
+  'fn' '(' params:FnTypeParam* ')' RetType?
+
+FnTypeParam =
+  '*'? Type ','?
+
+RetType =
+  ret:ReturnType? throw:ThrowType? 
+
+ReturnType =
+  '->' Type
+
+ThrowType =
+  'throw' Type
+
+ParenType =
+  '(' Type ')'

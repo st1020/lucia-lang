@@ -27,6 +27,7 @@
 //! ```
 
 pub mod compiler;
+pub mod compiler_new;
 pub mod context;
 pub mod errors;
 pub mod frame;

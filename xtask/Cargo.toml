@@ -1,0 +1,11 @@
+[package]
+name = "xtask"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+xshell = "0.2"
+proc-macro2 = "1.0"
+quote = "1.0"
+ungrammar = "1.16"
+itertools = "0.13"
