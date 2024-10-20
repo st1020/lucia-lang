@@ -1,18 +1,10 @@
 //! The lexer.
 
-use std::{
-    fmt,
-    num::{ParseFloatError, ParseIntError},
-    str::Chars,
-};
+use std::str::Chars;
 
-use thiserror::Error;
-use unicode_ident;
-
-use crate::utils::Location;
+use text_size::{TextRange, TextSize};
 
 use super::token::{
-    LiteralKind::*,
     Token,
     TokenKind::{self, *},
 };
@@ -22,11 +14,10 @@ use super::token::{
 /// Next characters can be peeked via `first` method,
 /// and position can be shifted forward via `bump` method.
 struct Cursor<'a> {
-    initial_len: usize,
+    /// The input string.
+    input: &'a str,
     /// Iterator over chars. Slightly faster than a &str.
     chars: Chars<'a>,
-    lineno: u32,
-    column: u32,
     #[cfg(debug_assertions)]
     prev: char,
 }
@@ -36,10 +27,8 @@ const EOF_CHAR: char = '\0';
 impl<'a> Cursor<'a> {
     fn new(input: &'a str) -> Cursor<'a> {
         Cursor {
-            initial_len: input.len(),
+            input,
             chars: input.chars(),
-            lineno: 1,
-            column: 1,
             #[cfg(debug_assertions)]
             prev: EOF_CHAR,
         }
@@ -68,20 +57,27 @@ impl<'a> Cursor<'a> {
         self.chars.clone().next().unwrap_or(EOF_CHAR)
     }
 
+    /// Peeks the second symbol from the input stream without consuming it.
+    fn second(&self) -> char {
+        // `.next()` optimizes better than `.nth(1)`
+        let mut iter = self.chars.clone();
+        iter.next();
+        iter.next().unwrap_or(EOF_CHAR)
+    }
+
     /// Checks if there is nothing more to consume.
     fn is_eof(&self) -> bool {
         self.chars.as_str().is_empty()
     }
 
+    /// Returns position of cursor.
+    pub(crate) fn pos(&self) -> TextSize {
+        TextSize::try_from(self.input.len() - self.chars.as_str().len()).unwrap()
+    }
+
     /// Moves to the next character.
     fn bump(&mut self) -> Option<char> {
         let c = self.chars.next()?;
-
-        if c == '\n' {
-            self.lineno += 1;
-            self.column = 0;
-        }
-        self.column += 1;
 
         #[cfg(debug_assertions)]
         {
@@ -91,12 +87,13 @@ impl<'a> Cursor<'a> {
         Some(c)
     }
 
-    /// Gets current location
-    fn location(&self) -> Location {
-        Location {
-            lineno: self.lineno,
-            column: self.column,
-            offset: (self.initial_len - self.chars.as_str().len()) as u32,
+    /// Eats `c` if it matches.
+    fn eat(&mut self, c: char) -> bool {
+        if self.first() == c {
+            self.bump();
+            true
+        } else {
+            false
         }
     }
 
@@ -108,41 +105,22 @@ impl<'a> Cursor<'a> {
     }
 }
 
-/// Base of numeric literal encoding according to its prefix.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Base {
-    /// Literal starts with "0b".
-    Binary,
-    /// Literal starts with "0o".
-    Octal,
-    /// Literal starts with "0x".
-    Hexadecimal,
-    /// Literal doesn't contain a prefix.
-    Decimal,
-}
-
 /// Creates an iterator that produces tokens from the input string.
 pub fn tokenize(input: &str) -> impl Iterator<Item = Token> + '_ {
     let mut cursor = Cursor::new(input);
-    std::iter::from_fn(move || loop {
-        if cursor.is_eof() {
-            break Some(Token::new(
-                TokenKind::EOF,
-                cursor.location(),
-                cursor.location(),
-            ));
+    std::iter::from_fn(move || {
+        let token = cursor.advance_token();
+        if token.kind != TokenKind::Eof {
+            Some(token)
         } else {
-            let t = cursor.advance_token();
-            if t.kind != Whitespace {
-                break Some(t);
-            }
+            None
         }
     })
 }
 
-/// True if `c` is considered a whitespace according to Rust language definition.
+/// True if `c` is considered a whitespace according to Lucia language definition.
 pub fn is_whitespace(c: char) -> bool {
-    // This is Pattern_White_Space.
+    // This is Pattern_White_Space except '\n'.
     //
     // Note that this set is stable (ie, it doesn't change with different
     // Unicode versions), so it's ok to just hard-code the values.
@@ -190,12 +168,28 @@ pub fn is_ident(string: &str) -> bool {
     }
 }
 
-impl Cursor<'_> {
+/// Base of numeric literal encoding according to its prefix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Base {
+    /// Literal starts with "0b".
+    Binary,
+    /// Literal starts with "0o".
+    Octal,
+    /// Literal starts with "0x".
+    Hexadecimal,
+    /// Literal doesn't contain a prefix.
+    Decimal,
+}
+
+impl<'a> Cursor<'a> {
+    /// Parses a token from the input string.
     pub fn advance_token(&mut self) -> Token {
-        let start = self.location();
-        let first_char = self.bump().unwrap_or(EOF_CHAR);
+        let start = self.pos();
+        let Some(first_char) = self.bump() else {
+            return Token::new(TokenKind::Eof, TextRange::empty(start));
+        };
         let token_kind = match first_char {
-            // Slash, comment or block comment.
+            // Div, DivAssign, comment or block comment.
             '/' => match self.first() {
                 '/' => self.line_comment(),
                 '*' => self.block_comment(),
@@ -206,6 +200,7 @@ impl Cursor<'_> {
                 _ => Div,
             },
 
+            // Sub, SubAssign or Arrow.
             '-' => match self.first() {
                 '>' => {
                     self.bump();
@@ -219,20 +214,16 @@ impl Cursor<'_> {
             },
 
             // Whitespace sequence.
-            c if is_whitespace(c) => {
-                self.eat_while(is_whitespace);
-                Whitespace
-            }
+            c if is_whitespace(c) => self.whitespace(),
 
-            // Raw identifier, raw string literal or identifier.
+            // Raw string.
             'r' => match self.first() {
                 c @ ('"' | '\'') => self.string(c, true),
-                _ => self.ident_or_reserved_word('r'),
+                _ => self.ident_or_keyword(start),
             },
 
-            // Identifier (this should be checked after other variant that can
-            // start as identifier).
-            c if is_id_start(c) => self.ident_or_reserved_word(c),
+            // Identifier or keyword.
+            c if is_id_start(c) => self.ident_or_keyword(start),
 
             // Numeric literal.
             c @ '0'..='9' => self.number(c),
@@ -241,45 +232,18 @@ impl Cursor<'_> {
             c @ ('"' | '\'') => self.string(c, false),
 
             // Two-char tokens.
-            ':' if self.first() == ':' => {
-                self.bump();
-                DoubleColon
-            }
-            '=' if self.first() == '=' => {
-                self.bump();
-                Eq
-            }
-            '!' if self.first() == '=' => {
-                self.bump();
-                NotEq
-            }
-            '<' if self.first() == '=' => {
-                self.bump();
-                LtEq
-            }
-            '>' if self.first() == '=' => {
-                self.bump();
-                GtEq
-            }
-            '+' if self.first() == '=' => {
-                self.bump();
-                AddAssign
-            }
-            '*' if self.first() == '=' => {
-                self.bump();
-                MulAssign
-            }
-            '%' if self.first() == '=' => {
-                self.bump();
-                RemAssign
-            }
+            ':' if self.eat(':') => DoubleColon,
+            '=' if self.eat('=') => Eq,
+            '!' if self.eat('=') => NotEq,
+            '<' if self.eat('=') => LtEq,
+            '>' if self.eat('=') => GtEq,
+            '+' if self.eat('=') => AddAssign,
+            '*' if self.eat('=') => MulAssign,
+            '%' if self.eat('=') => RemAssign,
 
             // One-symbol tokens.
             '\n' => self.eol(),
-            '\\' if self.first() == '\n' => {
-                self.bump();
-                Whitespace
-            }
+            '\\' if self.eat('\n') => Whitespace,
             ',' => Comma,
             '.' => Dot,
             '(' => OpenParen,
@@ -299,46 +263,38 @@ impl Cursor<'_> {
             '+' => Add,
             '*' => Mul,
             '%' => Rem,
-            c => Unknown(c),
+
+            // Unknown character.
+            _ => Unknown,
         };
-        Token::new(token_kind, start, self.location())
+        let end = self.pos();
+        Token::new(token_kind, TextRange::new(start, end))
     }
 
     fn eol(&mut self) -> TokenKind {
         debug_assert!(self.prev() == '\n');
         self.eat_while(|c| c == '\n');
-        EOL
+        Eol
     }
 
     fn line_comment(&mut self) -> TokenKind {
         debug_assert!(self.prev() == '/' && self.first() == '/');
         self.bump();
-        let mut v = String::new();
-        loop {
-            let c = self.first();
-            if c == '\n' || self.is_eof() {
-                break;
-            }
-            v.push(c);
-            self.bump();
-        }
-        LineComment(v.into())
+        self.eat_while(|c| c != '\n');
+        LineComment
     }
 
     fn block_comment(&mut self) -> TokenKind {
         debug_assert!(self.prev() == '/' && self.first() == '*');
         self.bump();
-        let mut v = String::new();
+
         let mut depth = 1usize;
         while let Some(c) = self.bump() {
-            v.push(c);
             match c {
-                '/' if self.first() == '*' => {
-                    self.bump();
+                '/' if self.eat('*') => {
                     depth += 1;
                 }
-                '*' if self.first() == '/' => {
-                    self.bump();
+                '*' if self.eat('/') => {
                     depth -= 1;
                     if depth == 0 {
                         // This block comment is closed, so for a construction like "/* */ */"
@@ -350,24 +306,32 @@ impl Cursor<'_> {
                 _ => (),
             }
         }
-        v.truncate(v.len() - 1);
-        BlockComment(v.into())
+
+        if depth == 0 {
+            BlockComment
+        } else {
+            UnterminatedBlockComment
+        }
     }
 
-    fn ident_or_reserved_word(&mut self, first_char: char) -> TokenKind {
+    fn whitespace(&mut self) -> TokenKind {
+        debug_assert!(is_whitespace(self.prev()));
+        self.eat_while(is_whitespace);
+        Whitespace
+    }
+
+    fn ident_or_keyword(&mut self, start: TextSize) -> TokenKind {
         debug_assert!(is_id_start(self.prev()));
-        let mut value = String::from(first_char);
         loop {
             let c = self.first();
-            if is_id_continue(c) {
-                value.push(c);
-            } else {
+            if !is_id_continue(c) {
                 break;
             }
             self.bump();
         }
 
-        match value.as_str() {
+        let range = TextRange::new(start, self.pos());
+        match &self.input[range] {
             "if" => If,
             "else" => Else,
             "loop" => Loop,
@@ -391,105 +355,94 @@ impl Cursor<'_> {
             "null" => Null,
             "true" => True,
             "false" => False,
-            _ => Ident(value.into()),
+            _ => Ident,
         }
     }
 
     fn number(&mut self, first_digit: char) -> TokenKind {
         debug_assert!('0' <= self.prev() && self.prev() <= '9');
         let mut base = Base::Decimal;
-        let mut value = String::new();
-        let mut has_point = false;
-        let mut has_exponent = false;
         if first_digit == '0' {
             // Attempt to parse encoding base.
             match self.first() {
                 'b' => {
                     base = Base::Binary;
                     self.bump();
+                    if !self.eat_decimal_digits() {
+                        return EmptyInt;
+                    }
                 }
                 'o' => {
                     base = Base::Octal;
                     self.bump();
+                    if !self.eat_decimal_digits() {
+                        return EmptyInt;
+                    }
                 }
                 'x' => {
                     base = Base::Hexadecimal;
                     self.bump();
+                    if !self.eat_hexadecimal_digits() {
+                        return EmptyInt;
+                    }
                 }
-                // Not a base prefix.
-                '0'..='9' | '_' | '.' | 'e' | 'E' => {
-                    base = Base::Decimal;
-                    value.push('0');
+                // Not a base prefix; consume additional digits.
+                '0'..='9' | '_' => {
+                    self.eat_decimal_digits();
                 }
+
+                // Also not a base prefix; nothing more to do here.
+                '.' | 'e' | 'E' => {}
+
                 // Just a 0.
-                _ => return Literal(Ok(Int(0))),
-            };
-        } else {
-            value.push(first_digit);
-        }
-        loop {
-            let t = self.first();
-            match t {
-                '_' => {
-                    self.bump();
-                    continue;
-                }
-                '.' if base == Base::Decimal => {
-                    if has_point {
-                        return Literal(Err(LexerError::NumberFormatError));
-                    }
-                    has_point = true;
-                }
-                'e' | 'E' if base == Base::Decimal => {
-                    if has_exponent {
-                        return Literal(Err(LexerError::NumberFormatError));
-                    }
-                    has_exponent = true;
-
-                    value.push(t);
-                    self.bump();
-
-                    let first_char_after_exponent = self.first();
-                    if first_char_after_exponent == '+' || first_char_after_exponent == '-' {
-                        value.push(first_char_after_exponent);
-                        self.bump();
-                    }
-
-                    continue;
-                }
-                '0'..='1' if base == Base::Binary => {}
-                '0'..='7' if base == Base::Octal => {}
-                '0'..='9' if base == Base::Decimal => {}
-                '0'..='9' | 'a'..='f' | 'A'..='F' if base == Base::Hexadecimal => {}
-                _ => break,
-            }
-            value.push(t);
-            self.bump();
-        }
-
-        if has_point || has_exponent {
-            // only support decimal float literal
-            if base != Base::Decimal {
-                Literal(Err(LexerError::NumberFormatError))
-            } else {
-                match value.parse::<f64>() {
-                    Ok(v) => Literal(Ok(Float(v))),
-                    Err(e) => Literal(Err(LexerError::ParseFloatError(e))),
+                _ => {
+                    return Int;
                 }
             }
         } else {
-            match i64::from_str_radix(
-                &value,
-                match base {
-                    Base::Binary => 2,
-                    Base::Octal => 8,
-                    Base::Hexadecimal => 16,
-                    Base::Decimal => 10,
-                },
-            ) {
-                Ok(v) => Literal(Ok(Int(v))),
-                Err(e) => Literal(Err(LexerError::ParseIntError(e))),
+            // No base prefix, parse number in the usual way.
+            self.eat_decimal_digits();
+        };
+
+        match self.first() {
+            // Don't be greedy if this is actually an
+            // integer literal followed by field/method access or a range pattern
+            // (`0..2` and `12.foo()`)
+            '.' if self.second() != '.' && !is_id_start(self.second()) => {
+                // might have stuff after the ., and if it does, it needs to start
+                // with a number
+                self.bump();
+                let mut empty_exponent = false;
+                if self.first().is_ascii_digit() {
+                    self.eat_decimal_digits();
+                    match self.first() {
+                        'e' | 'E' => {
+                            self.bump();
+                            empty_exponent = !self.eat_float_exponent();
+                        }
+                        _ => (),
+                    }
+                }
+                if empty_exponent {
+                    EmptyExponentFloat
+                } else if base != Base::Decimal {
+                    NonDecimalFloat
+                } else {
+                    Float
+                }
             }
+            'e' | 'E' => {
+                self.bump();
+                let empty_exponent = !self.eat_float_exponent();
+                if empty_exponent {
+                    EmptyExponentFloat
+                } else if base != Base::Decimal {
+                    NonDecimalFloat
+                } else {
+                    Float
+                }
+            }
+            _ => Int,
         }
     }
 
@@ -499,218 +452,60 @@ impl Cursor<'_> {
             self.bump();
         }
         debug_assert!(self.prev() == '"' || self.prev() == '\'');
-        let mut value = String::new();
-        loop {
-            if let Some(c) = self.bump() {
-                let t = match c {
-                    _ if c == quoted => break,
-                    '\\' if !is_raw => match self.first() {
-                        '\n' => {
-                            self.bump();
-                            continue;
-                        }
-                        _ => self.scan_escape(),
-                    },
-                    '\r' => Err(EscapeError::BareCarriageReturn),
-                    _ => Ok(c),
-                };
-                match t {
-                    Ok(c) => value.push(c),
-                    Err(e) => return Literal(Err(LexerError::EscapeError(e))),
-                }
-            } else {
-                return Literal(Err(LexerError::UnterminatedStringError));
+        while let Some(c) = self.bump() {
+            if c == quoted {
+                return if is_raw { RawStr } else { Str };
+            }
+            if !is_raw && c == '\\' && matches!(self.first(), '\\' | '"' | '\'') {
+                // Bump again to skip escaped character.
+                self.bump();
             }
         }
-        Literal(Ok(Str(value.into())))
+        // End of file reached.
+        UnterminatedStr
     }
 
-    fn scan_escape(&mut self) -> std::result::Result<char, EscapeError> {
-        debug_assert!(self.prev() == '\\');
-        // Previous character was '\\', unescape what follows.
-        let res = match self.bump().unwrap_or(EOF_CHAR) {
-            '"' => '"',
-            'n' => '\n',
-            'r' => '\r',
-            't' => '\t',
-            '\\' => '\\',
-            '\'' => '\'',
-            '0' => '\0',
-
-            'x' => {
-                // Parse hexadecimal character code.
-
-                let hi = self.bump().ok_or(EscapeError::TooShortHexEscape)?;
-                let hi = hi.to_digit(16).ok_or(EscapeError::InvalidCharInHexEscape)?;
-
-                let lo = self.bump().ok_or(EscapeError::TooShortHexEscape)?;
-                let lo = lo.to_digit(16).ok_or(EscapeError::InvalidCharInHexEscape)?;
-
-                let value = hi * 16 + lo;
-
-                // Verify that it is within ASCII range.
-                if value > 0x7F {
-                    return Err(EscapeError::OutOfRangeHexEscape);
+    fn eat_decimal_digits(&mut self) -> bool {
+        let mut has_digits = false;
+        loop {
+            match self.first() {
+                '_' => {
+                    self.bump();
                 }
-                let value = value as u8;
-
-                value as char
-            }
-
-            'u' => {
-                // We've parsed '\u', now we have to parse '{..}'.
-
-                if self.bump() != Some('{') {
-                    return Err(EscapeError::NoBraceInUnicodeEscape);
+                '0'..='9' => {
+                    has_digits = true;
+                    self.bump();
                 }
+                _ => break,
+            }
+        }
+        has_digits
+    }
 
-                // First character must be a hexadecimal digit.
-                let mut n_digits = 1;
-                let mut value: u32 = match self.bump().ok_or(EscapeError::UnclosedUnicodeEscape)? {
-                    '_' => return Err(EscapeError::LeadingUnderscoreUnicodeEscape),
-                    '}' => return Err(EscapeError::EmptyUnicodeEscape),
-                    c => c
-                        .to_digit(16)
-                        .ok_or(EscapeError::InvalidCharInUnicodeEscape)?,
-                };
-
-                // First character is valid, now parse the rest of the number
-                // and closing brace.
-                loop {
-                    match self.bump() {
-                        None => return Err(EscapeError::UnclosedUnicodeEscape),
-                        Some('_') => continue,
-                        Some('}') => {
-                            if n_digits > 6 {
-                                return Err(EscapeError::OverlongUnicodeEscape);
-                            }
-
-                            break std::char::from_u32(value).ok_or({
-                                if value > 0x10FFFF {
-                                    EscapeError::OutOfRangeUnicodeEscape
-                                } else {
-                                    EscapeError::LoneSurrogateUnicodeEscape
-                                }
-                            })?;
-                        }
-                        Some(c) => {
-                            let digit: u32 = c
-                                .to_digit(16)
-                                .ok_or(EscapeError::InvalidCharInUnicodeEscape)?;
-                            n_digits += 1;
-                            if n_digits > 6 {
-                                // Stop updating value since we're sure that it's incorrect already.
-                                continue;
-                            }
-                            value = value * 16 + digit;
-                        }
-                    };
+    fn eat_hexadecimal_digits(&mut self) -> bool {
+        let mut has_digits = false;
+        loop {
+            match self.first() {
+                '_' => {
+                    self.bump();
                 }
+                '0'..='9' | 'a'..='f' | 'A'..='F' => {
+                    has_digits = true;
+                    self.bump();
+                }
+                _ => break,
             }
-            _ => return Err(EscapeError::InvalidEscape),
-        };
-        Ok(res)
-    }
-}
-
-/// Kind of LexerError.
-#[derive(Error, Debug, Clone, PartialEq)]
-pub enum LexerError {
-    #[error("parse int error ({0})")]
-    ParseIntError(#[from] ParseIntError),
-    #[error("parse float error ({0})")]
-    ParseFloatError(#[from] ParseFloatError),
-    #[error("number format error")]
-    NumberFormatError,
-    #[error("unterminated string error")]
-    UnterminatedStringError,
-    #[error("escape error ({0})")]
-    EscapeError(#[from] EscapeError),
-}
-
-/// Errors and warnings that can occur during string unescaping.
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
-pub enum EscapeError {
-    /// Invalid escape character (e.g. '\z').
-    InvalidEscape,
-    /// Raw '\r' encountered.
-    BareCarriageReturn,
-
-    /// Numeric character escape is too short (e.g. '\x1').
-    TooShortHexEscape,
-    /// Invalid character in numeric escape (e.g. '\xz')
-    InvalidCharInHexEscape,
-    /// Character code in numeric escape is non-ascii (e.g. '\xFF').
-    OutOfRangeHexEscape,
-
-    /// '\u' not followed by '{'.
-    NoBraceInUnicodeEscape,
-    /// Non-hexadecimal value in '\u{..}'.
-    InvalidCharInUnicodeEscape,
-    /// '\u{}'
-    EmptyUnicodeEscape,
-    /// No closing brace in '\u{..}', e.g. '\u{12'.
-    UnclosedUnicodeEscape,
-    /// '\u{_12}'
-    LeadingUnderscoreUnicodeEscape,
-    /// More than 6 characters in '\u{..}', e.g. '\u{10FFFF_FF}'
-    OverlongUnicodeEscape,
-    /// Invalid in-bound unicode character code, e.g. '\u{DFFF}'.
-    LoneSurrogateUnicodeEscape,
-    /// Out of bounds unicode character code, e.g. '\u{FFFFFF}'.
-    OutOfRangeUnicodeEscape,
-}
-
-impl fmt::Display for EscapeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        fmt::Debug::fmt(self, f)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    macro_rules! check_first_literal_token {
-        ($input:expr, $value:expr $(,)?) => {
-            if let TokenKind::Literal(Ok(literal_kind)) = tokenize($input).next().unwrap().kind {
-                assert_eq!(literal_kind, $value.into())
-            } else {
-                panic!("first token not a literal")
-            }
-        };
+        }
+        has_digits
     }
 
-    #[test]
-    fn test_string_escape() {
-        check_first_literal_token!(r#" "\"" "#, "\"");
-        check_first_literal_token!(r#" "\n" "#, "\n");
-        check_first_literal_token!(r#" "\r" "#, "\r");
-        check_first_literal_token!(r#" "\t" "#, "\t");
-        check_first_literal_token!(r#" "\\" "#, "\\");
-        check_first_literal_token!(r#" "\'" "#, "\'");
-        check_first_literal_token!(r#" "\0" "#, "\0");
-        check_first_literal_token!(r#" "\x21" "#, "!"); // ASCII 0x21 is "!"
-        check_first_literal_token!(r#" "\u{4F60}\u{597D}\u{2764}" "#, "你好❤");
-    }
-
-    #[test]
-    fn test_number_int() {
-        check_first_literal_token!("0", 0);
-        check_first_literal_token!("1", 1);
-        check_first_literal_token!("100_000_000", 100_000_000);
-        check_first_literal_token!("0b1010", 10);
-        check_first_literal_token!("0o1010", 520);
-        check_first_literal_token!("0xABCD", 43981);
-    }
-
-    #[test]
-    fn test_number_float() {
-        check_first_literal_token!("0.0", 0.);
-        check_first_literal_token!("1.0", 1.);
-        check_first_literal_token!("1.0001", 1.0001);
-        check_first_literal_token!("1.2e2", 120.);
-        check_first_literal_token!("1.2E2", 120.);
-        check_first_literal_token!("12e1", 120.);
+    /// Eats the float exponent. Returns true if at least one digit was met,
+    /// and returns false otherwise.
+    fn eat_float_exponent(&mut self) -> bool {
+        debug_assert!(self.prev() == 'e' || self.prev() == 'E');
+        if self.first() == '-' || self.first() == '+' {
+            self.bump();
+        }
+        self.eat_decimal_digits()
     }
 }

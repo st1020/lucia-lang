@@ -1,9 +1,8 @@
-use lucia_lang::compiler::{analyzer::analyze, lexer::tokenize, parser::parse};
+use lucia_lang::compiler::{check_type, compile};
 
 #[test]
 fn test_type_hint() {
     let input = r#"
-// type-check: on
 t1: int? = 1
 t2: int | str = 1
 t3: any | int = 1
@@ -15,37 +14,31 @@ t8: {a: int, b: str} = {'a': 1, 'b': '1'}
 t9: {[int]: str} = ['test', 'test']
 t10: {a: int, b: str, [int]: str} = {'a': 1, 'b': '1', 0: 'test'}
 "#;
-    let ast = parse(&mut tokenize(input)).unwrap();
-    println!("{}", ast);
-
-    let functions = analyze(ast).unwrap();
-    for (name, t) in &functions[0].local_names {
-        if let Some(t) = t {
-            println!("{name}: {t}");
-        }
-    }
+    let (parse_error, type_error) = check_type(input);
+    assert_eq!(parse_error.len(), 0);
+    assert_eq!(type_error.len(), 0);
 }
 
 #[test]
 fn test_type_hint_error() {
     let input = r#"
-// type-check: on
 t1: int = ""
 "#;
-    let parse_error = analyze(parse(&mut tokenize(input)).unwrap()).err().unwrap();
-    assert_eq!(parse_error.len(), 1);
+    let (parse_error, type_error) = check_type(input);
+    assert_eq!(parse_error.len(), 0);
+    assert_eq!(type_error.len(), 1);
 }
 
 #[test]
 fn test_type_check_error() {
     let input = r#"
-// type-check: on
 t1: int = "" // error
 t2: int = 1 // ok
 t3: int = 0.1 // error
 "#;
-    let parse_error = analyze(parse(&mut tokenize(input)).unwrap()).err().unwrap();
-    assert_eq!(parse_error.len(), 2);
+    let (parse_error, type_error) = check_type(input);
+    assert_eq!(parse_error.len(), 0);
+    assert_eq!(type_error.len(), 2);
 }
 
 #[test]
@@ -57,6 +50,6 @@ println(1 + 1)
 
 1 -
 "#;
-    let parse_error = parse(&mut tokenize(input)).err().unwrap();
+    let parse_error = compile(input).unwrap_err();
     assert_eq!(parse_error.len(), 2);
 }

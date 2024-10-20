@@ -5,11 +5,11 @@ use std::fmt;
 use gc_arena::Collect;
 
 /// The jump target.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct JumpTarget(pub usize);
 
 /// The operation code.
-#[derive(Debug, Clone, Copy, Collect, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, Collect, PartialEq, Eq, Hash)]
 #[collect(require_static)]
 pub enum OpCode {
     /// Removes the top-of-stack (TOS) item.
@@ -121,24 +121,24 @@ pub enum OpCode {
 }
 
 impl fmt::Display for OpCode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let width = 20;
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        const WIDTH: usize = 20;
         match self {
             Self::Pop => write!(f, "Pop"),
-            Self::Copy(i) => write!(f, "{:width$}{}", "Copy", i),
-            Self::Swap(i) => write!(f, "{:width$}{}", "Swap", i),
-            Self::LoadLocal(i) => write!(f, "{:width$}{}", "LoadLocal", i),
-            Self::LoadGlobal(i) => write!(f, "{:width$}{}", "LoadGlobal", i),
-            Self::LoadUpvalue(i) => write!(f, "{:width$}{}", "LoadUpvalue", i),
-            Self::LoadConst(i) => write!(f, "{:width$}{}", "LoadConst", i),
-            Self::StoreLocal(i) => write!(f, "{:width$}{}", "StoreLocal", i),
-            Self::StoreGlobal(i) => write!(f, "{:width$}{}", "StoreGlobal", i),
-            Self::StoreUpvalue(i) => write!(f, "{:width$}{}", "StoreUpvalue", i),
-            Self::Import(i) => write!(f, "{:width$}{}", "Import", i),
-            Self::ImportFrom(i) => write!(f, "{:width$}{}", "ImportFrom", i),
+            Self::Copy(i) => write!(f, "{:WIDTH$}{}", "Copy", i),
+            Self::Swap(i) => write!(f, "{:WIDTH$}{}", "Swap", i),
+            Self::LoadLocal(i) => write!(f, "{:WIDTH$}{}", "LoadLocal", i),
+            Self::LoadGlobal(i) => write!(f, "{:WIDTH$}{}", "LoadGlobal", i),
+            Self::LoadUpvalue(i) => write!(f, "{:WIDTH$}{}", "LoadUpvalue", i),
+            Self::LoadConst(i) => write!(f, "{:WIDTH$}{}", "LoadConst", i),
+            Self::StoreLocal(i) => write!(f, "{:WIDTH$}{}", "StoreLocal", i),
+            Self::StoreGlobal(i) => write!(f, "{:WIDTH$}{}", "StoreGlobal", i),
+            Self::StoreUpvalue(i) => write!(f, "{:WIDTH$}{}", "StoreUpvalue", i),
+            Self::Import(i) => write!(f, "{:WIDTH$}{}", "Import", i),
+            Self::ImportFrom(i) => write!(f, "{:WIDTH$}{}", "ImportFrom", i),
             Self::ImportGlob => write!(f, "ImportGlob"),
-            Self::BuildTable(i) => write!(f, "{:width$}{}", "BuildTable", i),
-            Self::BuildList(i) => write!(f, "{:width$}{}", "BuildList", i),
+            Self::BuildTable(i) => write!(f, "{:WIDTH$}{}", "BuildTable", i),
+            Self::BuildList(i) => write!(f, "{:WIDTH$}{}", "BuildList", i),
             Self::GetAttr => write!(f, "GetAttr"),
             Self::GetItem => write!(f, "GetItem"),
             Self::GetMeta => write!(f, "GetMeta"),
@@ -160,21 +160,21 @@ impl fmt::Display for OpCode {
             Self::Le => write!(f, "Le"),
             Self::Is => write!(f, "Is"),
             Self::Iter => write!(f, "Iter"),
-            Self::Jump(JumpTarget(i)) => write!(f, "{:width$}{}", "Jump", i),
-            Self::JumpIfNull(JumpTarget(i)) => write!(f, "{:width$}{}", "JumpIfNull", i),
-            Self::JumpPopIfFalse(JumpTarget(i)) => write!(f, "{:width$}{}", "JumpPopIfFalse", i),
-            Self::JumpIfTrueOrPop(JumpTarget(i)) => write!(f, "{:width$}{}", "JumpIfTrueOrPop", i),
+            Self::Jump(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "Jump", i),
+            Self::JumpIfNull(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "JumpIfNull", i),
+            Self::JumpPopIfFalse(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "JumpPopIfFalse", i),
+            Self::JumpIfTrueOrPop(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "JumpIfTrueOrPop", i),
             Self::JumpIfFalseOrPop(JumpTarget(i)) => {
-                write!(f, "{:width$}{}", "JumpIfFalseOrPop", i)
+                write!(f, "{:WIDTH$}{}", "JumpIfFalseOrPop", i)
             }
-            Self::Call(i) => write!(f, "{:width$}{}", "Call", i),
-            Self::TryCall(i) => write!(f, "{:width$}{}", "TryCall", i),
-            Self::TryOptionCall(i) => write!(f, "{:width$}{}", "TryOptionCall", i),
-            Self::TryPanicCall(i) => write!(f, "{:width$}{}", "TryPanicCall", i),
+            Self::Call(i) => write!(f, "{:WIDTH$}{}", "Call", i),
+            Self::TryCall(i) => write!(f, "{:WIDTH$}{}", "TryCall", i),
+            Self::TryOptionCall(i) => write!(f, "{:WIDTH$}{}", "TryOptionCall", i),
+            Self::TryPanicCall(i) => write!(f, "{:WIDTH$}{}", "TryPanicCall", i),
             Self::Return => write!(f, "Return"),
             Self::Throw => write!(f, "Throw"),
-            Self::ReturnCall(i) => write!(f, "{:width$}{}", "ReturnCall", i),
-            Self::JumpTarget(JumpTarget(i)) => write!(f, "{:width$}{}", "JumpTarget", i),
+            Self::ReturnCall(i) => write!(f, "{:WIDTH$}{}", "ReturnCall", i),
+            Self::JumpTarget(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "JumpTarget", i),
         }
     }
 }

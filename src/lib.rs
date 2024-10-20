@@ -16,12 +16,12 @@
 //! # Examples
 //!
 //! ```rust
-//! use lucia_lang::{compiler::code::Code, Lucia};
+//! use lucia_lang::{compiler::compile, Lucia};
 //! let input = r#"
 //! import std::io::{println}
 //! println("Hello World!")
 //! "#;
-//! let code = Code::try_from(input).unwrap();
+//! let code = compile(input).unwrap();
 //! let mut lucia = Lucia::new();
 //! lucia.run_code(code);
 //! ```

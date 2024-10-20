@@ -2,16 +2,55 @@
 
 use std::fmt;
 
-use smol_str::SmolStr;
+use text_size::TextRange;
 
-use crate::utils::Location;
+/// Parsed token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Token {
+    /// The kind of the token.
+    pub kind: TokenKind,
+    /// The range in source text of the token.
+    pub range: TextRange,
+}
 
-use super::lexer::LexerError;
+impl Token {
+    pub fn new(kind: TokenKind, range: TextRange) -> Token {
+        Token { kind, range }
+    }
+}
+
+impl fmt::Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}@{:?}", self.kind, self.range)
+    }
+}
 
 /// Enum representing common lexeme types.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenKind {
     // Multi-char tokens:
+    /// "// comment"
+    LineComment,
+    /// `/* block comment */`
+    ///
+    /// Block comments can be recursive, so a sequence like `/* /* */`
+    BlockComment,
+    /// Any whitespace character sequence.
+    Whitespace,
+    /// "ident"
+    Ident,
+
+    // Literals:
+    /// "12_u8", "0o100", "0b120", "1".
+    Int,
+    /// "12.34", "1e3".
+    Float,
+    /// ""abc""
+    Str,
+    /// "r"abc""
+    RawStr,
+
+    // Keywords:
     /// "if"
     If,
     /// "else"
@@ -127,199 +166,50 @@ pub enum TokenKind {
     /// "%"
     Rem,
 
-    // other
+    // Others:
     /// End of line (`\n`)
-    EOL,
-    /// End of file.
-    EOF,
-    /// "// comment"
-    LineComment(SmolStr),
-    /// "/* block comment */"
-    ///
-    /// Block comments can be recursive, so the sequence like `/* /* */`
-    /// will not be considered terminated and will result in a parsing error.
-    BlockComment(SmolStr),
-    /// Any whitespace characters sequence.
-    Whitespace,
-    /// Ident
-    Ident(SmolStr),
-    /// "12", "1.0e-40", ""123"". See `LiteralKind` for more details.
-    Literal(Result<LiteralKind, LexerError>),
+    Eol,
+    /// End of input.
+    Eof,
+
+    // Errors:
     /// Unknown token, not expected by the lexer, e.g. "№"
-    Unknown(char),
+    Unknown,
+    /// Unterminated block comment, e.g. `/*`.
+    UnterminatedBlockComment,
+    /// An integer literal with only base prefix, e.g. `0x`.
+    EmptyInt,
+    /// An empty exponent in a float literal, e.g. `1.0e`.
+    EmptyExponentFloat,
+    /// A float literal with base prefix, eg. `0x1.0`.
+    NonDecimalFloat,
+    /// Unterminated string literal, e.g. `"abc`.
+    UnterminatedStr,
 }
 
-impl fmt::Display for TokenKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::If => write!(f, "If (if)"),
-            Self::Else => write!(f, "Else (else)"),
-            Self::Loop => write!(f, "Loop (loop)"),
-            Self::While => write!(f, "While (while)"),
-            Self::For => write!(f, "For (for)"),
-            Self::In => write!(f, "In (in)"),
-            Self::Break => write!(f, "Break (break)"),
-            Self::Continue => write!(f, "Continue (continue)"),
-            Self::Return => write!(f, "Return (return)"),
-            Self::Throw => write!(f, "Throw (throw)"),
-            Self::Global => write!(f, "Global (global)"),
-            Self::Import => write!(f, "Import (import)"),
-            Self::As => write!(f, "As (as)"),
-            Self::Is => write!(f, "Is (is)"),
-            Self::Not => write!(f, "Not (not)"),
-            Self::And => write!(f, "And (and)"),
-            Self::Or => write!(f, "Or (or)"),
-            Self::Try => write!(f, "Try (try)"),
-            Self::Fn => write!(f, "Fn (fn)"),
-            Self::Do => write!(f, "Do (do)"),
-            Self::Null => write!(f, "Null (null)"),
-            Self::True => write!(f, "True (true)"),
-            Self::False => write!(f, "False (false)"),
-            Self::DoubleColon => write!(f, "DoubleColon (::)"),
-            Self::Arrow => write!(f, "Arrow (->)"),
-            Self::Eq => write!(f, "Eq (==)"),
-            Self::NotEq => write!(f, "NotEq (!=)"),
-            Self::LtEq => write!(f, "LtEq (<=)"),
-            Self::GtEq => write!(f, "GtEq (>=)"),
-            Self::AddAssign => write!(f, "AddAssign (+=)"),
-            Self::SubAssign => write!(f, "SubAssign (-=)"),
-            Self::MulAssign => write!(f, "MulAssign (*=)"),
-            Self::DivAssign => write!(f, "DivAssign (/=)"),
-            Self::RemAssign => write!(f, "RemAssign (%=)"),
-            Self::Comma => write!(f, "Comma (,)"),
-            Self::Dot => write!(f, "Dot (.)"),
-            Self::OpenParen => write!(f, "OpenParen (())"),
-            Self::CloseParen => write!(f, "CloseParen ())"),
-            Self::OpenBrace => write!(f, "OpenBrace ({{)"),
-            Self::CloseBrace => write!(f, "CloseBrace (}})"),
-            Self::OpenBracket => write!(f, "OpenBracket ([)"),
-            Self::CloseBracket => write!(f, "CloseBracket (])"),
-            Self::Pound => write!(f, "Pound (#)"),
-            Self::Question => write!(f, "Question (?)"),
-            Self::Exclamation => write!(f, "Exclamation (!)"),
-            Self::Colon => write!(f, "Colon (:)"),
-            Self::Assign => write!(f, "Assign (=)"),
-            Self::Lt => write!(f, "Lt (<)"),
-            Self::Gt => write!(f, "Gt (>)"),
-            Self::VBar => write!(f, "VBar (|)"),
-            Self::Add => write!(f, "Add (+)"),
-            Self::Sub => write!(f, "Sub (-)"),
-            Self::Mul => write!(f, "Mul (*)"),
-            Self::Div => write!(f, "Div (/)"),
-            Self::Rem => write!(f, "Rem (%)"),
-            Self::EOL => write!(f, "EOL (\\n)"),
-            Self::EOF => write!(f, "EOF"),
-            Self::LineComment(v) => write!(f, "LineComment (//{v})"),
-            Self::BlockComment(v) => write!(f, "BlockComment (/*{v}*/)"),
-            Self::Whitespace => write!(f, "Whitespace ( )"),
-            Self::Ident(v) => write!(f, "Ident ({v})"),
-            Self::Literal(v) => write!(f, "Literal ({v:?})"),
-            Self::Unknown(v) => write!(f, "Unknown({v})"),
-        }
-    }
-}
-
-/// Enum representing literal types, included wrong literal like unterminated string.
-#[derive(Debug, Clone, PartialEq)]
-pub enum LiteralKind {
-    /// "12", "0o100", "0b110"
-    Int(i64),
-    /// "12.34", "0b100.100"
-    Float(f64),
-    /// ""abc"", ""abc"
-    Str(SmolStr),
-}
-
-impl fmt::Display for LiteralKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            LiteralKind::Int(v) => write!(f, "{}", v),
-            LiteralKind::Float(v) => write!(f, "{}", v),
-            LiteralKind::Str(v) => write!(f, "{}", v),
-        }
-    }
-}
-
-impl From<i64> for LiteralKind {
-    fn from(value: i64) -> Self {
-        LiteralKind::Int(value)
-    }
-}
-
-impl From<f64> for LiteralKind {
-    fn from(value: f64) -> Self {
-        LiteralKind::Float(value)
-    }
-}
-
-impl From<SmolStr> for LiteralKind {
-    fn from(value: SmolStr) -> Self {
-        LiteralKind::Str(value)
-    }
-}
-
-impl From<&'static str> for LiteralKind {
-    fn from(value: &'static str) -> Self {
-        LiteralKind::Str(SmolStr::new_static(value))
-    }
-}
-
-/// Parsed token.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Token {
-    /// The kind of Token.
-    pub kind: TokenKind,
-    /// The start location of Token.
-    pub start: Location,
-    /// The end location of Token.
-    pub end: Location,
-}
-
-impl Token {
-    /// Constructs a new `Token`.
-    pub fn new(kind: TokenKind, start: Location, end: Location) -> Self {
-        Token { kind, start, end }
+impl TokenKind {
+    pub fn is_trivia(self) -> bool {
+        matches!(
+            self,
+            Self::LineComment | Self::BlockComment | Self::Whitespace
+        )
     }
 
-    /// Constructs a fake Token.
-    pub fn dummy() -> Self {
-        Token {
-            kind: TokenKind::Unknown('\0'),
-            start: Location::default(),
-            end: Location::default(),
-        }
-    }
-}
-
-impl fmt::Display for Token {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Token {:20} start: {}, end: {})",
-            format!("{}", self.kind),
-            self.start,
-            self.end
+    pub fn is_error(self) -> bool {
+        matches!(
+            self,
+            Self::Unknown
+                | Self::UnterminatedBlockComment
+                | Self::EmptyInt
+                | Self::EmptyExponentFloat
+                | Self::NonDecimalFloat
+                | Self::UnterminatedStr
         )
     }
 }
 
-/// Type of Token. Common Token, Idnet or Literal.
-#[derive(Debug, Clone, PartialEq)]
-pub enum TokenType {
-    /// Common Token
-    Token(TokenKind),
-    /// Ident
-    Ident,
-    /// Literal
-    Literal,
-}
-
-impl fmt::Display for TokenType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Token(t) => write!(f, "{}", t),
-            Self::Ident => write!(f, "Ident"),
-            Self::Literal => write!(f, "Literal"),
-        }
+impl fmt::Display for TokenKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self, f)
     }
 }
