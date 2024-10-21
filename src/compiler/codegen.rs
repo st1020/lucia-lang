@@ -383,7 +383,7 @@ impl<'a, 'b> CodeGenerator<'a, 'b> {
 
     fn gen_function(&mut self, function: &Function<'a>) {
         let code = self.gen_function_code(function);
-        let const_id = self.add_const(ConstValue::Func(code));
+        let const_id = self.add_const(ConstValue::Func(Box::new(code)));
         self.push_code(OpCode::LoadConst(const_id));
         if function.kind == FunctionKind::Do {
             self.push_code(OpCode::Call(0));

@@ -6,7 +6,10 @@ use std::{
 
 use gc_arena::{lock::Lock, Collect, Gc, Mutation};
 
-use crate::{compiler::code::Code, frame::LuciaFrame, objects::Value};
+use crate::{
+    frame::LuciaFrame,
+    objects::{RuntimeCode, Value},
+};
 
 #[derive(Debug, Clone, Copy, Collect)]
 #[collect(no_drop)]
@@ -35,7 +38,11 @@ impl<'gc> Deref for Closure<'gc> {
 }
 
 impl<'gc> Closure<'gc> {
-    pub fn new(mc: &Mutation<'gc>, function: Code, frame: Option<&LuciaFrame<'gc>>) -> Self {
+    pub fn new(
+        mc: &Mutation<'gc>,
+        function: RuntimeCode<'gc>,
+        frame: Option<&LuciaFrame<'gc>>,
+    ) -> Self {
         let mut upvalues = Vec::with_capacity(function.upvalue_names.len());
 
         if let Some(frame) = frame {
@@ -66,7 +73,7 @@ impl<'gc> Closure<'gc> {
 #[derive(Debug, Collect)]
 #[collect(no_drop)]
 pub struct ClosureInner<'gc> {
-    pub function: Code,
+    pub function: RuntimeCode<'gc>,
     pub upvalues: Vec<UpValue<'gc>>,
 }
 

@@ -3,6 +3,7 @@
 mod any;
 mod callback;
 mod closure;
+mod code;
 mod conversion;
 mod error;
 mod registry;
@@ -14,6 +15,7 @@ mod value;
 pub use any::*;
 pub use callback::*;
 pub use closure::*;
+pub use code::*;
 pub use conversion::*;
 pub use error::*;
 pub use registry::*;

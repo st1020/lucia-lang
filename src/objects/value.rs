@@ -52,7 +52,7 @@ pub enum Value<'gc> {
 }
 
 impl<'gc> Value<'gc> {
-    pub fn metatable(&self) -> Option<Table<'gc>> {
+    pub fn metatable(self) -> Option<Table<'gc>> {
         match self {
             Self::Table(t) => t.metatable(),
             Self::UserData(u) => u.metatable(),
@@ -60,7 +60,7 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn id(&self) -> Option<NonZeroUsize> {
+    pub fn id(self) -> Option<NonZeroUsize> {
         match self {
             Self::Null => None,
             Self::Bool(_) => None,
@@ -78,7 +78,7 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn is(&self, other: &Value<'gc>) -> bool {
+    pub fn is(self, other: Value<'gc>) -> bool {
         match (self, other) {
             (Self::Null, Self::Null)
             | (Self::Bool(_), Self::Bool(_))
@@ -105,9 +105,9 @@ impl<'gc> Value<'gc> {
         matches!(self, Self::Null)
     }
 
-    pub fn repr(&self) -> SmolStr {
+    pub fn repr(self) -> SmolStr {
         if let Self::Str(s) = self {
-            format_smolstr!("\"{}\"", escape_str(s, false))
+            format_smolstr!("\"{}\"", escape_str(&s, false))
         } else if let Self::Table(t) = self {
             t.repr_table(self)
         } else {

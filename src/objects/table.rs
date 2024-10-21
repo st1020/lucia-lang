@@ -59,7 +59,7 @@ impl<'gc> Table<'gc> {
                 }
             }
         }
-        *entries.map.get(&key).unwrap_or(&Value::Null)
+        entries.map.get(&key).cloned().unwrap_or(Value::Null)
     }
 
     pub fn get_index(self, index: usize) -> Option<(Value<'gc>, Value<'gc>)> {
@@ -118,8 +118,8 @@ impl<'gc> Table<'gc> {
         mem::replace(&mut self.0.borrow_mut(mc).metatable, metatable)
     }
 
-    /// Return the repr string fo the table.
-    pub(crate) fn repr_table(self, t: &Value<'gc>) -> SmolStr {
+    /// Return the repr string of the table.
+    pub(crate) fn repr_table(self, t: Value<'gc>) -> SmolStr {
         let mut temp = Vec::new();
         for i in 0..self.len() {
             if let Some((k, v)) = self.get_index(i) {

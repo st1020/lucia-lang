@@ -27,7 +27,7 @@ pub fn load_builtin<'gc>(ctx: Context<'gc>) {
         Callback::from_fn(&ctx, |v: bool, msg: Varargs<'gc>| {
             if !v {
                 Err(Error::new(ErrorKind::AssertError(
-                    *msg.first().unwrap_or(&Value::Null),
+                    msg.first().cloned().unwrap_or(Value::Null),
                 )))
             } else {
                 Ok(v)

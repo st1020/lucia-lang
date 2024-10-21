@@ -85,6 +85,16 @@ pub enum FunctionKind {
     Do,
 }
 
+impl fmt::Display for FunctionKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FunctionKind::Function => write!(f, "Function"),
+            FunctionKind::Closure => write!(f, "Closure"),
+            FunctionKind::Do => write!(f, "Do"),
+        }
+    }
+}
+
 /// A block.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Block<'a> {

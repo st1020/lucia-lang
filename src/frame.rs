@@ -221,7 +221,6 @@ pub struct LuciaFrame<'gc> {
 impl<'gc> fmt::Display for LuciaFrame<'gc> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "pc: {}", self.pc)?;
-        writeln!(f, "{}", self.closure.function)?;
         writeln!(
             f,
             "upvalues: [{}]",

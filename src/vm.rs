@@ -1,12 +1,12 @@
 use crate::{
     compiler::{
-        code::{ConstValue, FunctionKind},
+        code::FunctionKind,
         opcode::{JumpTarget, OpCode},
     },
     errors::{Error, ErrorKind},
     frame::{CatchErrorKind, Frame, FramesState},
     meta_ops,
-    objects::{Closure, Function, IntoValue, Str, Table, Value},
+    objects::{Closure, Function, IntoValue, RuntimeConstValue, Table, Value},
     Context,
 };
 
@@ -111,17 +111,15 @@ impl<'gc> FramesState<'gc> {
                     frame.stack.push(frame.upvalues[i].get());
                 }
                 OpCode::LoadConst(i) => {
-                    frame.stack.push(match &function.consts[i] {
-                        ConstValue::Null => Value::Null,
-                        ConstValue::Bool(v) => Value::Bool(*v),
-                        ConstValue::Int(v) => Value::Int(*v),
-                        ConstValue::Float(v) => Value::Float(*v),
-                        ConstValue::Str(v) => Value::Str(Str::new(&ctx, v.clone())),
-                        ConstValue::Func(v) => Value::Function(Function::Closure(Closure::new(
-                            &ctx,
-                            v.clone(),
-                            Some(frame),
-                        ))),
+                    frame.stack.push(match function.consts[i] {
+                        RuntimeConstValue::Null => Value::Null,
+                        RuntimeConstValue::Bool(v) => Value::Bool(v),
+                        RuntimeConstValue::Int(v) => Value::Int(v),
+                        RuntimeConstValue::Float(v) => Value::Float(v),
+                        RuntimeConstValue::Str(v) => Value::Str(v),
+                        RuntimeConstValue::Func(v) => {
+                            Value::Function(Function::Closure(Closure::new(&ctx, v, Some(frame))))
+                        }
                     });
                 }
                 OpCode::StoreLocal(i) => {
@@ -138,16 +136,18 @@ impl<'gc> FramesState<'gc> {
                     frame.upvalues[i].set(&ctx, frame.stack.pop().unwrap());
                 }
                 OpCode::Import(i) => {
-                    if let ConstValue::Str(v) = &function.consts[i] {
-                        frame.stack.push(ctx.state.libs.get(ctx, v.to_owned()));
+                    if let RuntimeConstValue::Str(v) = function.consts[i] {
+                        frame.stack.push(ctx.state.libs.get(ctx, v));
                     } else {
                         panic!("program error");
                     }
                 }
                 OpCode::ImportFrom(i) => {
                     let tos = *frame.stack.last().unwrap();
-                    if let (Value::Table(module), ConstValue::Str(v)) = (tos, &function.consts[i]) {
-                        frame.stack.push(module.get(ctx, v.to_owned()));
+                    if let (Value::Table(module), RuntimeConstValue::Str(v)) =
+                        (tos, function.consts[i])
+                    {
+                        frame.stack.push(module.get(ctx, v));
                     } else {
                         return Err(operator_error!(code, tos));
                     }
@@ -234,7 +234,7 @@ impl<'gc> FramesState<'gc> {
                 OpCode::Is => {
                     let tos = frame.stack.pop().unwrap();
                     let tos1 = frame.stack.pop().unwrap();
-                    frame.stack.push(Value::Bool(tos1.is(&tos)));
+                    frame.stack.push(Value::Bool(tos1.is(tos)));
                 }
                 OpCode::Iter => {
                     let tos = frame.stack.pop().unwrap();
@@ -320,11 +320,7 @@ impl<'gc> FramesState<'gc> {
                     if function.kind == FunctionKind::Do {
                         let table = Table::new(&ctx);
                         for i in 0..function.local_names.len() {
-                            table.set(
-                                ctx,
-                                Str::new(&ctx, function.local_names[i].to_owned()),
-                                frame.locals[i],
-                            );
+                            table.set(ctx, function.local_names[i], frame.locals[i]);
                         }
                         frame.stack.push(Value::Table(table));
                     }
