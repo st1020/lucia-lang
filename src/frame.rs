@@ -41,7 +41,7 @@ impl<'gc> Hash for Frames<'gc> {
     }
 }
 
-#[derive(Debug, Clone, Copy, Collect, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Collect)]
 #[collect[require_static]]
 pub enum FrameMode {
     // No frames are on the thread and there are no available results, the thread can be started.
@@ -58,7 +58,7 @@ impl fmt::Display for FrameMode {
     }
 }
 
-#[derive(Debug, Clone, Copy, Collect, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Collect)]
 #[collect[require_static]]
 pub enum CatchErrorKind {
     None,
@@ -207,7 +207,7 @@ pub(crate) struct FramesState<'gc> {
     pub error: Option<Error<'gc>>,
 }
 
-#[derive(Collect, Debug, Clone)]
+#[derive(Debug, Clone, Collect)]
 #[collect(no_drop)]
 pub struct LuciaFrame<'gc> {
     pub pc: usize,
@@ -249,7 +249,7 @@ impl<'gc> fmt::Display for LuciaFrame<'gc> {
     }
 }
 
-#[derive(Collect, Debug, Clone)]
+#[derive(Debug, Clone, Collect)]
 #[collect(no_drop)]
 pub enum Frame<'gc> {
     // An running Lua frame.

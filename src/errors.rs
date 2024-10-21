@@ -18,7 +18,7 @@ use crate::{
 };
 
 /// Lucia error.
-#[derive(Error, Debug, Clone, Collect)]
+#[derive(Debug, Clone, Collect, Error)]
 #[collect(no_drop)]
 pub struct Error<'gc> {
     pub kind: ErrorKind<'gc>,
@@ -87,7 +87,7 @@ impl<'gc> From<Value<'gc>> for Error<'gc> {
 }
 
 /// Kind of Lucia Error.
-#[derive(Error, Debug, Clone, Collect, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Collect, Error)]
 #[collect(no_drop)]
 pub enum ErrorKind<'gc> {
     #[error("bad frame mode (expected {expected}, found {found})")]
@@ -144,7 +144,7 @@ impl<'gc> ErrorKind<'gc> {
 }
 
 /// Kind of CallArgumentsError.
-#[derive(Debug, Clone, Collect, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Collect)]
 #[collect(require_static)]
 pub struct CallArgumentsErrorKind {
     pub start: usize,

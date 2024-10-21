@@ -115,7 +115,7 @@ fn scan_unicode(chars: &mut Chars<'_>) -> Result<char, EscapeError> {
 }
 
 /// Errors and warnings that can occur during string unescaping.
-#[derive(Error, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum EscapeError {
     /// Escaped '\' character without continuation.
     LoneSlash,

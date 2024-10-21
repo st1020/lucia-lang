@@ -14,7 +14,7 @@ use crate::{
 
 pub type TableInner<'gc> = RefLock<TableState<'gc>>;
 
-#[derive(Debug, Copy, Clone, Collect)]
+#[derive(Debug, Clone, Copy, Collect)]
 #[collect(no_drop)]
 pub struct Table<'gc>(Gc<'gc, TableInner<'gc>>);
 
@@ -153,7 +153,7 @@ pub struct TableState<'gc> {
     pub metatable: Option<Table<'gc>>,
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Default)]
 pub struct TableEntries<'gc> {
     array: Vec<Value<'gc>>,
     map: IndexMap<Value<'gc>, Value<'gc>>,

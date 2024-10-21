@@ -3,7 +3,7 @@ use std::{fmt, ops};
 use gc_arena::{Collect, Gc, Mutation};
 use smol_str::SmolStr;
 
-#[derive(Clone, Copy, Collect, Hash)]
+#[derive(Clone, Copy, Hash, Collect)]
 #[collect(no_drop)]
 pub struct Str<'gc>(Gc<'gc, StringInner>);
 

@@ -8,11 +8,11 @@ use thiserror::Error;
 
 use crate::objects::{Any, AnyInner, Table};
 
-#[derive(Debug, Copy, Clone, Error)]
+#[derive(Debug, Clone, Copy, Error)]
 #[error("UserData type mismatch")]
 pub struct BadUserDataType;
 
-#[derive(Debug, Copy, Clone, Default, Collect)]
+#[derive(Debug, Clone, Copy, Default, Collect)]
 #[collect(no_drop)]
 pub struct UserDataMeta<'gc> {
     pub metatable: Option<Table<'gc>>,
@@ -21,7 +21,7 @@ pub struct UserDataMeta<'gc> {
 pub type UserDataMetaState<'gc> = lock::Lock<UserDataMeta<'gc>>;
 pub type UserDataInner<'gc> = AnyInner<UserDataMetaState<'gc>>;
 
-#[derive(Debug, Copy, Clone, Collect)]
+#[derive(Debug, Clone, Copy, Collect)]
 #[collect(no_drop)]
 pub struct UserData<'gc>(Any<'gc, UserDataMetaState<'gc>>);
 

@@ -63,7 +63,7 @@ impl Scope<'_> {
 }
 
 /// The kind of scope.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ScopeKind {
     Function,
     Closure,
@@ -82,7 +82,7 @@ pub struct Symbol<'a> {
 }
 
 /// The kind of symbol.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SymbolKind {
     Local,
     Upvalue,

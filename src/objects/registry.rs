@@ -161,7 +161,7 @@ impl<'gc, T: Default> Singleton<'gc> for T {
     }
 }
 
-#[derive(Copy, Clone, Collect)]
+#[derive(Clone, Copy, Collect)]
 #[collect(no_drop)]
 pub struct Registry<'gc> {
     roots: DynamicRootSet<'gc>,

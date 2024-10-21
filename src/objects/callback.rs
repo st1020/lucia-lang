@@ -80,7 +80,7 @@ pub trait CallbackFn<'gc>: Collect {
 }
 
 // Represents a callback as a single pointer with an inline VTable header.
-#[derive(Copy, Clone, Collect)]
+#[derive(Clone, Copy, Collect)]
 #[collect(no_drop)]
 pub struct Callback<'gc>(Gc<'gc, CallbackInner<'gc>>);
 

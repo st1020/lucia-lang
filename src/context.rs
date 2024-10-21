@@ -43,7 +43,7 @@ impl<'gc> State<'gc> {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Clone, Copy)]
 pub struct Context<'gc> {
     pub mutation: &'gc Mutation<'gc>,
     pub state: &'gc State<'gc>,

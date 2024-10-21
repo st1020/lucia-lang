@@ -9,7 +9,7 @@ use gc_arena::Collect;
 pub struct JumpTarget(pub usize);
 
 /// The operation code.
-#[derive(Debug, Clone, Copy, Collect, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Collect)]
 #[collect(require_static)]
 pub enum OpCode {
     /// Removes the top-of-stack (TOS) item.

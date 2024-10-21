@@ -11,7 +11,7 @@ use crate::{
     Context,
 };
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, Collect)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Collect)]
 #[collect(require_static)]
 pub enum MetaMethod {
     Call,
@@ -98,7 +98,7 @@ impl<'gc> IntoValue<'gc> for MetaMethod {
     }
 }
 
-#[derive(Debug, Copy, Clone, Collect)]
+#[derive(Debug, Clone, Copy, Collect)]
 #[collect(no_drop)]
 pub enum MetaResult<'gc, const N: usize> {
     Value(Value<'gc>),

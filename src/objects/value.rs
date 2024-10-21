@@ -29,7 +29,7 @@ impl<'gc> From<Callback<'gc>> for Function<'gc> {
 }
 
 /// Enum of all lucia values.
-#[derive(Debug, Copy, Clone, Collect, Default, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Collect)]
 #[collect(no_drop)]
 pub enum Value<'gc> {
     /// `null` - A null value.
@@ -135,7 +135,7 @@ impl<'gc> fmt::Display for Value<'gc> {
 }
 
 /// The type of Value.
-#[derive(Debug, Clone, Copy, Collect, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Collect)]
 #[collect[require_static]]
 pub enum ValueType {
     Null,

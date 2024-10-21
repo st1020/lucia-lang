@@ -18,7 +18,7 @@ unsafe impl Collect for FunctionKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, Collect, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Collect)]
 #[collect(no_drop)]
 pub struct RuntimeCode<'gc>(Gc<'gc, RuntimeCodeInner<'gc>>);
 
