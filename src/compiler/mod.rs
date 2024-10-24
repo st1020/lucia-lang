@@ -6,6 +6,7 @@ pub mod code;
 pub mod codegen;
 pub mod error;
 pub mod index;
+pub mod interning;
 pub mod lexer;
 pub mod opcode;
 pub mod parser;
@@ -13,9 +14,12 @@ pub mod token;
 pub mod typing;
 
 /// Compile the input source code into Lucia code.
-pub fn compile(input: &str) -> Result<code::Code, Vec<error::CompilerError>> {
-    let allocator = &bumpalo::Bump::new();
-    let (ast, mut errors) = parser::parse(allocator, input);
+pub fn compile<S: interning::StringInterner>(
+    allocator: &bumpalo::Bump,
+    interner: S,
+    input: &str,
+) -> Result<code::Code<S::String>, Vec<error::CompilerError>> {
+    let (ast, mut errors) = parser::parse(allocator, interner, input);
     let semantic = analyzer::analyze(&ast);
     let (code, mut code_gen_errors) = codegen::gen_code(&ast, &semantic);
     errors.append(&mut code_gen_errors);
@@ -27,9 +31,12 @@ pub fn compile(input: &str) -> Result<code::Code, Vec<error::CompilerError>> {
 }
 
 /// Check the type of the input source code.
-pub fn check_type(input: &str) -> (Vec<error::CompilerError>, Vec<typing::TypeError>) {
-    let allocator = &bumpalo::Bump::new();
-    let (ast, errors) = parser::parse(allocator, input);
+pub fn check_type<S: interning::StringInterner<String: Eq + Ord>>(
+    allocator: &bumpalo::Bump,
+    interner: S,
+    input: &str,
+) -> (Vec<error::CompilerError>, Vec<typing::TypeError<S::String>>) {
+    let (ast, errors) = parser::parse(allocator, interner, input);
     let semantic = analyzer::analyze(&ast);
     (errors, typing::check_type(&ast, &semantic))
 }

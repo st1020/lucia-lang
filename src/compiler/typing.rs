@@ -1,11 +1,10 @@
 //! The Lucia Type System and Type Checker.
 
-use std::{fmt, ops::BitOr};
+use std::{fmt, ops};
 
 use index_vec::{index_vec, IndexVec};
 use indexmap::IndexMap;
 use rustc_hash::FxBuildHasher;
-use smol_str::{SmolStr, ToSmolStr};
 use thiserror::Error;
 
 use crate::utils::{Float, Join};
@@ -18,34 +17,35 @@ use super::{
 
 /// The Literal Type.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum LiteralType {
+pub enum LiteralType<S> {
     Bool(bool),
     Int(i64),
     Float(Float),
-    Str(SmolStr),
+    Str(S),
 }
 
-impl fmt::Display for LiteralType {
+impl<S: AsRef<str>> fmt::Display for LiteralType<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             LiteralType::Bool(v) => write!(f, "{}", v),
             LiteralType::Int(v) => write!(f, "{}", v),
             LiteralType::Float(v) => write!(f, "{}", v),
-            LiteralType::Str(v) => write!(f, "\"{}\"", v),
+            LiteralType::Str(v) => write!(f, "\"{}\"", v.as_ref()),
         }
     }
 }
 
 /// All types used in type checker.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Type {
+#[allow(clippy::type_complexity)]
+pub enum Type<S> {
     // Special Atom Types
     Unknown,
     Never,
     Any,
 
     // Literal Type
-    Literal(LiteralType),
+    Literal(LiteralType<S>),
 
     // Atom Types
     Null,
@@ -55,32 +55,32 @@ pub enum Type {
     Str,
     // Table Types
     Table {
-        pairs: Vec<(LiteralType, Type)>,
-        others: Option<(Box<Type>, Box<Type>)>,
+        pairs: Vec<(LiteralType<S>, Type<S>)>,
+        others: Option<(Box<Type<S>>, Box<Type<S>>)>,
     },
     // Function Types
     Function {
-        params: Vec<Type>,
-        variadic: Box<Type>,
-        returns: Box<Type>,
-        throws: Box<Type>,
+        params: Vec<Type<S>>,
+        variadic: Box<Type<S>>,
+        returns: Box<Type<S>>,
+        throws: Box<Type<S>>,
     },
     // UserData Types
-    UserData(SmolStr),
+    UserData(S),
 
     // Union Types
-    Union(Vec<Type>),
+    Union(Vec<Type<S>>),
 }
 
-impl Type {
-    pub fn any_table() -> Type {
+impl<S: AsRef<str> + Copy + Eq + Ord> Type<S> {
+    pub fn any_table() -> Type<S> {
         Type::Table {
             pairs: Vec::new(),
             others: Some((Box::new(Type::Any), Box::new(Type::Any))),
         }
     }
 
-    pub fn any_function() -> Type {
+    pub fn any_function() -> Type<S> {
         Type::Function {
             params: Vec::new(),
             variadic: Box::new(Type::Any),
@@ -89,7 +89,7 @@ impl Type {
         }
     }
 
-    pub fn union(&self, other: &Type) -> Type {
+    pub fn union(&self, other: &Type<S>) -> Type<S> {
         if self == other {
             return self.clone();
         }
@@ -114,11 +114,11 @@ impl Type {
         }
     }
 
-    pub fn optional(&self) -> Type {
+    pub fn optional(&self) -> Type<S> {
         self.union(&Type::Null)
     }
 
-    pub fn is_sub_type_of(&self, other: &Type) -> bool {
+    pub fn is_sub_type_of(&self, other: &Type<S>) -> bool {
         if self == other {
             return true;
         }
@@ -189,7 +189,7 @@ impl Type {
         }
     }
 
-    pub fn expect_is_sub_type_of(&self, other: &Type) -> Result<(), TypeError> {
+    pub fn expect_is_sub_type_of(&self, other: &Type<S>) -> Result<(), TypeError<S>> {
         if self.is_sub_type_of(other) {
             Ok(())
         } else {
@@ -200,7 +200,7 @@ impl Type {
         }
     }
 
-    pub fn get_member_type(&self, property: &Type) -> Result<Type, TypeError> {
+    pub fn get_member_type(&self, property: &Type<S>) -> Result<Type<S>, TypeError<S>> {
         match self {
             Type::Any => Some(Type::Any),
             Type::Table { pairs, others } => pairs
@@ -231,21 +231,21 @@ impl Type {
     }
 }
 
-impl BitOr for Type {
-    type Output = Type;
+impl<S: AsRef<str> + Copy + Eq + Ord> ops::BitOr for Type<S> {
+    type Output = Type<S>;
 
     fn bitor(self, rhs: Self) -> Self::Output {
         self.union(&rhs)
     }
 }
 
-impl fmt::Display for Type {
+impl<S: AsRef<str> + Copy + Eq + Ord> fmt::Display for Type<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Type::Unknown => write!(f, "unknown"),
             Type::Never => write!(f, "never"),
             Type::Any => write!(f, "any"),
-            Type::Literal(literal) => write!(f, "{:?}", literal),
+            Type::Literal(literal) => write!(f, "{}", literal),
             Type::Null => write!(f, "null"),
             Type::Bool => write!(f, "bool"),
             Type::Int => write!(f, "int"),
@@ -298,29 +298,29 @@ impl fmt::Display for Type {
                     )
                 }
             }
-            Type::UserData(v) => write!(f, "{}", v),
+            Type::UserData(v) => write!(f, "{}", v.as_ref()),
             Type::Union(types) => write!(f, "({})", types.iter().join(" | ")),
         }
     }
 }
 
-impl From<&TyKind<'_>> for Type {
-    fn from(value: &TyKind<'_>) -> Self {
+impl<S: AsRef<str> + Copy + Eq + Ord> From<&TyKind<'_, S>> for Type<S> {
+    fn from(value: &TyKind<'_, S>) -> Self {
         match &value {
-            TyKind::Lit(lit) => (&lit.kind).into(),
-            TyKind::Ident(ident) => match ident.name.as_str() {
+            TyKind::Lit(lit) => lit.kind.into(),
+            TyKind::Ident(ident) => match ident.name.as_ref() {
                 "never" => Type::Never,
                 "any" => Type::Any,
                 "bool" => Type::Bool,
                 "int" => Type::Int,
                 "float" => Type::Float,
                 "str" => Type::Str,
-                _ => Type::UserData(ident.name.to_smolstr()),
+                _ => Type::UserData(ident.name),
             },
             TyKind::Table { pairs, others } => Type::Table {
                 pairs: pairs
                     .iter()
-                    .map(|(name, t)| (LiteralType::Str(name.to_smolstr()), (&t.kind).into()))
+                    .map(|(name, t)| (LiteralType::Str(*name), (&t.kind).into()))
                     .collect(),
                 others: others
                     .as_ref()
@@ -358,79 +358,94 @@ impl From<&TyKind<'_>> for Type {
     }
 }
 
-impl From<&LitKind<'_>> for Type {
-    fn from(value: &LitKind<'_>) -> Self {
-        match &value {
+impl<S: AsRef<str> + Copy> From<LitKind<S>> for Type<S> {
+    fn from(value: LitKind<S>) -> Self {
+        match value {
             LitKind::Null => Type::Null,
-            LitKind::Bool(v) => Type::Literal(LiteralType::Bool(*v)),
-            LitKind::Int(v) => Type::Literal(LiteralType::Int(*v)),
-            LitKind::Float(v) => Type::Literal(LiteralType::Float(*v)),
-            LitKind::Str(v) => Type::Literal(LiteralType::Str(v.to_smolstr())),
+            LitKind::Bool(v) => Type::Literal(LiteralType::Bool(v)),
+            LitKind::Int(v) => Type::Literal(LiteralType::Int(v)),
+            LitKind::Float(v) => Type::Literal(LiteralType::Float(v)),
+            LitKind::Str(v) => Type::Literal(LiteralType::Str(v)),
         }
     }
 }
 
 /// Kind of TypeCheckError.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub enum TypeError {
+pub enum TypeError<S> {
     #[error("unexpected {ty} is subtype of {expected} ")]
-    ExpectIsSubtypeOf { ty: Box<Type>, expected: Box<Type> },
+    ExpectIsSubtypeOf {
+        ty: Box<Type<S>>,
+        expected: Box<Type<S>>,
+    },
     #[error("{table} dose not has member {property} ")]
     TableMemberNotFound {
-        table: Box<Type>,
-        property: Box<Type>,
+        table: Box<Type<S>>,
+        property: Box<Type<S>>,
     },
     #[error("unsupported operand type(s) for {operator}: {} and {}", .operand.0, .operand.1)]
     UnsupportedBinOperator {
         operator: BinOp,
-        operand: (Box<Type>, Box<Type>),
+        operand: (Box<Type<S>>, Box<Type<S>>),
     },
 }
 
-#[derive(Debug, Clone, Default)]
-struct Context {
-    returns_type: Option<Type>,
+#[derive(Debug, Clone)]
+struct Context<S> {
+    returns_type: Option<Type<S>>,
     explicit_returns_type: bool,
-    throws_type: Option<Type>,
+    throws_type: Option<Type<S>>,
     explicit_throws_type: bool,
 }
 
-/// Check type.
-pub fn check_type<'a>(program: &Program<'a>, semantic: &Semantic<'a>) -> Vec<TypeError> {
-    TypeChecker::new(program, semantic).check_type()
+impl<S> Context<S> {
+    fn new() -> Self {
+        Self {
+            returns_type: None,
+            explicit_returns_type: false,
+            throws_type: None,
+            explicit_throws_type: false,
+        }
+    }
 }
 
-struct TypeChecker<'a, 'b> {
-    program: &'b Program<'a>,
-    semantic: &'b Semantic<'a>,
+/// Check type.
+pub fn check_type<S: AsRef<str> + Copy + Eq + Ord>(
+    program: &Program<'_, S>,
+    semantic: &Semantic<S>,
+) -> Vec<TypeError<S>> {
+    TypeChecker::new(semantic).check_type(program)
+}
+
+struct TypeChecker<'a, S> {
+    semantic: &'a Semantic<S>,
 
     current_function_id: FunctionId,
-    contexts: IndexVec<FunctionId, Context>,
-    symbol_type: IndexMap<SymbolId, Type, FxBuildHasher>,
-    errors: Vec<TypeError>,
+    contexts: IndexVec<FunctionId, Context<S>>,
+    symbol_type: IndexMap<SymbolId, Type<S>, FxBuildHasher>,
+    errors: Vec<TypeError<S>>,
 }
 
-impl<'a, 'b> TypeChecker<'a, 'b> {
-    fn new(program: &'b Program<'a>, semantic: &'b Semantic<'a>) -> Self {
+impl<'a, S: AsRef<str> + Copy + Eq + Ord> TypeChecker<'a, S> {
+    fn new(semantic: &'a Semantic<S>) -> Self {
         Self {
-            program,
             semantic,
             current_function_id: FunctionId::new(0),
-            contexts: index_vec![Context::default(); semantic.functions.len()],
+            contexts: index_vec![Context::new(); semantic.functions.len()],
             symbol_type: IndexMap::with_hasher(FxBuildHasher),
             errors: Vec::new(),
         }
     }
 
-    fn context(&mut self) -> &mut Context {
+    fn context(&mut self) -> &mut Context<S> {
         &mut self.contexts[self.current_function_id]
     }
 
-    fn get_symbol_type(&self, ident: &Ident<'a>) -> Option<&Type> {
+    fn get_symbol_type(&self, ident: &Ident<'_, S>) -> Option<&Type<S>> {
         self.symbol_type.get(&ident.symbol_id.get().unwrap())
     }
 
-    fn set_symbol_type(&mut self, ident: &Ident<'a>, ty: Type) -> Result<(), TypeError> {
+    fn set_symbol_type(&mut self, ident: &Ident<'_, S>, ty: Type<S>) -> Result<(), TypeError<S>> {
         if let Some(old_type) = self.get_symbol_type(ident) {
             ty.expect_is_sub_type_of(old_type)?;
         } else {
@@ -439,17 +454,17 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
         Ok(())
     }
 
-    fn check_type(mut self) -> Vec<TypeError> {
-        if let Err(error) = self.check_function(&self.program.function) {
+    fn check_type(mut self, program: &Program<'_, S>) -> Vec<TypeError<S>> {
+        if let Err(error) = self.check_function(&program.function) {
             self.errors.push(error);
         }
         self.errors
     }
 
-    fn check_function(&mut self, function: &Function<'a>) -> Result<Type, TypeError> {
+    fn check_function(&mut self, function: &Function<'_, S>) -> Result<Type<S>, TypeError<S>> {
         self.current_function_id = function.function_id.get().unwrap();
 
-        let param_types: Vec<Type> = function
+        let param_types: Vec<Type<S>> = function
             .params
             .iter()
             .map(|param| {
@@ -460,13 +475,13 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                     .unwrap_or(Type::Any)
             })
             .collect();
-        let variadic_type: Option<Type> = function
+        let variadic_type: Option<Type<S>> = function
             .variadic
             .as_ref()
             .and_then(|x| x.ty.as_ref())
             .map(|t| (&t.kind).into());
-        let returns_type: Option<Type> = function.returns.as_ref().map(|t| (&t.kind).into());
-        let throws_type: Option<Type> = function.throws.as_ref().map(|t| (&t.kind).into());
+        let returns_type: Option<Type<S>> = function.returns.as_ref().map(|t| (&t.kind).into());
+        let throws_type: Option<Type<S>> = function.throws.as_ref().map(|t| (&t.kind).into());
 
         for (param, t) in function.params.iter().zip(param_types.iter()) {
             self.set_symbol_type(&param.ident, t.clone())?;
@@ -502,7 +517,7 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
         })
     }
 
-    fn check_block(&mut self, block: &Block<'a>) {
+    fn check_block(&mut self, block: &Block<'_, S>) {
         for stmt in &block.body {
             if let Err(e) = self.check_stmt(stmt) {
                 self.errors.push(e)
@@ -510,7 +525,7 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
         }
     }
 
-    fn check_stmt(&mut self, stmt: &Stmt<'a>) -> Result<(), TypeError> {
+    fn check_stmt(&mut self, stmt: &Stmt<'_, S>) -> Result<(), TypeError<S>> {
         match &stmt.kind {
             StmtKind::If {
                 test,
@@ -603,7 +618,11 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
                 }
             }
             StmtKind::Global { arguments: _ } => (),
-            StmtKind::Import { path: _, kind: _ } => (),
+            StmtKind::Import {
+                path: _,
+                path_str: _,
+                kind: _,
+            } => (),
             StmtKind::Fn { name, function } => {
                 let ty = self.check_function(function)?;
                 self.set_symbol_type(name, ty)?;
@@ -646,7 +665,11 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
         Ok(())
     }
 
-    fn check_assign(&mut self, left: &AssignLeft<'a>, right_type: Type) -> Result<(), TypeError> {
+    fn check_assign(
+        &mut self,
+        left: &AssignLeft<'_, S>,
+        right_type: Type<S>,
+    ) -> Result<(), TypeError<S>> {
         match left {
             AssignLeft::Ident(ident) => {
                 if let Some(t) = &ident.ty {
@@ -670,9 +693,9 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
         Ok(())
     }
 
-    fn check_expr(&mut self, expr: &Expr<'a>) -> Result<Type, TypeError> {
+    fn check_expr(&mut self, expr: &Expr<'_, S>) -> Result<Type<S>, TypeError<S>> {
         Ok(match &expr.kind {
-            ExprKind::Lit(lit) => (&lit.kind).into(),
+            ExprKind::Lit(lit) => lit.kind.into(),
             ExprKind::Ident(ident) => self
                 .get_symbol_type(ident)
                 .cloned()
@@ -866,11 +889,14 @@ impl<'a, 'b> TypeChecker<'a, 'b> {
         })
     }
 
-    fn check_member_kind(&mut self, member_kind: &MemberKind<'a>) -> Result<Type, TypeError> {
+    fn check_member_kind(
+        &mut self,
+        member_kind: &MemberKind<'_, S>,
+    ) -> Result<Type<S>, TypeError<S>> {
         match member_kind {
             MemberKind::Bracket(expr) => self.check_expr(expr),
             MemberKind::Dot(ident) | MemberKind::DoubleColon(ident) => {
-                Ok(Type::Literal(LiteralType::Str(ident.name.to_smolstr())))
+                Ok(Type::Literal(LiteralType::Str(ident.name)))
             }
         }
     }

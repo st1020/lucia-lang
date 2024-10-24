@@ -1,4 +1,4 @@
-use lucia_lang::{compiler::compile, Lucia};
+use lucia_lang::Lucia;
 
 #[test]
 #[should_panic]
@@ -9,5 +9,5 @@ fn b () {
 }
 res = try! b()
     "#;
-    Lucia::new().run_code(compile(input).unwrap()).unwrap();
+    Lucia::new().run_code(input).unwrap();
 }

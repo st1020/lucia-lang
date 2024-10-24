@@ -1,11 +1,8 @@
 //! The Lucia Abstract Syntax Tree (AST).
 
-use std::{cell::Cell, fmt};
+use std::{cell::Cell, fmt, marker::PhantomData};
 
-use bumpalo::{
-    boxed::Box,
-    collections::{String, Vec},
-};
+use bumpalo::{boxed::Box, collections::Vec};
 use text_size::TextRange;
 
 use crate::utils::{escape_str, Float, Indent, Join};
@@ -14,11 +11,11 @@ use super::index::{FunctionId, ScopeId, SymbolId};
 
 /// The root AST node.
 #[derive(Debug, PartialEq, Eq)]
-pub struct Program<'a> {
-    pub function: Box<'a, Function<'a>>,
+pub struct Program<'a, S> {
+    pub function: Box<'a, Function<'a, S>>,
 }
 
-impl fmt::Display for Program<'_> {
+impl<S: AsRef<str>> fmt::Display for Program<'_, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.function.body)
     }
@@ -26,17 +23,17 @@ impl fmt::Display for Program<'_> {
 
 /// A function.
 #[derive(Debug, PartialEq, Eq)]
-pub struct Function<'a> {
+pub struct Function<'a, S> {
     pub kind: FunctionKind,
-    pub params: Vec<'a, TypedIdent<'a>>,
-    pub variadic: Option<Box<'a, TypedIdent<'a>>>,
-    pub returns: Option<Box<'a, Ty<'a>>>,
-    pub throws: Option<Box<'a, Ty<'a>>>,
-    pub body: Box<'a, Block<'a>>,
+    pub params: Vec<'a, TypedIdent<'a, S>>,
+    pub variadic: Option<Box<'a, TypedIdent<'a, S>>>,
+    pub returns: Option<Box<'a, Ty<'a, S>>>,
+    pub throws: Option<Box<'a, Ty<'a, S>>>,
+    pub body: Box<'a, Block<'a, S>>,
     pub function_id: Cell<Option<FunctionId>>,
 }
 
-impl fmt::Display for Function<'_> {
+impl<S: AsRef<str>> fmt::Display for Function<'_, S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let params_str = self
             .params
@@ -97,13 +94,13 @@ impl fmt::Display for FunctionKind {
 
 /// A block.
 #[derive(Debug, PartialEq, Eq)]
-pub struct Block<'a> {
-    pub body: Vec<'a, Stmt<'a>>,
+pub struct Block<'a, S> {
+    pub body: Vec<'a, Stmt<'a, S>>,
     pub range: TextRange,
     pub scope_id: Cell<Option<ScopeId>>,
 }
 
-impl fmt::Display for Block<'_> {
+impl<S: AsRef<str>> fmt::Display for Block<'_, S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{{")?;
         for stmt in &self.body {
@@ -115,19 +112,19 @@ impl fmt::Display for Block<'_> {
 
 /// A statement.
 #[derive(Debug, PartialEq, Eq)]
-pub struct Stmt<'a> {
-    pub kind: StmtKind<'a>,
+pub struct Stmt<'a, S> {
+    pub kind: StmtKind<'a, S>,
     pub range: TextRange,
 }
 
-impl fmt::Display for Stmt<'_> {
+impl<S: AsRef<str>> fmt::Display for Stmt<'_, S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.kind)
     }
 }
 
-impl<'a> From<Box<'a, Block<'a>>> for Stmt<'a> {
-    fn from(value: Box<'a, Block<'a>>) -> Self {
+impl<'a, S> From<Box<'a, Block<'a, S>>> for Stmt<'a, S> {
+    fn from(value: Box<'a, Block<'a, S>>) -> Self {
         Stmt {
             range: value.range,
             kind: StmtKind::Block(value),
@@ -135,8 +132,8 @@ impl<'a> From<Box<'a, Block<'a>>> for Stmt<'a> {
     }
 }
 
-impl<'a> From<Box<'a, Expr<'a>>> for Stmt<'a> {
-    fn from(value: Box<'a, Expr<'a>>) -> Self {
+impl<'a, S> From<Box<'a, Expr<'a, S>>> for Stmt<'a, S> {
+    fn from(value: Box<'a, Expr<'a, S>>) -> Self {
         Stmt {
             range: value.range,
             kind: StmtKind::Expr(value),
@@ -146,65 +143,66 @@ impl<'a> From<Box<'a, Expr<'a>>> for Stmt<'a> {
 
 /// Kind of statement.
 #[derive(Debug, PartialEq, Eq)]
-pub enum StmtKind<'a> {
+pub enum StmtKind<'a, S> {
     If {
-        test: Box<'a, Expr<'a>>,
-        consequent: Box<'a, Block<'a>>,
-        alternate: Option<Box<'a, Stmt<'a>>>,
+        test: Box<'a, Expr<'a, S>>,
+        consequent: Box<'a, Block<'a, S>>,
+        alternate: Option<Box<'a, Stmt<'a, S>>>,
     },
     Loop {
-        body: Box<'a, Block<'a>>,
+        body: Box<'a, Block<'a, S>>,
     },
     While {
-        test: Box<'a, Expr<'a>>,
-        body: Box<'a, Block<'a>>,
+        test: Box<'a, Expr<'a, S>>,
+        body: Box<'a, Block<'a, S>>,
     },
     For {
-        left: Vec<'a, Ident<'a>>,
-        right: Box<'a, Expr<'a>>,
-        body: Box<'a, Block<'a>>,
+        left: Vec<'a, Ident<'a, S>>,
+        right: Box<'a, Expr<'a, S>>,
+        body: Box<'a, Block<'a, S>>,
     },
     Break,
     Continue,
     Return {
-        argument: Box<'a, Expr<'a>>,
+        argument: Box<'a, Expr<'a, S>>,
     },
     Throw {
-        argument: Box<'a, Expr<'a>>,
+        argument: Box<'a, Expr<'a, S>>,
     },
     Global {
-        arguments: Vec<'a, TypedIdent<'a>>,
+        arguments: Vec<'a, TypedIdent<'a, S>>,
     },
     Import {
-        path: Vec<'a, Ident<'a>>,
-        kind: ImportKind<'a>,
+        path: Vec<'a, Ident<'a, S>>,
+        path_str: S,
+        kind: ImportKind<'a, S>,
     },
     Fn {
-        name: Box<'a, Ident<'a>>,
-        function: Function<'a>,
+        name: Box<'a, Ident<'a, S>>,
+        function: Function<'a, S>,
     },
     Assign {
-        left: AssignLeft<'a>,
-        right: Box<'a, Expr<'a>>,
+        left: AssignLeft<'a, S>,
+        right: Box<'a, Expr<'a, S>>,
     },
     AssignOp {
         operator: BinOp,
-        left: AssignLeft<'a>,
-        right: Box<'a, Expr<'a>>,
+        left: AssignLeft<'a, S>,
+        right: Box<'a, Expr<'a, S>>,
     },
     AssignUnpack {
-        left: Vec<'a, AssignLeft<'a>>,
-        right: Box<'a, Expr<'a>>,
+        left: Vec<'a, AssignLeft<'a, S>>,
+        right: Box<'a, Expr<'a, S>>,
     },
     AssignMulti {
-        left: Vec<'a, AssignLeft<'a>>,
-        right: Vec<'a, Expr<'a>>,
+        left: Vec<'a, AssignLeft<'a, S>>,
+        right: Vec<'a, Expr<'a, S>>,
     },
-    Block(Box<'a, Block<'a>>),
-    Expr(Box<'a, Expr<'a>>),
+    Block(Box<'a, Block<'a, S>>),
+    Expr(Box<'a, Expr<'a, S>>),
 }
 
-impl fmt::Display for StmtKind<'_> {
+impl<S: AsRef<str>> fmt::Display for StmtKind<'_, S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             StmtKind::If {
@@ -228,7 +226,11 @@ impl fmt::Display for StmtKind<'_> {
             StmtKind::Return { argument } => write!(f, "return {argument}"),
             StmtKind::Throw { argument } => write!(f, "throw {argument}"),
             StmtKind::Global { arguments } => write!(f, "global {}", arguments.iter().join(", ")),
-            StmtKind::Import { path, kind } => {
+            StmtKind::Import {
+                path,
+                path_str: _,
+                kind,
+            } => {
                 write!(f, "import {}{}", path.iter().join("::"), kind)
             }
             StmtKind::Fn { name, function } => {
@@ -259,19 +261,19 @@ impl fmt::Display for StmtKind<'_> {
 
 /// An expression.
 #[derive(Debug, PartialEq, Eq)]
-pub struct Expr<'a> {
-    pub kind: ExprKind<'a>,
+pub struct Expr<'a, S> {
+    pub kind: ExprKind<'a, S>,
     pub range: TextRange,
 }
 
-impl fmt::Display for Expr<'_> {
+impl<S: AsRef<str>> fmt::Display for Expr<'_, S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.kind)
     }
 }
 
-impl<'a> From<Box<'a, Lit<'a>>> for Expr<'a> {
-    fn from(value: Box<'a, Lit<'a>>) -> Self {
+impl<'a, S> From<Box<'a, Lit<'a, S>>> for Expr<'a, S> {
+    fn from(value: Box<'a, Lit<'a, S>>) -> Self {
         Expr {
             range: value.range,
             kind: ExprKind::Lit(value),
@@ -279,8 +281,8 @@ impl<'a> From<Box<'a, Lit<'a>>> for Expr<'a> {
     }
 }
 
-impl<'a> From<Box<'a, Ident<'a>>> for Expr<'a> {
-    fn from(value: Box<'a, Ident<'a>>) -> Self {
+impl<'a, S> From<Box<'a, Ident<'a, S>>> for Expr<'a, S> {
+    fn from(value: Box<'a, Ident<'a, S>>) -> Self {
         Expr {
             range: value.range,
             kind: ExprKind::Ident(value),
@@ -290,42 +292,42 @@ impl<'a> From<Box<'a, Ident<'a>>> for Expr<'a> {
 
 /// Kind of expression.
 #[derive(Debug, PartialEq, Eq)]
-pub enum ExprKind<'a> {
-    Lit(Box<'a, Lit<'a>>),
-    Ident(Box<'a, Ident<'a>>),
-    Function(Function<'a>),
+pub enum ExprKind<'a, S> {
+    Lit(Box<'a, Lit<'a, S>>),
+    Ident(Box<'a, Ident<'a, S>>),
+    Function(Function<'a, S>),
     Table {
-        properties: Vec<'a, TableProperty<'a>>,
+        properties: Vec<'a, TableProperty<'a, S>>,
     },
     List {
-        items: Vec<'a, Expr<'a>>,
+        items: Vec<'a, Expr<'a, S>>,
     },
     Unary {
         operator: UnOp,
-        argument: Box<'a, Expr<'a>>,
+        argument: Box<'a, Expr<'a, S>>,
     },
     Binary {
         operator: BinOp,
-        left: Box<'a, Expr<'a>>,
-        right: Box<'a, Expr<'a>>,
+        left: Box<'a, Expr<'a, S>>,
+        right: Box<'a, Expr<'a, S>>,
     },
     Member {
-        table: Box<'a, Expr<'a>>,
-        property: MemberKind<'a>,
+        table: Box<'a, Expr<'a, S>>,
+        property: MemberKind<'a, S>,
         safe: bool,
     },
     MetaMember {
-        table: Box<'a, Expr<'a>>,
+        table: Box<'a, Expr<'a, S>>,
         safe: bool,
     },
     Call {
-        callee: Box<'a, Expr<'a>>,
-        arguments: Vec<'a, Expr<'a>>,
+        callee: Box<'a, Expr<'a, S>>,
+        arguments: Vec<'a, Expr<'a, S>>,
         kind: CallKind,
     },
 }
 
-impl fmt::Display for ExprKind<'_> {
+impl<S: AsRef<str>> fmt::Display for ExprKind<'_, S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ExprKind::Lit(lit) => write!(f, "{lit}"),
@@ -384,20 +386,21 @@ impl fmt::Display for ExprKind<'_> {
 
 /// A literal.
 #[derive(Debug, PartialEq, Eq)]
-pub struct Lit<'a> {
-    pub kind: LitKind<'a>,
+pub struct Lit<'a, S> {
+    pub kind: LitKind<S>,
     pub range: TextRange,
+    pub marker: PhantomData<&'a ()>,
 }
 
-impl fmt::Display for Lit<'_> {
+impl<S: AsRef<str>> fmt::Display for Lit<'_, S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.kind)
     }
 }
 
 /// Kind of literal.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Hash)]
-pub enum LitKind<'a> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Hash)]
+pub enum LitKind<S> {
     /// "null"
     Null,
     /// "true", "false"
@@ -407,32 +410,33 @@ pub enum LitKind<'a> {
     /// "12.34", "0b100.100"
     Float(Float),
     /// ""abc"", ""abc"
-    Str(&'a String<'a>),
+    Str(S),
 }
 
-impl fmt::Display for LitKind<'_> {
+impl<S: AsRef<str>> fmt::Display for LitKind<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LitKind::Null => write!(f, "null"),
             LitKind::Bool(v) => write!(f, "{v}"),
             LitKind::Int(v) => write!(f, "{v}"),
             LitKind::Float(v) => write!(f, "{v}"),
-            LitKind::Str(v) => write!(f, "\"{}\"", escape_str(v, false)),
+            LitKind::Str(v) => write!(f, "\"{}\"", escape_str(v.as_ref(), false)),
         }
     }
 }
 
 /// An ident.
 #[derive(Debug, PartialEq, Eq)]
-pub struct Ident<'a> {
-    pub name: &'a String<'a>,
+pub struct Ident<'a, S> {
+    pub name: S,
     pub range: TextRange,
     pub symbol_id: Cell<Option<SymbolId>>,
+    pub marker: PhantomData<&'a ()>,
 }
 
-impl fmt::Display for Ident<'_> {
+impl<S: AsRef<str>> fmt::Display for Ident<'_, S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.name)
+        write!(f, "{}", self.name.as_ref())
     }
 }
 
@@ -535,16 +539,16 @@ impl BinOp {
 
 /// Kind of member expression.
 #[derive(Debug, PartialEq, Eq)]
-pub enum MemberKind<'a> {
+pub enum MemberKind<'a, S> {
     /// `[]`
-    Bracket(Box<'a, Expr<'a>>),
+    Bracket(Box<'a, Expr<'a, S>>),
     /// `.`
-    Dot(Box<'a, Ident<'a>>),
+    Dot(Box<'a, Ident<'a, S>>),
     /// `::`
-    DoubleColon(Box<'a, Ident<'a>>),
+    DoubleColon(Box<'a, Ident<'a, S>>),
 }
 
-impl fmt::Display for MemberKind<'_> {
+impl<S: AsRef<str>> fmt::Display for MemberKind<'_, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             MemberKind::Bracket(expr) => write!(f, "[{}]", expr),
@@ -556,16 +560,16 @@ impl fmt::Display for MemberKind<'_> {
 
 /// Kind of import statement.
 #[derive(Debug, PartialEq, Eq)]
-pub enum ImportKind<'a> {
+pub enum ImportKind<'a, S> {
     /// `import path::xxx as xxx`
-    Simple(Option<Box<'a, Ident<'a>>>),
+    Simple(Option<Box<'a, Ident<'a, S>>>),
     /// `import path::{...}`
-    Nested(Vec<'a, (Ident<'a>, Option<Ident<'a>>)>),
+    Nested(Vec<'a, (Ident<'a, S>, Option<Ident<'a, S>>)>),
     /// `import path::*`
     Glob,
 }
 
-impl fmt::Display for ImportKind<'_> {
+impl<S: AsRef<str>> fmt::Display for ImportKind<'_, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ImportKind::Simple(alias) => {
@@ -601,13 +605,13 @@ pub enum CallKind {
 
 /// A TableProperty.
 #[derive(Debug, PartialEq, Eq)]
-pub struct TableProperty<'a> {
-    pub key: Expr<'a>,
-    pub value: Expr<'a>,
+pub struct TableProperty<'a, S> {
+    pub key: Expr<'a, S>,
+    pub value: Expr<'a, S>,
     pub range: TextRange,
 }
 
-impl fmt::Display for TableProperty<'_> {
+impl<S: AsRef<str>> fmt::Display for TableProperty<'_, S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}: {}", self.key, self.value)
     }
@@ -615,18 +619,18 @@ impl fmt::Display for TableProperty<'_> {
 
 /// The left part of assign.
 #[derive(Debug, PartialEq, Eq)]
-pub enum AssignLeft<'a> {
-    Ident(Box<'a, TypedIdent<'a>>),
+pub enum AssignLeft<'a, S> {
+    Ident(Box<'a, TypedIdent<'a, S>>),
     Member {
-        table: Box<'a, Expr<'a>>,
-        property: MemberKind<'a>,
+        table: Box<'a, Expr<'a, S>>,
+        property: MemberKind<'a, S>,
     },
     MetaMember {
-        table: Box<'a, Expr<'a>>,
+        table: Box<'a, Expr<'a, S>>,
     },
 }
 
-impl fmt::Display for AssignLeft<'_> {
+impl<S: AsRef<str>> fmt::Display for AssignLeft<'_, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             AssignLeft::Ident(ident) => write!(f, "{ident}"),
@@ -638,13 +642,13 @@ impl fmt::Display for AssignLeft<'_> {
 
 /// The ident with type.
 #[derive(Debug, PartialEq, Eq)]
-pub struct TypedIdent<'a> {
-    pub ident: Box<'a, Ident<'a>>,
-    pub ty: Option<Ty<'a>>,
+pub struct TypedIdent<'a, S> {
+    pub ident: Box<'a, Ident<'a, S>>,
+    pub ty: Option<Ty<'a, S>>,
     pub range: TextRange,
 }
 
-impl fmt::Display for TypedIdent<'_> {
+impl<S: AsRef<str>> fmt::Display for TypedIdent<'_, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(t) = &self.ty {
             write!(f, "{}: {}", self.ident, t)
@@ -654,8 +658,8 @@ impl fmt::Display for TypedIdent<'_> {
     }
 }
 
-impl<'a> From<Box<'a, Ident<'a>>> for TypedIdent<'a> {
-    fn from(value: Box<'a, Ident<'a>>) -> Self {
+impl<'a, S> From<Box<'a, Ident<'a, S>>> for TypedIdent<'a, S> {
+    fn from(value: Box<'a, Ident<'a, S>>) -> Self {
         TypedIdent {
             range: value.range,
             ident: value,
@@ -666,12 +670,12 @@ impl<'a> From<Box<'a, Ident<'a>>> for TypedIdent<'a> {
 
 /// A type.
 #[derive(Debug, PartialEq, Eq)]
-pub struct Ty<'a> {
-    pub kind: TyKind<'a>,
+pub struct Ty<'a, S> {
+    pub kind: TyKind<'a, S>,
     pub range: TextRange,
 }
 
-impl fmt::Display for Ty<'_> {
+impl<S: AsRef<str>> fmt::Display for Ty<'_, S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.kind)
     }
@@ -679,24 +683,24 @@ impl fmt::Display for Ty<'_> {
 
 /// Kind of type.
 #[derive(Debug, PartialEq, Eq)]
-pub enum TyKind<'a> {
-    Lit(Box<'a, Lit<'a>>),
-    Ident(Box<'a, Ident<'a>>),
+pub enum TyKind<'a, S> {
+    Lit(Box<'a, Lit<'a, S>>),
+    Ident(Box<'a, Ident<'a, S>>),
     Table {
-        pairs: Vec<'a, (&'a String<'a>, Ty<'a>)>,
-        others: Option<Box<'a, (Ty<'a>, Ty<'a>)>>,
+        pairs: Vec<'a, (S, Ty<'a, S>)>,
+        others: Option<Box<'a, (Ty<'a, S>, Ty<'a, S>)>>,
     },
     Function {
-        params: Vec<'a, Ty<'a>>,
-        variadic: Option<Box<'a, Ty<'a>>>,
-        returns: Option<Box<'a, Ty<'a>>>,
-        throws: Option<Box<'a, Ty<'a>>>,
+        params: Vec<'a, Ty<'a, S>>,
+        variadic: Option<Box<'a, Ty<'a, S>>>,
+        returns: Option<Box<'a, Ty<'a, S>>>,
+        throws: Option<Box<'a, Ty<'a, S>>>,
     },
-    Option(Box<'a, Ty<'a>>),
-    Union(Vec<'a, Ty<'a>>),
+    Option(Box<'a, Ty<'a, S>>),
+    Union(Vec<'a, Ty<'a, S>>),
 }
 
-impl fmt::Display for TyKind<'_> {
+impl<S: AsRef<str>> fmt::Display for TyKind<'_, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             TyKind::Lit(lit) => write!(f, "{lit}"),
@@ -707,7 +711,7 @@ impl fmt::Display for TyKind<'_> {
                     "{{\n{}\n}}",
                     pairs
                         .iter()
-                        .map(|(k, v)| format!("{k}: {v}"))
+                        .map(|(k, v)| format!("{}: {}", k.as_ref(), v))
                         .chain(
                             others
                                 .iter()

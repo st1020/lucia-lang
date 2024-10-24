@@ -1,4 +1,5 @@
-use lucia_lang::compiler::{check_type, compile};
+use bumpalo::Bump;
+use lucia_lang::compiler::{check_type, compile, interning::BumpInterner};
 
 #[test]
 fn test_type_hint() {
@@ -14,7 +15,9 @@ t8: {a: int, b: str} = {'a': 1, 'b': '1'}
 t9: {[int]: str} = ['test', 'test']
 t10: {a: int, b: str, [int]: str} = {'a': 1, 'b': '1', 0: 'test'}
 "#;
-    let (parse_error, type_error) = check_type(input);
+    let allocator = &Bump::new();
+    let interner = BumpInterner::new(allocator);
+    let (parse_error, type_error) = check_type(allocator, interner, input);
     assert_eq!(parse_error.len(), 0);
     assert_eq!(type_error.len(), 0);
 }
@@ -24,7 +27,9 @@ fn test_type_hint_error() {
     let input = r#"
 t1: int = ""
 "#;
-    let (parse_error, type_error) = check_type(input);
+    let allocator = &Bump::new();
+    let interner = BumpInterner::new(allocator);
+    let (parse_error, type_error) = check_type(allocator, interner, input);
     assert_eq!(parse_error.len(), 0);
     assert_eq!(type_error.len(), 1);
 }
@@ -36,7 +41,9 @@ t1: int = "" // error
 t2: int = 1 // ok
 t3: int = 0.1 // error
 "#;
-    let (parse_error, type_error) = check_type(input);
+    let allocator = &Bump::new();
+    let interner = BumpInterner::new(allocator);
+    let (parse_error, type_error) = check_type(allocator, interner, input);
     assert_eq!(parse_error.len(), 0);
     assert_eq!(type_error.len(), 2);
 }
@@ -50,6 +57,8 @@ println(1 + 1)
 
 1 -
 "#;
-    let parse_error = compile(input).unwrap_err();
+    let allocator = &Bump::new();
+    let interner = BumpInterner::new(allocator);
+    let parse_error = compile(allocator, interner, input).unwrap_err();
     assert_eq!(parse_error.len(), 2);
 }

@@ -16,14 +16,13 @@
 //! # Examples
 //!
 //! ```rust
-//! use lucia_lang::{compiler::compile, Lucia};
+//! use lucia_lang::Lucia;
 //! let input = r#"
 //! import std::io::{println}
 //! println("Hello World!")
 //! "#;
-//! let code = compile(input).unwrap();
 //! let mut lucia = Lucia::new();
-//! lucia.run_code(code);
+//! lucia.run_code(input);
 //! ```
 
 pub mod compiler;

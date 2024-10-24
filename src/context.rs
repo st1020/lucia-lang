@@ -3,10 +3,12 @@ use std::ops;
 use gc_arena::{Arena, Collect, Mutation, Rootable};
 
 use crate::{
-    compiler::code::Code,
+    compiler::compile,
     frame::{FrameMode, Frames},
     libs,
-    objects::{Closure, GcError, Registry, RuntimeCode, StaticError, StaticValue, Table},
+    objects::{
+        Closure, GcError, GcStrInterner, Registry, RuntimeCode, StaticError, StaticValue, Table,
+    },
 };
 
 #[derive(Clone, Collect)]
@@ -112,8 +114,11 @@ impl Lucia {
         }
     }
 
-    pub fn run_code(&mut self, code: Code) -> Result<StaticValue, StaticError> {
+    pub fn run_code(&mut self, input: &str) -> Result<StaticValue, StaticError> {
+        let allocator = &bumpalo::Bump::new();
         self.run(|ctx| {
+            let interner = GcStrInterner::new(ctx);
+            let code = compile(allocator, interner, input).unwrap(); // TODO
             let gc_code = RuntimeCode::new(&ctx, code);
             let closure = Closure::new(&ctx, gc_code, None);
             ctx.state

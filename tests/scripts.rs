@@ -3,7 +3,7 @@ use std::{
     io::{stdout, Write},
 };
 
-use lucia_lang::{compiler::compile, Lucia};
+use lucia_lang::Lucia;
 
 #[test]
 fn test_scripts() {
@@ -14,9 +14,8 @@ fn test_scripts() {
         if path.extension().is_some_and(|ext| ext == "lucia") {
             let input = fs::read_to_string(&path).expect("could not read file contents");
             let _ = writeln!(stdout(), "running {:?}", path.file_name().unwrap());
-            let code = compile(&input).expect("error encountered compiling");
             let mut lucia = Lucia::new();
-            if let Err(err) = lucia.run_code(code) {
+            if let Err(err) = lucia.run_code(&input) {
                 lucia.run(|ctx| {
                     let err = ctx.state.registry.fetch(&err);
                     panic!("error encountered running: {}", err);

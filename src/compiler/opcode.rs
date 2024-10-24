@@ -2,15 +2,12 @@
 
 use std::fmt;
 
-use gc_arena::Collect;
-
 /// The jump target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct JumpTarget(pub usize);
 
 /// The operation code.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Collect)]
-#[collect(require_static)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum OpCode {
     /// Removes the top-of-stack (TOS) item.
     Pop,

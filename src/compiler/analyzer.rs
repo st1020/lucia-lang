@@ -5,7 +5,6 @@
 
 use std::cell::Cell;
 
-use bumpalo::collections::String;
 use index_vec::IndexVec;
 use indexmap::{IndexMap, IndexSet};
 use rustc_hash::FxBuildHasher;
@@ -13,6 +12,7 @@ use rustc_hash::FxBuildHasher;
 use super::{
     ast::*,
     index::{FunctionId, ScopeId, SymbolId},
+    interning::InternedString,
 };
 
 /// The semantic information of a function.
@@ -38,7 +38,7 @@ impl FunctionSemantic {
 
 /// The semantic information of a scope.
 #[derive(Debug, Clone)]
-pub struct Scope<'a> {
+pub struct Scope<S> {
     /// The kind of scope.
     pub kind: ScopeKind,
     /// The parent scope it belongs in.
@@ -48,10 +48,10 @@ pub struct Scope<'a> {
     /// Symbol bindings in a scope.
     ///
     /// A binding is a mapping from an identifier name to its [`SymbolId`]
-    pub bindings: IndexMap<&'a String<'a>, SymbolId, FxBuildHasher>,
+    pub bindings: IndexMap<InternedString<S>, SymbolId, FxBuildHasher>,
 }
 
-impl Scope<'_> {
+impl<S> Scope<S> {
     pub fn new(kind: ScopeKind, parent_id: Option<ScopeId>, function_id: FunctionId) -> Self {
         Self {
             kind,
@@ -72,9 +72,9 @@ pub enum ScopeKind {
 
 /// The semantic information of a symbol.
 #[derive(Debug, Clone)]
-pub struct Symbol<'a> {
+pub struct Symbol<S> {
     /// The name of the symbol.
-    pub name: &'a String<'a>,
+    pub name: S,
     /// The scope it belongs in.
     pub scope_id: ScopeId,
     /// The kind of symbol.
@@ -98,34 +98,41 @@ pub enum SymbolKind {
 /// [scope]: Scope
 /// [symbol]: Symbol
 #[derive(Debug, Clone)]
-pub struct Semantic<'a> {
+pub struct Semantic<S> {
     pub functions: IndexVec<FunctionId, FunctionSemantic>,
-    pub scopes: IndexVec<ScopeId, Scope<'a>>,
-    pub symbols: IndexVec<SymbolId, Symbol<'a>>,
+    pub scopes: IndexVec<ScopeId, Scope<S>>,
+    pub symbols: IndexVec<SymbolId, Symbol<S>>,
 }
 
 /// Semantic Analyze.
-pub fn analyze<'a>(program: &Program<'a>) -> Semantic<'a> {
+pub fn analyze<S: AsRef<str> + Copy>(program: &Program<'_, S>) -> Semantic<S> {
     SemanticAnalyzer::new().analyze(program)
 }
 
-#[derive(Debug, Default)]
-struct SemanticAnalyzer<'a> {
+#[derive(Debug)]
+struct SemanticAnalyzer<S> {
     current_function_id: FunctionId,
     current_scope_id: ScopeId,
 
     functions: IndexVec<FunctionId, FunctionSemantic>,
-    scopes: IndexVec<ScopeId, Scope<'a>>,
-    symbols: IndexVec<SymbolId, Symbol<'a>>,
-    globals: IndexMap<&'a String<'a>, SymbolId, FxBuildHasher>,
+    scopes: IndexVec<ScopeId, Scope<S>>,
+    symbols: IndexVec<SymbolId, Symbol<S>>,
+    globals: IndexMap<InternedString<S>, SymbolId, FxBuildHasher>,
 }
 
-impl<'a> SemanticAnalyzer<'a> {
+impl<S: AsRef<str> + Copy> SemanticAnalyzer<S> {
     fn new() -> Self {
-        Self::default()
+        Self {
+            current_function_id: FunctionId::new(0),
+            current_scope_id: ScopeId::new(0),
+            functions: IndexVec::new(),
+            scopes: IndexVec::new(),
+            symbols: IndexVec::new(),
+            globals: IndexMap::with_hasher(FxBuildHasher),
+        }
     }
 
-    fn analyze(mut self, program: &Program<'a>) -> Semantic<'a> {
+    fn analyze(mut self, program: &Program<'_, S>) -> Semantic<S> {
         self.analyze_program(program);
         Semantic {
             functions: self.functions,
@@ -134,18 +141,18 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn declare_symbol(&mut self, ident: &Ident<'a>, kind: SymbolKind) {
+    fn declare_symbol(&mut self, ident: &Ident<'_, S>, kind: SymbolKind) {
         let symbol = Symbol {
             name: ident.name,
             scope_id: self.current_scope_id,
             kind,
         };
         let symbol_id = if matches!(kind, SymbolKind::Global { .. }) {
-            if let Some(symbol_id) = self.globals.get(ident.name).copied() {
+            if let Some(symbol_id) = self.globals.get(&InternedString(ident.name)).copied() {
                 symbol_id
             } else {
                 let symbol_id = self.symbols.push(symbol);
-                self.globals.insert(ident.name, symbol_id);
+                self.globals.insert(ident.name.into(), symbol_id);
                 symbol_id
             }
         } else {
@@ -153,26 +160,31 @@ impl<'a> SemanticAnalyzer<'a> {
         };
         self.scopes[self.current_scope_id]
             .bindings
-            .insert(ident.name, symbol_id);
+            .insert(ident.name.into(), symbol_id);
         self.functions[self.current_function_id]
             .symbols
             .insert(symbol_id);
         ident.symbol_id.set(Some(symbol_id));
     }
 
-    fn declare_read(&mut self, ident: &Ident<'a>) {
+    fn declare_read(&mut self, ident: &Ident<'_, S>) {
         self.declare_reference(ident, false, SymbolKind::Global { writable: false });
     }
 
-    fn declare_write(&mut self, ident: &Ident<'a>) {
+    fn declare_write(&mut self, ident: &Ident<'_, S>) {
         self.declare_reference(ident, true, SymbolKind::Local);
     }
 
-    fn declare_reference(&mut self, ident: &Ident<'a>, need_writable: bool, default: SymbolKind) {
+    fn declare_reference(
+        &mut self,
+        ident: &Ident<'_, S>,
+        need_writable: bool,
+        default: SymbolKind,
+    ) {
         let mut scope_id = self.current_scope_id;
         loop {
             let scope = &self.scopes[scope_id];
-            if let Some(symbol_id) = scope.bindings.get(ident.name).copied() {
+            if let Some(symbol_id) = scope.bindings.get(&InternedString(ident.name)).copied() {
                 let symbol = &mut self.symbols[symbol_id];
                 match symbol.kind {
                     SymbolKind::Local => {
@@ -247,7 +259,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn analyze_program(&mut self, program: &Program<'a>) {
+    fn analyze_program(&mut self, program: &Program<'_, S>) {
         let function_id = self
             .functions
             .push(FunctionSemantic::new(FunctionKind::Function, None));
@@ -258,7 +270,7 @@ impl<'a> SemanticAnalyzer<'a> {
         self.analyze_stmts(&program.function.body);
     }
 
-    fn analyze_function(&mut self, function: &Function<'a>) {
+    fn analyze_function(&mut self, function: &Function<'_, S>) {
         self.enter_function(function.kind, &function.function_id);
         let scope_kind = match function.kind {
             FunctionKind::Function => ScopeKind::Function,
@@ -279,19 +291,19 @@ impl<'a> SemanticAnalyzer<'a> {
         self.leave_function();
     }
 
-    fn analyze_stmts(&mut self, block: &Block<'a>) {
+    fn analyze_stmts(&mut self, block: &Block<'_, S>) {
         for stmt in &block.body {
             self.analyze_stmt(stmt);
         }
     }
 
-    fn analyze_block(&mut self, block: &Block<'a>) {
+    fn analyze_block(&mut self, block: &Block<'_, S>) {
         self.enter_scope(ScopeKind::Block, &block.scope_id);
         self.analyze_stmts(block);
         self.leave_scope();
     }
 
-    fn analyze_stmt(&mut self, stmt: &Stmt<'a>) {
+    fn analyze_stmt(&mut self, stmt: &Stmt<'_, S>) {
         match &stmt.kind {
             StmtKind::If {
                 test,
@@ -327,7 +339,11 @@ impl<'a> SemanticAnalyzer<'a> {
                     self.declare_symbol(&argument.ident, SymbolKind::Global { writable: true });
                 }
             }
-            StmtKind::Import { path, kind } => match kind {
+            StmtKind::Import {
+                path,
+                path_str: _,
+                kind,
+            } => match kind {
                 ImportKind::Simple(alias) => {
                     let ident = alias.as_ref().map_or(path.last().unwrap(), |v| v);
                     self.declare_symbol(ident, SymbolKind::Global { writable: true });
@@ -375,7 +391,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn analyze_assign_left(&mut self, left: &AssignLeft<'a>) {
+    fn analyze_assign_left(&mut self, left: &AssignLeft<'_, S>) {
         match left {
             AssignLeft::Ident(ident) => self.declare_write(&ident.ident),
             AssignLeft::Member { table, property } => {
@@ -386,7 +402,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn analyze_expr(&mut self, expr: &Expr<'a>) {
+    fn analyze_expr(&mut self, expr: &Expr<'_, S>) {
         match &expr.kind {
             ExprKind::Lit(_) => (),
             ExprKind::Ident(ident) => self.declare_read(ident),
@@ -436,7 +452,7 @@ impl<'a> SemanticAnalyzer<'a> {
         }
     }
 
-    fn analyze_member_property(&mut self, property: &MemberKind<'a>) {
+    fn analyze_member_property(&mut self, property: &MemberKind<'_, S>) {
         match property {
             MemberKind::Bracket(expr) => self.analyze_expr(expr),
             MemberKind::Dot(_) | MemberKind::DoubleColon(_) => (),

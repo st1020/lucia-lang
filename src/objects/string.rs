@@ -1,7 +1,10 @@
-use std::{fmt, ops};
+use std::{borrow::Borrow, collections::HashSet, fmt, ops};
 
 use gc_arena::{Collect, Gc, Mutation};
+use rustc_hash::FxBuildHasher;
 use smol_str::SmolStr;
+
+use crate::{compiler::interning::StringInterner, Context};
 
 #[derive(Clone, Copy, Hash, Collect)]
 #[collect(no_drop)]
@@ -60,6 +63,12 @@ impl<'gc> AsRef<str> for Str<'gc> {
     }
 }
 
+impl<'gc> Borrow<str> for Str<'gc> {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
 impl<'gc, T> PartialEq<T> for Str<'gc>
 where
     T: ?Sized + AsRef<str>,
@@ -70,3 +79,43 @@ where
 }
 
 impl<'gc> Eq for Str<'gc> {}
+
+pub struct GcStrInterner<'gc> {
+    context: Context<'gc>,
+    interner: HashSet<Str<'gc>, FxBuildHasher>,
+}
+
+impl<'gc> GcStrInterner<'gc> {
+    pub fn new(context: Context<'gc>) -> Self {
+        GcStrInterner {
+            context,
+            interner: HashSet::with_hasher(FxBuildHasher),
+        }
+    }
+}
+
+impl<'gc> StringInterner for GcStrInterner<'gc> {
+    type String = Str<'gc>;
+
+    fn intern(&mut self, s: &str) -> Self::String {
+        if let Some(s) = self.interner.get(s) {
+            *s
+        } else {
+            let s = Str::new(&self.context, s.into());
+            self.interner.insert(s);
+            s
+        }
+    }
+}
+
+unsafe impl<'gc> Collect for GcStrInterner<'gc> {
+    fn needs_trace() -> bool {
+        true
+    }
+
+    fn trace(&self, cc: &gc_arena::Collection) {
+        for s in self.interner.iter() {
+            s.trace(cc)
+        }
+    }
+}

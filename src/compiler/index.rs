@@ -1,7 +1,8 @@
 //! The index types used in the compiler.
 
-use index_vec::Idx;
 use std::num::NonZeroU32;
+
+use index_vec::Idx;
 
 macro_rules! define_index {
     ($($name:ident),*) => {$(

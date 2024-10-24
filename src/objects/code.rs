@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-use gc_arena::{Collect, Gc, Mutation};
+use gc_arena::{static_collect, Collect, Gc, Mutation};
 
 use crate::{
     compiler::{
@@ -12,11 +12,8 @@ use crate::{
     utils::Float,
 };
 
-unsafe impl Collect for FunctionKind {
-    fn needs_trace() -> bool {
-        false
-    }
-}
+static_collect!(OpCode);
+static_collect!(FunctionKind);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Collect)]
 #[collect(no_drop)]
@@ -56,16 +53,12 @@ pub struct RuntimeCodeInner<'gc> {
 }
 
 impl<'gc> RuntimeCode<'gc> {
-    pub fn new(mc: &Mutation<'gc>, function: Code) -> Self {
+    pub fn new(mc: &Mutation<'gc>, function: Code<Str<'gc>>) -> Self {
         RuntimeCode(Gc::new(
             mc,
             RuntimeCodeInner {
-                params: function
-                    .params
-                    .into_iter()
-                    .map(|s| Str::new(mc, s))
-                    .collect(),
-                variadic: function.variadic.map(|s| Str::new(mc, s)),
+                params: function.params.into_iter().collect(),
+                variadic: function.variadic,
                 kind: function.kind,
                 code: function.code,
                 consts: function
@@ -73,21 +66,9 @@ impl<'gc> RuntimeCode<'gc> {
                     .into_iter()
                     .map(|v| RuntimeConstValue::new(mc, v))
                     .collect(),
-                local_names: function
-                    .local_names
-                    .into_iter()
-                    .map(|s| Str::new(mc, s))
-                    .collect(),
-                global_names: function
-                    .global_names
-                    .into_iter()
-                    .map(|s| Str::new(mc, s))
-                    .collect(),
-                upvalue_names: function
-                    .upvalue_names
-                    .into_iter()
-                    .map(|(s, i)| (Str::new(mc, s), i))
-                    .collect(),
+                local_names: function.local_names.into_iter().collect(),
+                global_names: function.global_names.into_iter().collect(),
+                upvalue_names: function.upvalue_names.into_iter().collect(),
                 stack_size: function.stack_size,
             },
         ))
@@ -113,13 +94,13 @@ pub enum RuntimeConstValue<'gc> {
 }
 
 impl<'gc> RuntimeConstValue<'gc> {
-    pub fn new(mc: &Mutation<'gc>, const_value: ConstValue) -> Self {
+    pub fn new(mc: &Mutation<'gc>, const_value: ConstValue<Str<'gc>>) -> Self {
         match const_value {
             ConstValue::Null => RuntimeConstValue::Null,
             ConstValue::Bool(v) => RuntimeConstValue::Bool(v),
             ConstValue::Int(v) => RuntimeConstValue::Int(v),
             ConstValue::Float(v) => RuntimeConstValue::Float(v),
-            ConstValue::Str(v) => RuntimeConstValue::Str(Str::new(mc, v)),
+            ConstValue::Str(v) => RuntimeConstValue::Str(v),
             ConstValue::Func(v) => RuntimeConstValue::Func(RuntimeCode::new(mc, *v)),
         }
     }

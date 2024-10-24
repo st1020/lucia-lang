@@ -3,9 +3,6 @@
 use index_vec::{index_vec, IndexVec};
 use indexmap::{IndexMap, IndexSet};
 use rustc_hash::FxBuildHasher;
-use smol_str::{SmolStr, ToSmolStr};
-
-use crate::utils::Join;
 
 use super::{
     analyzer::{FunctionSemantic, Semantic, SymbolKind},
@@ -45,7 +42,7 @@ impl From<UnOp> for OpCode {
     }
 }
 
-impl MemberKind<'_> {
+impl<S> MemberKind<'_, S> {
     fn get_opcode(&self) -> OpCode {
         match self {
             MemberKind::Bracket(_) => OpCode::GetItem,
@@ -61,48 +58,55 @@ impl MemberKind<'_> {
     }
 }
 
-#[derive(Debug, Clone, Default)]
-struct Context {
+#[derive(Debug, Clone)]
+struct Context<S> {
     code: Vec<OpCode>,
-    consts: IndexSet<ConstValue, FxBuildHasher>,
-    local_names: IndexMap<SymbolId, SmolStr, FxBuildHasher>,
-    global_names: IndexMap<SymbolId, SmolStr, FxBuildHasher>,
-    upvalue_names: IndexMap<SymbolId, (SmolStr, Option<usize>), FxBuildHasher>,
+    consts: IndexSet<ConstValue<S>, FxBuildHasher>,
+    local_names: IndexMap<SymbolId, S, FxBuildHasher>,
+    global_names: IndexMap<SymbolId, S, FxBuildHasher>,
+    upvalue_names: IndexMap<SymbolId, (S, Option<usize>), FxBuildHasher>,
 
     jump_target_count: usize,
     continue_stack: Vec<JumpTarget>,
     break_stack: Vec<JumpTarget>,
 }
 
-impl Context {
+impl<S: AsRef<str>> Context<S> {
     fn new() -> Self {
         let mut consts = IndexSet::with_hasher(FxBuildHasher);
         consts.insert(ConstValue::Null);
         Self {
+            code: Vec::new(),
             consts,
-            ..Default::default()
+            local_names: IndexMap::with_hasher(FxBuildHasher),
+            global_names: IndexMap::with_hasher(FxBuildHasher),
+            upvalue_names: IndexMap::with_hasher(FxBuildHasher),
+            jump_target_count: 0,
+            continue_stack: Vec::new(),
+            break_stack: Vec::new(),
         }
     }
 }
 
 /// Generate code.
-pub fn gen_code<'a>(program: &Program<'a>, semantic: &Semantic<'a>) -> (Code, Vec<CompilerError>) {
-    CodeGenerator::new(program, semantic).gen_code()
+pub fn gen_code<S: AsRef<str> + Copy>(
+    program: &Program<'_, S>,
+    semantic: &Semantic<S>,
+) -> (Code<S>, Vec<CompilerError>) {
+    CodeGenerator::new(semantic).gen_code(program)
 }
 
-struct CodeGenerator<'a, 'b> {
-    program: &'b Program<'a>,
-    semantic: &'b Semantic<'a>,
+struct CodeGenerator<'a, S> {
+    semantic: &'a Semantic<S>,
 
-    contexts: IndexVec<FunctionId, Context>,
+    contexts: IndexVec<FunctionId, Context<S>>,
     current_function_id: FunctionId,
     errors: Vec<CompilerError>,
 }
 
-impl<'a, 'b> CodeGenerator<'a, 'b> {
-    fn new(program: &'b Program<'a>, semantic: &'b Semantic<'a>) -> Self {
+impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
+    fn new(semantic: &'a Semantic<S>) -> Self {
         Self {
-            program,
             semantic,
             contexts: index_vec![Context::new(); semantic.functions.len()],
             current_function_id: FunctionId::new(0),
@@ -110,7 +114,7 @@ impl<'a, 'b> CodeGenerator<'a, 'b> {
         }
     }
 
-    fn context(&mut self) -> &mut Context {
+    fn context(&mut self) -> &mut Context<S> {
         &mut self.contexts[self.current_function_id]
     }
 
@@ -140,7 +144,7 @@ impl<'a, 'b> CodeGenerator<'a, 'b> {
         JumpTarget(jump_target)
     }
 
-    fn add_const(&mut self, value: ConstValue) -> usize {
+    fn add_const(&mut self, value: ConstValue<S>) -> usize {
         let consts = &mut self.context().consts;
         if let Some(index) = consts.get_index_of(&value) {
             index
@@ -150,7 +154,7 @@ impl<'a, 'b> CodeGenerator<'a, 'b> {
         }
     }
 
-    fn load(&mut self, ident: &Ident<'a>) {
+    fn load(&mut self, ident: &Ident<'_, S>) {
         let symbol_id = ident.symbol_id.get().unwrap();
         let opcode = match self.semantic.symbols[symbol_id].kind {
             SymbolKind::Local => {
@@ -177,7 +181,7 @@ impl<'a, 'b> CodeGenerator<'a, 'b> {
         self.push_code(opcode);
     }
 
-    fn store(&mut self, ident: &Ident<'a>) {
+    fn store(&mut self, ident: &Ident<'_, S>) {
         let symbol_id = ident.symbol_id.get().unwrap();
         let opcode = match self.semantic.symbols[symbol_id].kind {
             SymbolKind::Local => {
@@ -204,12 +208,12 @@ impl<'a, 'b> CodeGenerator<'a, 'b> {
         self.push_code(opcode);
     }
 
-    fn gen_code(mut self) -> (Code, Vec<CompilerError>) {
-        let code = self.gen_function_code(&self.program.function);
+    fn gen_code(mut self, program: &Program<'_, S>) -> (Code<S>, Vec<CompilerError>) {
+        let code = self.gen_function_code(&program.function);
         (code, self.errors)
     }
 
-    fn gen_function_code(&mut self, function: &Function<'a>) -> Code {
+    fn gen_function_code(&mut self, function: &Function<'_, S>) -> Code<S> {
         self.current_function_id = function.function_id.get().unwrap();
         for symbol_id in self.semantic.functions[self.current_function_id]
             .symbols
@@ -219,9 +223,7 @@ impl<'a, 'b> CodeGenerator<'a, 'b> {
             let symbol = &self.semantic.symbols[symbol_id];
             match symbol.kind {
                 SymbolKind::Local => {
-                    self.context()
-                        .local_names
-                        .insert(symbol_id, symbol.name.to_smolstr());
+                    self.context().local_names.insert(symbol_id, symbol.name);
                 }
                 SymbolKind::Upvalue => {
                     let base_closure_upvalue_id =
@@ -230,15 +232,12 @@ impl<'a, 'b> CodeGenerator<'a, 'b> {
                                 .upvalue_names
                                 .get_index_of(&symbol_id)
                         });
-                    self.context().upvalue_names.insert(
-                        symbol_id,
-                        (symbol.name.to_smolstr(), base_closure_upvalue_id),
-                    );
+                    self.context()
+                        .upvalue_names
+                        .insert(symbol_id, (symbol.name, base_closure_upvalue_id));
                 }
                 SymbolKind::Global { writable: _ } => {
-                    self.context()
-                        .global_names
-                        .insert(symbol_id, symbol.name.to_smolstr());
+                    self.context().global_names.insert(symbol_id, symbol.name);
                 }
             }
         }
@@ -290,15 +289,8 @@ impl<'a, 'b> CodeGenerator<'a, 'b> {
             function.params.len() + if function.variadic.is_some() { 1 } else { 0 },
         );
         let code = Code {
-            params: function
-                .params
-                .iter()
-                .map(|x| x.ident.name.to_smolstr())
-                .collect(),
-            variadic: function
-                .variadic
-                .as_ref()
-                .map(|x| x.ident.name.to_smolstr()),
+            params: function.params.iter().map(|x| x.ident.name).collect(),
+            variadic: function.variadic.as_ref().map(|x| x.ident.name),
             kind: function.kind,
             code: self.code().clone(),
             consts: self.context().consts.iter().cloned().collect(),
@@ -381,7 +373,7 @@ impl<'a, 'b> CodeGenerator<'a, 'b> {
         stack_size
     }
 
-    fn gen_function(&mut self, function: &Function<'a>) {
+    fn gen_function(&mut self, function: &Function<'_, S>) {
         let code = self.gen_function_code(function);
         let const_id = self.add_const(ConstValue::Func(Box::new(code)));
         self.push_code(OpCode::LoadConst(const_id));
@@ -390,14 +382,14 @@ impl<'a, 'b> CodeGenerator<'a, 'b> {
         }
     }
 
-    fn gen_block(&mut self, block: &Block<'a>) {
+    fn gen_block(&mut self, block: &Block<'_, S>) {
         for stmt in &block.body {
             self.gen_stmt(stmt)
                 .unwrap_or_else(|err| self.errors.push(err));
         }
     }
 
-    fn gen_stmt(&mut self, stmt: &Stmt<'a>) -> Result<(), CompilerError> {
+    fn gen_stmt(&mut self, stmt: &Stmt<'_, S>) -> Result<(), CompilerError> {
         match &stmt.kind {
             StmtKind::If {
                 test,
@@ -486,15 +478,15 @@ impl<'a, 'b> CodeGenerator<'a, 'b> {
                 self.break_stack().pop();
             }
             StmtKind::Break => {
-                let opcode = OpCode::Jump(match self.break_stack().last() {
-                    Some(v) => *v,
+                let opcode = OpCode::Jump(match self.break_stack().last().copied() {
+                    Some(v) => v,
                     None => return Err(CompilerError::BreakOutsideLoop { range: stmt.range }),
                 });
                 self.push_code(opcode);
             }
             StmtKind::Continue => {
-                let opcode = OpCode::Jump(match self.continue_stack().last() {
-                    Some(v) => *v,
+                let opcode = OpCode::Jump(match self.continue_stack().last().copied() {
+                    Some(v) => v,
                     None => return Err(CompilerError::ContinueOutsideLoop { range: stmt.range }),
                 });
                 self.push_code(opcode);
@@ -532,9 +524,12 @@ impl<'a, 'b> CodeGenerator<'a, 'b> {
                     return Err(CompilerError::GlobalOutsideFunction { range: stmt.range });
                 }
             }
-            StmtKind::Import { path, kind } => {
-                let path_str = path.iter().map(|x| x.name.as_str()).join("::");
-                let const_id = self.add_const(ConstValue::Str(path_str.into()));
+            StmtKind::Import {
+                path,
+                path_str,
+                kind,
+            } => {
+                let const_id = self.add_const(ConstValue::Str(*path_str));
                 self.push_code(OpCode::Import(const_id));
                 match kind {
                     ImportKind::Simple(alias) => {
@@ -542,7 +537,7 @@ impl<'a, 'b> CodeGenerator<'a, 'b> {
                     }
                     ImportKind::Nested(items) => {
                         for (name, alias) in items {
-                            let const_id = self.add_const(ConstValue::Str(name.name.to_smolstr()));
+                            let const_id = self.add_const(ConstValue::Str(name.name));
                             self.push_code(OpCode::ImportFrom(const_id));
                             self.store(alias.as_ref().unwrap_or(name));
                         }
@@ -620,7 +615,7 @@ impl<'a, 'b> CodeGenerator<'a, 'b> {
         Ok(())
     }
 
-    fn gen_assign_left(&mut self, assign_left: &AssignLeft<'a>) -> Result<(), CompilerError> {
+    fn gen_assign_left(&mut self, assign_left: &AssignLeft<'_, S>) -> Result<(), CompilerError> {
         match assign_left {
             AssignLeft::Ident(ident) => self.store(&ident.ident),
             AssignLeft::Member { table, property } => {
@@ -635,15 +630,15 @@ impl<'a, 'b> CodeGenerator<'a, 'b> {
         Ok(())
     }
 
-    fn gen_expr(&mut self, expr: &Expr<'a>) -> Result<(), CompilerError> {
+    fn gen_expr(&mut self, expr: &Expr<'_, S>) -> Result<(), CompilerError> {
         match &expr.kind {
             ExprKind::Lit(lit) => {
-                let const_id = self.add_const(match &lit.kind {
+                let const_id = self.add_const(match lit.kind {
                     LitKind::Null => ConstValue::Null,
-                    LitKind::Bool(v) => ConstValue::Bool(*v),
-                    LitKind::Int(v) => ConstValue::Int(*v),
-                    LitKind::Float(v) => ConstValue::Float(*v),
-                    LitKind::Str(v) => ConstValue::Str(v.to_smolstr()),
+                    LitKind::Bool(v) => ConstValue::Bool(v),
+                    LitKind::Int(v) => ConstValue::Int(v),
+                    LitKind::Float(v) => ConstValue::Float(v),
+                    LitKind::Str(v) => ConstValue::Str(v),
                 });
                 self.push_code(OpCode::LoadConst(const_id));
             }
@@ -707,7 +702,7 @@ impl<'a, 'b> CodeGenerator<'a, 'b> {
                         self.push_code(OpCode::GetItem);
                     }
                     MemberKind::Dot(ident) | MemberKind::DoubleColon(ident) => {
-                        let const_id = self.add_const(ConstValue::Str(ident.name.to_smolstr()));
+                        let const_id = self.add_const(ConstValue::Str(ident.name));
                         self.push_code(OpCode::LoadConst(const_id));
                         self.push_code(OpCode::GetAttr);
                     }
@@ -747,16 +742,14 @@ impl<'a, 'b> CodeGenerator<'a, 'b> {
                             }
                             MemberKind::Dot(ident) => {
                                 self.push_code(OpCode::Copy(1));
-                                let const_id =
-                                    self.add_const(ConstValue::Str(ident.name.to_smolstr()));
+                                let const_id = self.add_const(ConstValue::Str(ident.name));
                                 self.push_code(OpCode::LoadConst(const_id));
                                 self.push_code(OpCode::GetAttr);
                                 self.push_code(OpCode::Swap(2));
                                 argument_count += 1;
                             }
                             MemberKind::DoubleColon(ident) => {
-                                let const_id =
-                                    self.add_const(ConstValue::Str(ident.name.to_smolstr()));
+                                let const_id = self.add_const(ConstValue::Str(ident.name));
                                 self.push_code(OpCode::LoadConst(const_id));
                                 self.push_code(OpCode::GetAttr);
                             }
@@ -783,14 +776,14 @@ impl<'a, 'b> CodeGenerator<'a, 'b> {
 
     fn gen_expr_member_without_get(
         &mut self,
-        table: &Expr<'a>,
-        property: &MemberKind<'a>,
+        table: &Expr<'_, S>,
+        property: &MemberKind<'_, S>,
     ) -> Result<(), CompilerError> {
         self.gen_expr(table)?;
         match property {
             MemberKind::Bracket(property) => self.gen_expr(property)?,
             MemberKind::Dot(ident) | MemberKind::DoubleColon(ident) => {
-                let const_id = self.add_const(ConstValue::Str(ident.name.to_smolstr()));
+                let const_id = self.add_const(ConstValue::Str(ident.name));
                 self.push_code(OpCode::LoadConst(const_id));
             }
         }

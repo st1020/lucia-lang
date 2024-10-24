@@ -1,6 +1,6 @@
 //! The parser.
 
-use std::iter::Peekable;
+use std::{iter::Peekable, marker::PhantomData};
 
 use bumpalo::{
     boxed::Box,
@@ -9,42 +9,55 @@ use bumpalo::{
 };
 use text_size::{TextRange, TextSize};
 
-use crate::utils::{unescape_str, Float};
+use crate::utils::{unescape_str, Float, Join};
 
 use super::{
     ast::*,
     error::CompilerError,
+    interning::StringInterner,
     lexer::tokenize,
     token::{Token, TokenKind},
 };
 
+type StdVec<T> = std::vec::Vec<T>;
+type ParseParamsResult<'alloc, S> = Result<
+    (
+        Vec<'alloc, TypedIdent<'alloc, S>>,
+        Option<Box<'alloc, TypedIdent<'alloc, S>>>,
+    ),
+    CompilerError,
+>;
+
 /// Parse the token iter into AST.
-pub fn parse<'alloc>(
+pub fn parse<'alloc, S: StringInterner>(
     allocator: &'alloc Bump,
+    interner: S,
     input: &str,
-) -> (Program<'alloc>, std::vec::Vec<CompilerError>) {
-    Parser::new(allocator, input, tokenize(input)).parse()
+) -> (Program<'alloc, S::String>, StdVec<CompilerError>) {
+    Parser::new(allocator, interner, input, tokenize(input)).parse()
 }
 
-struct Parser<'alloc, 'input, Iter: Iterator<Item = Token>> {
+struct Parser<'alloc, 'input, S: StringInterner, I: Iterator<Item = Token>> {
     allocator: &'alloc Bump,
+    interner: S,
     input: &'input str,
-    token_iter: Peekable<Iter>,
+    token_iter: Peekable<I>,
     prev_token_end: TextSize,
-    expected_kinds: std::vec::Vec<TokenKind>,
-    errors: std::vec::Vec<CompilerError>,
+    expected_kinds: StdVec<TokenKind>,
+    errors: StdVec<CompilerError>,
 }
 
-impl<'alloc, 'input, Iter: Iterator<Item = Token>> Parser<'alloc, 'input, Iter> {
+impl<'alloc, 'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'alloc, 'input, S, I> {
     /// Constructs a new `Parser` with a token iter.
-    fn new(allocator: &'alloc Bump, input: &'input str, token_iter: Iter) -> Self {
+    fn new(allocator: &'alloc Bump, interner: S, input: &'input str, token_iter: I) -> Self {
         Self {
             allocator,
+            interner,
             input,
             token_iter: token_iter.peekable(),
             prev_token_end: TextSize::default(),
-            expected_kinds: std::vec::Vec::new(),
-            errors: std::vec::Vec::new(),
+            expected_kinds: StdVec::new(),
+            errors: StdVec::new(),
         }
     }
 
@@ -146,7 +159,7 @@ impl<'alloc, 'input, Iter: Iterator<Item = Token>> Parser<'alloc, 'input, Iter> 
     }
 
     /// Parse token iter into AST.
-    fn parse(mut self) -> (Program<'alloc>, std::vec::Vec<CompilerError>) {
+    fn parse(mut self) -> (Program<'alloc, S::String>, StdVec<CompilerError>) {
         let start = self.start_range();
         let body = self.parse_stmts(TokenKind::Eof);
         let range = self.end_range(start);
@@ -247,7 +260,7 @@ impl<'alloc, 'input, Iter: Iterator<Item = Token>> Parser<'alloc, 'input, Iter> 
         Ok((items, None))
     }
 
-    fn parse_stmts(&mut self, end_token: TokenKind) -> Vec<'alloc, Stmt<'alloc>> {
+    fn parse_stmts(&mut self, end_token: TokenKind) -> Vec<'alloc, Stmt<'alloc, S::String>> {
         let mut stmts = Vec::new_in(self.allocator);
         self.eat_eol();
         while !self.eat(end_token) {
@@ -277,7 +290,7 @@ impl<'alloc, 'input, Iter: Iterator<Item = Token>> Parser<'alloc, 'input, Iter> 
         stmts
     }
 
-    fn parse_block(&mut self) -> Result<Box<'alloc, Block<'alloc>>, CompilerError> {
+    fn parse_block(&mut self) -> Result<Box<'alloc, Block<'alloc, S::String>>, CompilerError> {
         self.expect(TokenKind::OpenBrace)?;
         let start = self.start_range();
         let body = self.parse_stmts(TokenKind::CloseBrace);
@@ -292,7 +305,7 @@ impl<'alloc, 'input, Iter: Iterator<Item = Token>> Parser<'alloc, 'input, Iter> 
         ))
     }
 
-    fn parse_stmt(&mut self) -> Result<Stmt<'alloc>, CompilerError> {
+    fn parse_stmt(&mut self) -> Result<Stmt<'alloc, S::String>, CompilerError> {
         self.eat_eol();
         let start = self.start_range();
         let kind = if self.eat(TokenKind::If) {
@@ -348,6 +361,9 @@ impl<'alloc, 'input, Iter: Iterator<Item = Token>> Parser<'alloc, 'input, Iter> 
                     break;
                 }
             }
+            let path_str = self
+                .interner
+                .intern(&path.iter().map(|ident| ident.name.as_ref()).join("::"));
             let kind = if self.check(TokenKind::Eol) {
                 ImportKind::Simple(None)
             } else if self.eat(TokenKind::As) {
@@ -372,7 +388,11 @@ impl<'alloc, 'input, Iter: Iterator<Item = Token>> Parser<'alloc, 'input, Iter> 
             } else {
                 return Err(self.unexpected());
             };
-            StmtKind::Import { path, kind }
+            StmtKind::Import {
+                path,
+                path_str,
+                kind,
+            }
         } else if self.eat(TokenKind::Fn) {
             let name = Box::new_in(self.parse_ident()?, self.allocator);
             let (params, variadic) = self.parse_params()?;
@@ -401,7 +421,7 @@ impl<'alloc, 'input, Iter: Iterator<Item = Token>> Parser<'alloc, 'input, Iter> 
                     let ast_node = self.parse_expr()?;
                     left.push(self.expr_to_assign_left(ast_node).ok_or_else(|| {
                         CompilerError::UnexpectedToken {
-                            expected: std::vec::Vec::new(),
+                            expected: StdVec::new(),
                             found: TokenKind::Comma,
                             range: comma_range,
                         }
@@ -472,7 +492,10 @@ impl<'alloc, 'input, Iter: Iterator<Item = Token>> Parser<'alloc, 'input, Iter> 
         Ok(Stmt { kind, range })
     }
 
-    fn expr_to_assign_left(&self, expr: Expr<'alloc>) -> Option<AssignLeft<'alloc>> {
+    fn expr_to_assign_left(
+        &self,
+        expr: Expr<'alloc, S::String>,
+    ) -> Option<AssignLeft<'alloc, S::String>> {
         match expr.kind {
             ExprKind::Ident(ident) => {
                 Some(AssignLeft::Ident(Box::new_in(ident.into(), self.allocator)))
@@ -487,11 +510,14 @@ impl<'alloc, 'input, Iter: Iterator<Item = Token>> Parser<'alloc, 'input, Iter> 
         }
     }
 
-    fn parse_expr(&mut self) -> Result<Expr<'alloc>, CompilerError> {
+    fn parse_expr(&mut self) -> Result<Expr<'alloc, S::String>, CompilerError> {
         self.parse_expr_precedence(1)
     }
 
-    fn parse_expr_precedence(&mut self, min_precedence: u8) -> Result<Expr<'alloc>, CompilerError> {
+    fn parse_expr_precedence(
+        &mut self,
+        min_precedence: u8,
+    ) -> Result<Expr<'alloc, S::String>, CompilerError> {
         let start = self.start_range();
         let mut left = self.parse_expr_unary()?;
         loop {
@@ -528,7 +554,7 @@ impl<'alloc, 'input, Iter: Iterator<Item = Token>> Parser<'alloc, 'input, Iter> 
         Ok(left)
     }
 
-    fn parse_expr_unary(&mut self) -> Result<Expr<'alloc>, CompilerError> {
+    fn parse_expr_unary(&mut self) -> Result<Expr<'alloc, S::String>, CompilerError> {
         let start = self.start_range();
         let kind = if self.eat(TokenKind::Not) {
             let argument = self.parse_expr_primary()?;
@@ -549,7 +575,7 @@ impl<'alloc, 'input, Iter: Iterator<Item = Token>> Parser<'alloc, 'input, Iter> 
         Ok(Expr { kind, range })
     }
 
-    fn parse_expr_primary(&mut self) -> Result<Expr<'alloc>, CompilerError> {
+    fn parse_expr_primary(&mut self) -> Result<Expr<'alloc, S::String>, CompilerError> {
         let start = self.start_range();
         let mut ast_node = self.parse_expr_atom()?;
         macro_rules! member_attr_expr {
@@ -625,7 +651,7 @@ impl<'alloc, 'input, Iter: Iterator<Item = Token>> Parser<'alloc, 'input, Iter> 
         Ok(ast_node)
     }
 
-    fn parse_expr_atom(&mut self) -> Result<Expr<'alloc>, CompilerError> {
+    fn parse_expr_atom(&mut self) -> Result<Expr<'alloc, S::String>, CompilerError> {
         let start = self.start_range();
         let kind = if self.eat(TokenKind::OpenParen) {
             let expr = self.parse_expr()?;
@@ -695,7 +721,7 @@ impl<'alloc, 'input, Iter: Iterator<Item = Token>> Parser<'alloc, 'input, Iter> 
                 Ok(expr)
             } else {
                 Err(CompilerError::UnexpectedToken {
-                    expected: std::vec::Vec::new(),
+                    expected: StdVec::new(),
                     found: TokenKind::Try,
                     range: try_range,
                 })
@@ -707,7 +733,7 @@ impl<'alloc, 'input, Iter: Iterator<Item = Token>> Parser<'alloc, 'input, Iter> 
         Ok(Expr { kind, range })
     }
 
-    fn parse_table_property(&mut self) -> Result<TableProperty<'alloc>, CompilerError> {
+    fn parse_table_property(&mut self) -> Result<TableProperty<'alloc, S::String>, CompilerError> {
         let start = self.start_range();
         let key = self.parse_expr()?;
         self.expect(TokenKind::Colon)?;
@@ -716,15 +742,7 @@ impl<'alloc, 'input, Iter: Iterator<Item = Token>> Parser<'alloc, 'input, Iter> 
         Ok(TableProperty { key, value, range })
     }
 
-    fn parse_params(
-        &mut self,
-    ) -> Result<
-        (
-            Vec<'alloc, TypedIdent<'alloc>>,
-            Option<Box<'alloc, TypedIdent<'alloc>>>,
-        ),
-        CompilerError,
-    > {
+    fn parse_params(&mut self) -> ParseParamsResult<'alloc, S::String> {
         self.parse_items_between_with_last(
             TokenKind::OpenParen,
             Parser::parse_typed_ident,
@@ -737,15 +755,7 @@ impl<'alloc, 'input, Iter: Iterator<Item = Token>> Parser<'alloc, 'input, Iter> 
         )
     }
 
-    fn parse_closure_params(
-        &mut self,
-    ) -> Result<
-        (
-            Vec<'alloc, TypedIdent<'alloc>>,
-            Option<Box<'alloc, TypedIdent<'alloc>>>,
-        ),
-        CompilerError,
-    > {
+    fn parse_closure_params(&mut self) -> ParseParamsResult<'alloc, S::String> {
         self.parse_items_between_with_last(
             TokenKind::VBar,
             Parser::parse_atom_typed_ident,
@@ -758,7 +768,9 @@ impl<'alloc, 'input, Iter: Iterator<Item = Token>> Parser<'alloc, 'input, Iter> 
         )
     }
 
-    fn parse_returns(&mut self) -> Result<Option<Box<'alloc, Ty<'alloc>>>, CompilerError> {
+    fn parse_returns(
+        &mut self,
+    ) -> Result<Option<Box<'alloc, Ty<'alloc, S::String>>>, CompilerError> {
         Ok(if self.eat(TokenKind::Arrow) {
             Some(Box::new_in(self.parse_type()?, self.allocator))
         } else {
@@ -766,7 +778,9 @@ impl<'alloc, 'input, Iter: Iterator<Item = Token>> Parser<'alloc, 'input, Iter> 
         })
     }
 
-    fn parse_throws(&mut self) -> Result<Option<Box<'alloc, Ty<'alloc>>>, CompilerError> {
+    fn parse_throws(
+        &mut self,
+    ) -> Result<Option<Box<'alloc, Ty<'alloc, S::String>>>, CompilerError> {
         Ok(if self.eat(TokenKind::Throw) {
             Some(Box::new_in(self.parse_type()?, self.allocator))
         } else {
@@ -774,7 +788,7 @@ impl<'alloc, 'input, Iter: Iterator<Item = Token>> Parser<'alloc, 'input, Iter> 
         })
     }
 
-    fn parse_lit(&mut self) -> Result<Lit<'alloc>, CompilerError> {
+    fn parse_lit(&mut self) -> Result<Lit<'alloc, S::String>, CompilerError> {
         let Some(token) = self.current_token() else {
             return Err(self.unexpected());
         };
@@ -813,7 +827,7 @@ impl<'alloc, 'input, Iter: Iterator<Item = Token>> Parser<'alloc, 'input, Iter> 
                 let text = &text[1..text.len() - 1];
                 let mut s = String::new_in(self.allocator);
                 unescape_str(text, &mut |c| s.push(c))
-                    .map(|_| LitKind::Str(self.allocator.alloc(s)))
+                    .map(|_| LitKind::Str(self.interner.intern(&s)))
                     .map_err(|error| CompilerError::EscapeError { error, range })?
             }
             TokenKind::RawStr => {
@@ -822,32 +836,31 @@ impl<'alloc, 'input, Iter: Iterator<Item = Token>> Parser<'alloc, 'input, Iter> 
                         || text.starts_with("r'") && text.ends_with('\'')
                 );
                 let text = &text[2..text.len() - 1];
-                LitKind::Str(
-                    self.allocator
-                        .alloc(String::from_str_in(text, self.allocator)),
-                )
+                LitKind::Str(self.interner.intern(text))
             }
             _ => return Err(self.unexpected()),
         };
         self.bump();
-        Ok(Lit { kind, range })
+        Ok(Lit {
+            kind,
+            range,
+            marker: PhantomData,
+        })
     }
 
-    fn parse_ident(&mut self) -> Result<Ident<'alloc>, CompilerError> {
+    fn parse_ident(&mut self) -> Result<Ident<'alloc, S::String>, CompilerError> {
         let token = self.current_token().unwrap();
         let ident = Ident {
             range: token.range,
-            name: self.allocator.alloc(String::from_str_in(
-                &self.input[token.range],
-                self.allocator,
-            )),
+            name: self.interner.intern(&self.input[token.range]),
             symbol_id: None.into(),
+            marker: PhantomData,
         };
         self.bump();
         Ok(ident)
     }
 
-    fn parse_typed_ident(&mut self) -> Result<TypedIdent<'alloc>, CompilerError> {
+    fn parse_typed_ident(&mut self) -> Result<TypedIdent<'alloc, S::String>, CompilerError> {
         let start = self.start_range();
         let ident = Box::new_in(self.parse_ident()?, self.allocator);
         let ty = if self.eat(TokenKind::Colon) {
@@ -859,7 +872,7 @@ impl<'alloc, 'input, Iter: Iterator<Item = Token>> Parser<'alloc, 'input, Iter> 
         Ok(TypedIdent { ident, ty, range })
     }
 
-    fn parse_atom_typed_ident(&mut self) -> Result<TypedIdent<'alloc>, CompilerError> {
+    fn parse_atom_typed_ident(&mut self) -> Result<TypedIdent<'alloc, S::String>, CompilerError> {
         let start = self.start_range();
         let ident = Box::new_in(self.parse_ident()?, self.allocator);
         let ty = if self.eat(TokenKind::Colon) {
@@ -871,7 +884,7 @@ impl<'alloc, 'input, Iter: Iterator<Item = Token>> Parser<'alloc, 'input, Iter> 
         Ok(TypedIdent { ident, ty, range })
     }
 
-    fn parse_type(&mut self) -> Result<Ty<'alloc>, CompilerError> {
+    fn parse_type(&mut self) -> Result<Ty<'alloc, S::String>, CompilerError> {
         let start = self.start_range();
         let ty = self.parse_type_atom()?;
         if self.check(TokenKind::VBar) {
@@ -888,7 +901,7 @@ impl<'alloc, 'input, Iter: Iterator<Item = Token>> Parser<'alloc, 'input, Iter> 
         }
     }
 
-    fn parse_type_atom(&mut self) -> Result<Ty<'alloc>, CompilerError> {
+    fn parse_type_atom(&mut self) -> Result<Ty<'alloc, S::String>, CompilerError> {
         let start = self.start_range();
         let kind = if self.eat(TokenKind::OpenParen) {
             let ty = self.parse_type()?;
