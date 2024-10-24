@@ -28,6 +28,10 @@ criterion = "0.5"
 name = "scripts"
 harness = false
 
+[[bench]]
+name = "compiler"
+harness = false
+
 [profile.release]
 opt-level = 3
 lto = true
