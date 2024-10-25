@@ -4,164 +4,11 @@ use gc_arena::{Collect, DynamicRoot, DynamicRootSet, Mutation, Rootable};
 
 use crate::{
     objects::{Callback, Closure, Function, GcError, Str, Table, UserData, Value},
-    utils::Float,
-    Context,
+    utils::{impl_enum_from, Float},
 };
 
-#[derive(Clone)]
-pub struct StaticStr(pub DynamicRoot<Rootable![Str<'_>]>);
-
-impl fmt::Debug for StaticStr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("StaticStr").field(&self.0.as_ptr()).finish()
-    }
-}
-
-#[derive(Clone)]
-pub struct StaticTable(pub DynamicRoot<Rootable![Table<'_>]>);
-
-impl fmt::Debug for StaticTable {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("StaticTable")
-            .field(&self.0.as_ptr())
-            .finish()
-    }
-}
-
-#[derive(Clone)]
-pub struct StaticClosure(pub DynamicRoot<Rootable![Closure<'_>]>);
-
-impl fmt::Debug for StaticClosure {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("StaticClosure")
-            .field(&self.0.as_ptr())
-            .finish()
-    }
-}
-
-#[derive(Clone)]
-pub struct StaticCallback(pub DynamicRoot<Rootable![Callback<'_>]>);
-
-impl fmt::Debug for StaticCallback {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("StaticCallback")
-            .field(&self.0.as_ptr())
-            .finish()
-    }
-}
-
-#[derive(Clone)]
-pub struct StaticUserData(pub DynamicRoot<Rootable![UserData<'_>]>);
-
-impl fmt::Debug for StaticUserData {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("StaticUserData")
-            .field(&self.0.as_ptr())
-            .finish()
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum StaticFunction {
-    Closure(StaticClosure),
-    Callback(StaticCallback),
-}
-
-impl From<StaticClosure> for StaticFunction {
-    fn from(closure: StaticClosure) -> Self {
-        Self::Closure(closure)
-    }
-}
-
-impl From<StaticCallback> for StaticFunction {
-    fn from(callback: StaticCallback) -> Self {
-        Self::Callback(callback)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum StaticValue {
-    Null,
-    Bool(bool),
-    Int(i64),
-    Float(Float),
-    Str(StaticStr),
-    Table(StaticTable),
-    Function(StaticFunction),
-    UserData(StaticUserData),
-}
-
-impl From<bool> for StaticValue {
-    fn from(v: bool) -> StaticValue {
-        StaticValue::Bool(v)
-    }
-}
-
-impl From<i64> for StaticValue {
-    fn from(v: i64) -> StaticValue {
-        StaticValue::Int(v)
-    }
-}
-
-impl From<f64> for StaticValue {
-    fn from(v: f64) -> StaticValue {
-        StaticValue::Float(v.into())
-    }
-}
-
-impl From<Float> for StaticValue {
-    fn from(v: Float) -> StaticValue {
-        StaticValue::Float(v)
-    }
-}
-
-impl From<StaticStr> for StaticValue {
-    fn from(v: StaticStr) -> StaticValue {
-        StaticValue::Str(v)
-    }
-}
-
-impl From<StaticTable> for StaticValue {
-    fn from(v: StaticTable) -> StaticValue {
-        StaticValue::Table(v)
-    }
-}
-
-impl From<StaticFunction> for StaticValue {
-    fn from(v: StaticFunction) -> StaticValue {
-        StaticValue::Function(v)
-    }
-}
-
-impl From<StaticClosure> for StaticValue {
-    fn from(v: StaticClosure) -> StaticValue {
-        StaticValue::Function(StaticFunction::Closure(v))
-    }
-}
-
-impl From<StaticCallback> for StaticValue {
-    fn from(v: StaticCallback) -> StaticValue {
-        StaticValue::Function(StaticFunction::Callback(v))
-    }
-}
-
-impl From<StaticUserData> for StaticValue {
-    fn from(v: StaticUserData) -> StaticValue {
-        StaticValue::UserData(v)
-    }
-}
-
-pub trait Singleton<'gc> {
-    fn create(ctx: Context<'gc>) -> Self;
-}
-
-impl<'gc, T: Default> Singleton<'gc> for T {
-    fn create(_: Context<'gc>) -> Self {
-        Self::default()
-    }
-}
-
-#[derive(Clone, Copy, Collect)]
+/// A collection of stashed values.
+#[derive(Copy, Clone, Collect)]
 #[collect(no_drop)]
 pub struct Registry<'gc> {
     roots: DynamicRootSet<'gc>,
@@ -174,133 +21,167 @@ impl<'gc> Registry<'gc> {
         }
     }
 
+    /// Returns the inner [`DynamicRootSet`] held inside the global registry.
+    ///
+    /// This can be used to create `'static` roots directly without having to deal with the
+    /// [`Stashable`] trait.
     pub fn roots(&self) -> DynamicRootSet<'gc> {
         self.roots
     }
 
-    pub fn stash<R: Stashable<'gc>>(&self, mc: &Mutation<'gc>, r: R) -> R::Stashed {
-        r.stash(&self.roots, mc)
+    /// "Stash" a value with a `'gc` branding lifetime in the global registry, creating a `'static`
+    /// handle to it.
+    ///
+    /// This works for any type that implements the [`Stashable`] trait.
+    pub fn stash<S: Stashable<'gc>>(&self, mc: &Mutation<'gc>, s: S) -> S::Stashed {
+        s.stash(mc, self.roots)
     }
 
-    pub fn fetch<F: Fetchable<'gc>>(&self, f: &F) -> F::Fetched {
-        f.fetch(&self.roots)
+    /// "Fetch" the real value for a handle that has been returned from `Registry::stash`.
+    ///
+    /// It can be implemented for external types by implementing the [`Fetchable`] trait.
+    pub fn fetch<F: Fetchable>(&self, f: &F) -> F::Fetched<'gc> {
+        f.fetch(self.roots)
     }
 }
 
+/// A trait for types that can be stashed into a [`DynamicRootSet`].
 pub trait Stashable<'gc> {
     type Stashed;
 
-    fn stash(self, roots: &DynamicRootSet<'gc>, mc: &Mutation<'gc>) -> Self::Stashed;
+    fn stash(self, mc: &Mutation<'gc>, roots: DynamicRootSet<'gc>) -> Self::Stashed;
 }
 
-pub trait Fetchable<'gc> {
-    type Fetched;
+/// A trait for types that can be fetched from a [`DynamicRootSet`].
+pub trait Fetchable {
+    type Fetched<'gc>;
 
-    fn fetch(&self, roots: &DynamicRootSet<'gc>) -> Self::Fetched;
+    fn fetch<'gc>(&self, roots: DynamicRootSet<'gc>) -> Self::Fetched<'gc>;
 }
 
-macro_rules! reg_type {
+macro_rules! define_stash {
     ($t:ident, $r:ident) => {
+        #[derive(Clone)]
+        pub struct $r(DynamicRoot<Rootable![$t<'_>]>);
+
+        impl fmt::Debug for $r {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.debug_tuple(stringify!($r))
+                    .field(&self.0.as_ptr())
+                    .finish()
+            }
+        }
+
         impl<'gc> Stashable<'gc> for $t<'gc> {
             type Stashed = $r;
 
-            fn stash(self, roots: &DynamicRootSet<'gc>, mc: &Mutation<'gc>) -> Self::Stashed {
+            fn stash(self, mc: &Mutation<'gc>, roots: DynamicRootSet<'gc>) -> Self::Stashed {
                 $r(roots.stash::<Rootable![$t<'_>]>(mc, self))
             }
         }
-    };
-}
 
-reg_type!(Str, StaticStr);
-reg_type!(Table, StaticTable);
-reg_type!(Closure, StaticClosure);
-reg_type!(Callback, StaticCallback);
-reg_type!(UserData, StaticUserData);
+        impl Fetchable for $r {
+            type Fetched<'gc> = $t<'gc>;
 
-macro_rules! fetch_type {
-    ($r:ident, $t:ident) => {
-        impl<'gc> Fetchable<'gc> for $r {
-            type Fetched = $t<'gc>;
-
-            fn fetch(&self, roots: &DynamicRootSet<'gc>) -> Self::Fetched {
-                *roots.fetch::<Rootable![$t<'_>]>(&self.0)
+            fn fetch<'gc>(&self, roots: DynamicRootSet<'gc>) -> Self::Fetched<'gc> {
+                *roots.fetch(&self.0)
             }
         }
     };
 }
 
-fetch_type!(StaticStr, Str);
-fetch_type!(StaticTable, Table);
-fetch_type!(StaticClosure, Closure);
-fetch_type!(StaticCallback, Callback);
-fetch_type!(StaticUserData, UserData);
+define_stash!(Str, StashedStr);
+define_stash!(Table, StashedTable);
+define_stash!(Closure, StashedClosure);
+define_stash!(Callback, StashedCallback);
+define_stash!(UserData, StashedUserData);
+define_stash!(GcError, StashedError);
+
+#[derive(Debug, Clone)]
+pub enum StashedFunction {
+    Closure(StashedClosure),
+    Callback(StashedCallback),
+}
+
+impl_enum_from!(StashedFunction, {
+    Closure(StashedClosure),
+    Callback(StashedCallback),
+});
 
 impl<'gc> Stashable<'gc> for Function<'gc> {
-    type Stashed = StaticFunction;
+    type Stashed = StashedFunction;
 
-    fn stash(self, roots: &DynamicRootSet<'gc>, mc: &Mutation<'gc>) -> Self::Stashed {
+    fn stash(self, mc: &Mutation<'gc>, roots: DynamicRootSet<'gc>) -> Self::Stashed {
         match self {
-            Function::Closure(closure) => StaticFunction::Closure(closure.stash(roots, mc)),
-            Function::Callback(callback) => StaticFunction::Callback(callback.stash(roots, mc)),
+            Function::Closure(c) => StashedFunction::Closure(c.stash(mc, roots)),
+            Function::Callback(c) => StashedFunction::Callback(c.stash(mc, roots)),
         }
     }
 }
 
-impl<'gc> Fetchable<'gc> for StaticFunction {
-    type Fetched = Function<'gc>;
+impl Fetchable for StashedFunction {
+    type Fetched<'gc> = Function<'gc>;
 
-    fn fetch(&self, roots: &DynamicRootSet<'gc>) -> Self::Fetched {
+    fn fetch<'gc>(&self, roots: DynamicRootSet<'gc>) -> Self::Fetched<'gc> {
         match self {
-            StaticFunction::Closure(closure) => Function::Closure(closure.fetch(roots)),
-            StaticFunction::Callback(callback) => Function::Callback(callback.fetch(roots)),
+            StashedFunction::Closure(c) => Function::Closure(c.fetch(roots)),
+            StashedFunction::Callback(c) => Function::Callback(c.fetch(roots)),
         }
     }
 }
+
+#[derive(Debug, Clone)]
+pub enum StashedValue {
+    Null,
+    Bool(bool),
+    Int(i64),
+    Float(Float),
+    Str(StashedStr),
+    Table(StashedTable),
+    Function(StashedFunction),
+    UserData(StashedUserData),
+}
+
+impl_enum_from!(StashedValue, {
+    Bool(bool),
+    Int(i64),
+    Float(Float),
+    Str(StashedStr),
+    Table(StashedTable),
+    Function(StashedFunction),
+    UserData(StashedUserData),
+});
 
 impl<'gc> Stashable<'gc> for Value<'gc> {
-    type Stashed = StaticValue;
+    type Stashed = StashedValue;
 
-    fn stash(self, roots: &DynamicRootSet<'gc>, mc: &Mutation<'gc>) -> Self::Stashed {
+    fn stash(self, mc: &Mutation<'gc>, roots: DynamicRootSet<'gc>) -> Self::Stashed {
         match self {
-            Value::Null => StaticValue::Null,
-            Value::Bool(b) => StaticValue::Bool(b),
-            Value::Int(i) => StaticValue::Int(i),
-            Value::Float(n) => StaticValue::Float(n),
-            Value::Str(s) => StaticValue::Str(s.stash(roots, mc)),
-            Value::Table(t) => StaticValue::Table(t.stash(roots, mc)),
-            Value::Function(f) => StaticValue::Function(f.stash(roots, mc)),
-            Value::UserData(u) => StaticValue::UserData(u.stash(roots, mc)),
+            Value::Null => StashedValue::Null,
+            Value::Bool(b) => StashedValue::Bool(b),
+            Value::Int(i) => StashedValue::Int(i),
+            Value::Float(n) => StashedValue::Float(n),
+            Value::Str(s) => StashedValue::Str(s.stash(mc, roots)),
+            Value::Table(t) => StashedValue::Table(t.stash(mc, roots)),
+            Value::Function(f) => StashedValue::Function(f.stash(mc, roots)),
+            Value::UserData(u) => StashedValue::UserData(u.stash(mc, roots)),
         }
     }
 }
 
-impl<'gc> Fetchable<'gc> for StaticValue {
-    type Fetched = Value<'gc>;
+impl Fetchable for StashedValue {
+    type Fetched<'gc> = Value<'gc>;
 
-    fn fetch(&self, roots: &DynamicRootSet<'gc>) -> Self::Fetched {
+    fn fetch<'gc>(&self, roots: DynamicRootSet<'gc>) -> Self::Fetched<'gc> {
         match self {
-            StaticValue::Null => Value::Null,
-            StaticValue::Bool(b) => Value::Bool(*b),
-            StaticValue::Int(i) => Value::Int(*i),
-            StaticValue::Float(n) => Value::Float(*n),
-            StaticValue::Str(s) => Value::Str(s.fetch(roots)),
-            StaticValue::Table(t) => Value::Table(t.fetch(roots)),
-            StaticValue::Function(f) => Value::Function(f.fetch(roots)),
-            StaticValue::UserData(u) => Value::UserData(u.fetch(roots)),
+            StashedValue::Null => Value::Null,
+            StashedValue::Bool(b) => Value::Bool(*b),
+            StashedValue::Int(i) => Value::Int(*i),
+            StashedValue::Float(n) => Value::Float(*n),
+            StashedValue::Str(s) => Value::Str(s.fetch(roots)),
+            StashedValue::Table(t) => Value::Table(t.fetch(roots)),
+            StashedValue::Function(f) => Value::Function(f.fetch(roots)),
+            StashedValue::UserData(u) => Value::UserData(u.fetch(roots)),
         }
     }
 }
-
-#[derive(Clone)]
-pub struct StaticError(pub DynamicRoot<Rootable![GcError<'_>]>);
-
-impl fmt::Debug for StaticError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("StaticError")
-            .field(&self.0.as_ptr())
-            .finish()
-    }
-}
-
-reg_type!(GcError, StaticError);
-fetch_type!(StaticError, GcError);

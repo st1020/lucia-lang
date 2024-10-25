@@ -3,9 +3,9 @@ use std::{
     mem,
 };
 
+use compact_str::{format_compact, CompactString};
 use gc_arena::{lock::RefLock, Collect, Gc, Mutation};
 use indexmap::IndexMap;
-use smol_str::{format_smolstr, SmolStr};
 
 use crate::{
     objects::{IntoValue, Value},
@@ -119,21 +119,21 @@ impl<'gc> Table<'gc> {
     }
 
     /// Return the repr string of the table.
-    pub(crate) fn repr_table(self, t: Value<'gc>) -> SmolStr {
+    pub(crate) fn repr_table(self, t: Value<'gc>) -> CompactString {
         let mut temp = Vec::new();
         for i in 0..self.len() {
             if let Some((k, v)) = self.get_index(i) {
                 temp.push(format!(
                     "{}: {}",
                     if k.is(t) {
-                        SmolStr::new_static("<table>")
+                        CompactString::const_new("<table>")
                     } else if let Value::Table(k_t) = k {
                         k_t.repr_table(t)
                     } else {
                         k.repr()
                     },
                     if v.is(t) {
-                        SmolStr::new_static("<table>")
+                        CompactString::const_new("<table>")
                     } else if let Value::Table(v_t) = v {
                         v_t.repr_table(t)
                     } else {
@@ -142,7 +142,7 @@ impl<'gc> Table<'gc> {
                 ))
             }
         }
-        format_smolstr!("{{{}}}", temp.join(", "))
+        format_compact!("{{{}}}", temp.join(", "))
     }
 }
 

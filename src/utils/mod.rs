@@ -3,9 +3,9 @@
 mod escape;
 mod float;
 mod format;
-mod unescape;
+mod macros;
 
-pub use escape::escape_str;
-pub use float::Float;
+pub use escape::*;
+pub use float::*;
 pub(crate) use format::*;
-pub(crate) use unescape::*;
+pub(crate) use macros::*;

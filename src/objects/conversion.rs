@@ -1,4 +1,4 @@
-use smol_str::SmolStr;
+use compact_str::CompactString;
 
 use crate::{
     errors::{Error, ErrorKind},
@@ -177,7 +177,7 @@ where
     }
 }
 
-impl<'gc> IntoValue<'gc> for SmolStr {
+impl<'gc> IntoValue<'gc> for CompactString {
     fn into_value(self, ctx: Context<'gc>) -> Value<'gc> {
         Value::Str(Str::new(&ctx, self))
     }
@@ -185,7 +185,7 @@ impl<'gc> IntoValue<'gc> for SmolStr {
 
 impl<'gc> IntoValue<'gc> for &'static str {
     fn into_value(self, ctx: Context<'gc>) -> Value<'gc> {
-        Value::Str(Str::new(&ctx, SmolStr::new_static(self)))
+        Value::Str(Str::new(&ctx, CompactString::const_new(self)))
     }
 }
 

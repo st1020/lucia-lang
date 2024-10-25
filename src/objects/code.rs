@@ -1,5 +1,3 @@
-use std::ops::Deref;
-
 use gc_arena::{static_collect, Collect, Gc, Mutation};
 
 use crate::{
@@ -8,24 +6,14 @@ use crate::{
         code::{Code, ConstValue},
         opcode::OpCode,
     },
-    objects::Str,
+    objects::{define_object, Str},
     utils::Float,
 };
 
 static_collect!(OpCode);
 static_collect!(FunctionKind);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Collect)]
-#[collect(no_drop)]
-pub struct RuntimeCode<'gc>(Gc<'gc, RuntimeCodeInner<'gc>>);
-
-impl<'gc> Deref for RuntimeCode<'gc> {
-    type Target = RuntimeCodeInner<'gc>;
-
-    fn deref(&self) -> &RuntimeCodeInner<'gc> {
-        &self.0
-    }
-}
+define_object!(RuntimeCode, RuntimeCodeInner<'gc>, inner_eq);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Collect)]
 #[collect(no_drop)]

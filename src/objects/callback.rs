@@ -1,8 +1,4 @@
-use std::{
-    fmt,
-    hash::{Hash, Hasher},
-    ops,
-};
+use std::ops;
 
 use gc_arena::{Collect, Gc, Mutation};
 
@@ -11,7 +7,7 @@ use crate::{
     meta_ops::MetaResult,
     objects::{
         conversion::{FromValue, IntoValue},
-        Function, Value,
+        define_object, Function, Value,
     },
     Context,
 };
@@ -79,11 +75,9 @@ pub trait CallbackFn<'gc>: Collect {
     fn call(&self, ctx: Context<'gc>, args: Vec<Value<'gc>>) -> CallbackResult<'gc>;
 }
 
-// Represents a callback as a single pointer with an inline VTable header.
-#[derive(Clone, Copy, Collect)]
-#[collect(no_drop)]
-pub struct Callback<'gc>(Gc<'gc, CallbackInner<'gc>>);
+define_object!(Callback, CallbackInner<'gc>, ptr_eq);
 
+#[derive(Debug)]
 pub struct CallbackInner<'gc> {
     call:
         unsafe fn(*const CallbackInner<'gc>, Context<'gc>, Vec<Value<'gc>>) -> CallbackResult<'gc>,
@@ -169,38 +163,8 @@ impl<'gc> Callback<'gc> {
         Callback::new(mc, RootCallback { root, call })
     }
 
-    pub fn from_inner(inner: Gc<'gc, CallbackInner<'gc>>) -> Self {
-        Self(inner)
-    }
-
-    pub fn into_inner(self) -> Gc<'gc, CallbackInner<'gc>> {
-        self.0
-    }
-
     pub fn call(self, ctx: Context<'gc>, args: Vec<Value<'gc>>) -> CallbackResult<'gc> {
         unsafe { (self.0.call)(Gc::as_ptr(self.0), ctx, args) }
-    }
-}
-
-impl<'gc> fmt::Debug for Callback<'gc> {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.debug_tuple("Callback")
-            .field(&Gc::as_ptr(self.0))
-            .finish()
-    }
-}
-
-impl<'gc> PartialEq for Callback<'gc> {
-    fn eq(&self, other: &Callback<'gc>) -> bool {
-        Gc::ptr_eq(self.0, other.0)
-    }
-}
-
-impl<'gc> Eq for Callback<'gc> {}
-
-impl<'gc> Hash for Callback<'gc> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        Gc::as_ptr(self.0).hash(state)
     }
 }
 

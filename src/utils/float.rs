@@ -1,11 +1,6 @@
 //! Utilities for lucia-lang.
 
-use std::{
-    cmp::Ordering,
-    fmt,
-    hash::{Hash, Hasher},
-    ops,
-};
+use std::{cmp::Ordering, fmt, hash, ops};
 
 use gc_arena::Collect;
 
@@ -58,8 +53,8 @@ impl Ord for Float {
     }
 }
 
-impl Hash for Float {
-    fn hash<H: Hasher>(&self, state: &mut H) {
+impl hash::Hash for Float {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
         if self.0.is_nan() {
             CANONICAL_NAN_BITS.hash(state)
         } else if self.0 == 0.0f64 {

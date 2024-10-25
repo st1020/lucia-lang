@@ -2,8 +2,8 @@
 
 use std::fmt;
 
+use compact_str::ToCompactString;
 use gc_arena::{lock::RefLock, Collect, Gc};
-use smol_str::ToSmolStr;
 
 use crate::{
     errors::{Error, ErrorKind},
@@ -401,7 +401,7 @@ pub fn str<'gc>(ctx: Context<'gc>, v: Value<'gc>) -> Result<MetaResult<'gc, 1>, 
         }
     }
 
-    Ok(MetaResult::Value(v.to_smolstr().into_value(ctx)))
+    Ok(MetaResult::Value(v.to_compact_string().into_value(ctx)))
 }
 
 pub fn repr<'gc>(ctx: Context<'gc>, v: Value<'gc>) -> Result<MetaResult<'gc, 1>, Error<'gc>> {

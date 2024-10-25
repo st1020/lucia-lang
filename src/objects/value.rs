@@ -1,32 +1,12 @@
 use std::{fmt, num::NonZeroUsize};
 
+use compact_str::{format_compact, CompactString, ToCompactString};
 use gc_arena::{Collect, Gc};
-use smol_str::{format_smolstr, SmolStr, ToSmolStr};
 
 use crate::{
-    objects::{Callback, Closure, Str, Table, UserData},
+    objects::{Function, Str, Table, UserData},
     utils::{escape_str, Float},
 };
-
-/// Enum of lucia function (Closure / Callback).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Collect)]
-#[collect(no_drop)]
-pub enum Function<'gc> {
-    Closure(Closure<'gc>),
-    Callback(Callback<'gc>),
-}
-
-impl<'gc> From<Closure<'gc>> for Function<'gc> {
-    fn from(closure: Closure<'gc>) -> Self {
-        Self::Closure(closure)
-    }
-}
-
-impl<'gc> From<Callback<'gc>> for Function<'gc> {
-    fn from(callback: Callback<'gc>) -> Self {
-        Self::Callback(callback)
-    }
-}
 
 /// Enum of all lucia values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Collect)]
@@ -105,13 +85,13 @@ impl<'gc> Value<'gc> {
         matches!(self, Self::Null)
     }
 
-    pub fn repr(self) -> SmolStr {
+    pub fn repr(self) -> CompactString {
         if let Self::Str(s) = self {
-            format_smolstr!("\"{}\"", escape_str(&s, false))
+            format_compact!("\"{}\"", escape_str(&s, false))
         } else if let Self::Table(t) = self {
             t.repr_table(self)
         } else {
-            self.to_smolstr()
+            self.to_compact_string()
         }
     }
 }

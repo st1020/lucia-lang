@@ -1,6 +1,6 @@
 use std::io;
 
-use smol_str::ToSmolStr;
+use compact_str::ToCompactString;
 
 use crate::{
     objects::{Callback, Table, Varargs},
@@ -34,7 +34,7 @@ pub fn io_lib<'gc>(ctx: Context<'gc>) -> Table<'gc> {
         Callback::from_fn(&ctx, || {
             let mut t = String::new();
             io::stdin().read_line(&mut t).unwrap();
-            t.strip_suffix('\n').unwrap_or(&t).to_smolstr()
+            t.strip_suffix('\n').unwrap_or(&t).to_compact_string()
         }),
     );
     t

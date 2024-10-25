@@ -7,7 +7,7 @@ use crate::{
     frame::{FrameMode, Frames},
     libs,
     objects::{
-        Closure, GcError, GcStrInterner, Registry, RuntimeCode, StaticError, StaticValue, Table,
+        Closure, GcError, GcStrInterner, Registry, RuntimeCode, StashedError, StashedValue, Table,
     },
 };
 
@@ -114,7 +114,7 @@ impl Lucia {
         }
     }
 
-    pub fn run_code(&mut self, input: &str) -> Result<StaticValue, StaticError> {
+    pub fn run_code(&mut self, input: &str) -> Result<StashedValue, StashedError> {
         let allocator = &bumpalo::Bump::new();
         self.run(|ctx| {
             let interner = GcStrInterner::new(ctx);
