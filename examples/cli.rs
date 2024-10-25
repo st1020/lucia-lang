@@ -5,9 +5,6 @@ fn main() {
     let input = std::fs::read_to_string(path).expect("could not read file contents");
     let mut lucia = Lucia::new();
     if let Err(err) = lucia.run_code(&input) {
-        lucia.run(|ctx| {
-            let err = ctx.state.registry.fetch(&err);
-            println!("{}", err);
-        });
+        println!("{}", err);
     }
 }

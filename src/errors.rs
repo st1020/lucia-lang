@@ -1,10 +1,6 @@
 //! Errors of this crate.
 
-use std::{
-    fmt,
-    hash::{Hash, Hasher},
-    ops::{Bound, RangeBounds},
-};
+use std::{fmt, hash};
 
 use gc_arena::Collect;
 use thiserror::Error;
@@ -13,7 +9,7 @@ use crate::{
     compiler::opcode::OpCode,
     frame::{Frame, FrameMode},
     meta_ops::MetaMethod,
-    objects::{Closure, Value, ValueType},
+    objects::{ArgumentRange, ExternValue, Value, ValueType},
     utils::{Indent, Join},
 };
 
@@ -33,8 +29,8 @@ impl<'gc> PartialEq for Error<'gc> {
 
 impl<'gc> Eq for Error<'gc> {}
 
-impl<'gc> Hash for Error<'gc> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
+impl<'gc> hash::Hash for Error<'gc> {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
         self.kind.hash(state);
     }
 }
@@ -65,42 +61,68 @@ impl<'gc> fmt::Display for Error<'gc> {
 }
 
 impl<'gc> Error<'gc> {
-    pub fn new(kind: ErrorKind<'gc>) -> Self {
+    pub fn new<T: Into<ErrorKind<'gc>>>(kind: T) -> Self {
         Error {
-            kind,
+            kind: kind.into(),
             traceback: None,
         }
     }
 
-    pub fn with_traceback(kind: ErrorKind<'gc>, traceback: Vec<Frame<'gc>>) -> Self {
+    pub fn with_traceback<T: Into<ErrorKind<'gc>>>(kind: T, traceback: Vec<Frame<'gc>>) -> Self {
         Error {
-            kind,
+            kind: kind.into(),
             traceback: Some(traceback),
         }
     }
 }
 
-impl<'gc> From<Value<'gc>> for Error<'gc> {
-    fn from(value: Value<'gc>) -> Self {
-        Error::new(ErrorKind::LuciaError(value))
+/// Kind of all errors.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Collect, Error)]
+#[collect(no_drop)]
+pub enum ErrorKind<'gc> {
+    #[error("{0}")]
+    LuciaError(LuciaError<'gc>),
+    #[error("{0}")]
+    RuntimeError(#[from] RuntimeError),
+}
+
+impl ErrorKind<'_> {
+    pub fn recoverable(&self) -> bool {
+        !matches!(
+            self,
+            ErrorKind::LuciaError(LuciaError::Panic(_))
+                | ErrorKind::RuntimeError(RuntimeError::BadFrameMode { .. })
+        )
+    }
+}
+
+impl<'gc> From<LuciaError<'gc>> for ErrorKind<'gc> {
+    fn from(value: LuciaError<'gc>) -> Self {
+        ErrorKind::LuciaError(value)
     }
 }
 
 /// Kind of Lucia Error.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Collect, Error)]
 #[collect(no_drop)]
-pub enum ErrorKind<'gc> {
+pub enum LuciaError<'gc> {
+    #[error("{0}")]
+    Error(Value<'gc>),
+    #[error("panic: {0}")]
+    Panic(Value<'gc>),
+    #[error("assert: {0}")]
+    Assert(Value<'gc>),
+}
+
+/// Kind of Runtime Error.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Collect, Error)]
+#[collect(no_drop)]
+pub enum RuntimeError {
     #[error("bad frame mode (expected {expected}, found {found})")]
     BadFrameMode {
         expected: FrameMode,
         found: FrameMode,
     },
-    #[error("{0}")]
-    LuciaError(Value<'gc>),
-    #[error("{0}")]
-    UserPanic(Value<'gc>),
-    #[error("assert error: {0}")]
-    AssertError(Value<'gc>),
     #[error("unexpected type error (expected {expected}, found {found})")]
     UnexpectedType {
         expected: ValueType,
@@ -108,8 +130,7 @@ pub enum ErrorKind<'gc> {
     },
     #[error("call arguments error (required {required} arguments, but {given} was given)")]
     CallArguments {
-        value: Option<Closure<'gc>>,
-        required: CallArgumentsErrorKind,
+        required: ArgumentRange,
         given: usize,
     },
     #[error("operator error (unsupported operand type(s) for {operator}: {operand})")]
@@ -134,90 +155,39 @@ pub enum ErrorKind<'gc> {
     },
 }
 
-impl<'gc> ErrorKind<'gc> {
-    pub const fn recoverable(&self) -> bool {
-        !matches!(
-            self,
-            ErrorKind::BadFrameMode { .. } | ErrorKind::UserPanic(_)
-        )
-    }
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Error)]
+pub enum ExternError {
+    #[error("{0}")]
+    LuciaError(#[from] ExternLuciaError),
+    #[error("{0}")]
+    RuntimeError(#[from] RuntimeError),
 }
 
-/// Kind of CallArgumentsError.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Collect)]
-#[collect(require_static)]
-pub struct CallArgumentsErrorKind {
-    pub start: usize,
-    pub end: Option<usize>,
-}
-
-impl CallArgumentsErrorKind {
-    pub fn new(start: usize, end: Option<usize>) -> Self {
-        Self { start, end }
-    }
-
-    pub fn more_then(start: usize) -> Self {
-        Self { start, end: None }
-    }
-}
-
-impl From<usize> for CallArgumentsErrorKind {
-    fn from(value: usize) -> Self {
-        CallArgumentsErrorKind {
-            start: value,
-            end: Some(value),
+impl From<ErrorKind<'_>> for ExternError {
+    fn from(value: ErrorKind<'_>) -> Self {
+        match value {
+            ErrorKind::LuciaError(v) => ExternError::LuciaError(v.into()),
+            ErrorKind::RuntimeError(v) => ExternError::RuntimeError(v),
         }
     }
 }
 
-impl From<(usize, usize)> for CallArgumentsErrorKind {
-    fn from(value: (usize, usize)) -> Self {
-        CallArgumentsErrorKind {
-            start: value.0,
-            end: Some(value.1),
-        }
-    }
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Error)]
+pub enum ExternLuciaError {
+    #[error("{0}")]
+    Error(ExternValue),
+    #[error("panic: {0}")]
+    Panic(ExternValue),
+    #[error("assert: {0}")]
+    Assert(ExternValue),
 }
 
-impl From<(usize, Option<usize>)> for CallArgumentsErrorKind {
-    fn from(value: (usize, Option<usize>)) -> Self {
-        CallArgumentsErrorKind {
-            start: value.0,
-            end: value.1,
-        }
-    }
-}
-
-impl RangeBounds<usize> for CallArgumentsErrorKind {
-    fn start_bound(&self) -> Bound<&usize> {
-        Bound::Included(&self.start)
-    }
-
-    fn end_bound(&self) -> Bound<&usize> {
-        if let Some(end) = &self.end {
-            Bound::Included(end)
-        } else {
-            Bound::Unbounded
-        }
-    }
-}
-
-impl CallArgumentsErrorKind {
-    pub fn contains(&self, item: &usize) -> bool {
-        <Self as RangeBounds<usize>>::contains(self, item)
-    }
-}
-
-impl fmt::Display for CallArgumentsErrorKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(end) = self.end {
-            if self.start == end {
-                write!(f, "{}", end)
-            } else {
-                write!(f, "[{}, {}]", self.start, end)
-            }
-        } else {
-            write!(f, "at least {}", self.start)
+impl From<LuciaError<'_>> for ExternLuciaError {
+    fn from(value: LuciaError<'_>) -> Self {
+        match value {
+            LuciaError::Error(v) => ExternLuciaError::Error(v.into()),
+            LuciaError::Panic(v) => ExternLuciaError::Panic(v.into()),
+            LuciaError::Assert(v) => ExternLuciaError::Assert(v.into()),
         }
     }
 }

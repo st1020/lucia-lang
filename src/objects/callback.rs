@@ -3,11 +3,11 @@ use std::ops;
 use gc_arena::{Collect, Gc, Mutation};
 
 use crate::{
-    errors::{CallArgumentsErrorKind, Error, ErrorKind},
+    errors::{Error, RuntimeError},
     meta_ops::MetaResult,
     objects::{
         conversion::{FromValue, IntoValue},
-        define_object, Function, Value,
+        define_object, ArgumentRange, Function, Value,
     },
     Context,
 };
@@ -200,11 +200,10 @@ macro_rules! impl_into_callback {
         {
             fn call(&self, ctx: Context<'gc>, args: Vec<Value<'gc>>) -> CallbackResult<'gc> {
                 let args_len = args.len();
-                let required = CallArgumentsErrorKind::from($len);
-                if !required.contains(&args_len) {
+                let required = ArgumentRange::from($len);
+                if !required.contains(args_len) {
                     return Err(Error::new(
-                        ErrorKind::CallArguments {
-                            value: None,
+                        RuntimeError::CallArguments {
                             required,
                             given: args_len,
                         },
@@ -222,13 +221,12 @@ macro_rules! impl_into_callback {
         {
             fn call(&self, ctx: Context<'gc>, args: Vec<Value<'gc>>) -> CallbackResult<'gc> {
                 let args_len = args.len();
-                let required = CallArgumentsErrorKind::from(($len, None));
-                if !required.contains(&args_len) {
+                let required = ArgumentRange::from(($len, None));
+                if !required.contains(args_len) {
                     return Err(Error::new(
-                        ErrorKind::CallArguments {
-                            value: None,
+                        RuntimeError::CallArguments {
                             required,
-                            given: args_len,
+                            given: args_len
                         },
                     ));
                 }
@@ -244,11 +242,10 @@ macro_rules! impl_into_callback {
         {
             fn call(&self, ctx: Context<'gc>, args: Vec<Value<'gc>>) -> CallbackResult<'gc> {
                 let args_len = args.len();
-                let required = CallArgumentsErrorKind::from($len);
-                if !required.contains(&args_len) {
+                let required = ArgumentRange::from($len);
+                if !required.contains(args_len) {
                     return Err(Error::new(
-                        ErrorKind::CallArguments {
-                            value: None,
+                        RuntimeError::CallArguments {
                             required,
                             given: args_len,
                         },
@@ -266,11 +263,10 @@ macro_rules! impl_into_callback {
         {
             fn call(&self, ctx: Context<'gc>, args: Vec<Value<'gc>>) -> CallbackResult<'gc> {
                 let args_len = args.len();
-                let required = CallArgumentsErrorKind::from(($len, None));
-                if !required.contains(&args_len) {
+                let required = ArgumentRange::from(($len, None));
+                if !required.contains(args_len) {
                     return Err(Error::new(
-                        ErrorKind::CallArguments {
-                            value: None,
+                        RuntimeError::CallArguments {
                             required,
                             given: args_len,
                         },

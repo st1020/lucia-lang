@@ -9,7 +9,7 @@ use compact_str::ToCompactString;
 use gc_arena::{lock::RefLock, Collect, Gc, Mutation};
 
 use crate::{
-    errors::{Error, ErrorKind},
+    errors::{Error, ErrorKind, LuciaError, RuntimeError},
     objects::{Callback, CallbackReturn, Closure, Function, IntoValue, Table, UpValue, Value},
     utils::Join,
     Context,
@@ -184,7 +184,7 @@ impl<'gc> Frames<'gc> {
     ) -> Result<RefMut<'a, FramesState<'gc>>, Error<'gc>> {
         assert!(expected != FrameMode::Running);
         let state = self.0.try_borrow_mut(mc).map_err(|_| {
-            Error::new(ErrorKind::BadFrameMode {
+            Error::new(RuntimeError::BadFrameMode {
                 expected,
                 found: FrameMode::Running,
             })
@@ -192,7 +192,7 @@ impl<'gc> Frames<'gc> {
 
         let found = state.mode();
         if found != expected {
-            Err(Error::new(ErrorKind::BadFrameMode { expected, found }))
+            Err(Error::new(RuntimeError::BadFrameMode { expected, found }))
         } else {
             Ok(state)
         }
@@ -274,8 +274,7 @@ impl<'gc> LuciaFrame<'gc> {
         let mut stack = vec![Value::Null; params_num];
         match args.len().cmp(&params_num) {
             Ordering::Less => {
-                return Err(Error::new(ErrorKind::CallArguments {
-                    value: Some(closure),
+                return Err(Error::new(RuntimeError::CallArguments {
                     required: if function.variadic.is_none() {
                         params_num.into()
                     } else {
@@ -292,8 +291,7 @@ impl<'gc> LuciaFrame<'gc> {
             }
             Ordering::Greater => {
                 if function.variadic.is_none() {
-                    return Err(Error::new(ErrorKind::CallArguments {
-                        value: Some(closure),
+                    return Err(Error::new(RuntimeError::CallArguments {
                         required: params_num.into(),
                         given: args.len(),
                     }));
@@ -404,7 +402,7 @@ impl<'gc> FramesState<'gc> {
                             table.set(
                                 ctx,
                                 1,
-                                if let ErrorKind::LuciaError(v) = e.kind {
+                                if let ErrorKind::LuciaError(LuciaError::Error(v)) = e.kind {
                                     v
                                 } else {
                                     e.to_compact_string().into_value(ctx)

@@ -148,3 +148,52 @@ impl fmt::Display for ValueType {
         f.write_str(self.name())
     }
 }
+
+/// A [`Value`] that is not bound to the GC context.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+pub enum ExternValue {
+    #[default]
+    Null,
+    Bool(bool),
+    Int(i64),
+    Float(Float),
+    Str(CompactString),
+    Table(*const ()),
+    Function(*const ()),
+    UserData(*const ()),
+}
+
+impl From<Value<'_>> for ExternValue {
+    fn from(value: Value<'_>) -> Self {
+        match value {
+            Value::Null => ExternValue::Null,
+            Value::Bool(v) => ExternValue::Bool(v),
+            Value::Int(v) => ExternValue::Int(v),
+            Value::Float(v) => ExternValue::Float(v),
+            Value::Str(v) => ExternValue::Str(v.to_compact_string()),
+            Value::Table(v) => ExternValue::Table(Gc::as_ptr(v.into_inner()) as _),
+            Value::Function(Function::Closure(v)) => {
+                ExternValue::Function(Gc::as_ptr(v.into_inner()) as _)
+            }
+            Value::Function(Function::Callback(v)) => {
+                ExternValue::Function(Gc::as_ptr(v.into_inner()) as _)
+            }
+            Value::UserData(v) => ExternValue::UserData(Gc::as_ptr(v.into_inner()) as _),
+        }
+    }
+}
+
+impl fmt::Display for ExternValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ExternValue::Null => write!(f, "null"),
+            ExternValue::Bool(v) => write!(f, "{}", v),
+            ExternValue::Int(v) => write!(f, "{}", v),
+            ExternValue::Float(v) => write!(f, "{}", v),
+            ExternValue::Str(v) => write!(f, "{}", v),
+            ExternValue::Table(v) => write!(f, "<table {:p}>", v),
+            ExternValue::Function(v) => write!(f, "<function {:p}>", v),
+            ExternValue::UserData(v) => write!(f, "<userdata {:p}>", v),
+        }
+    }
+}

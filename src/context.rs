@@ -4,11 +4,10 @@ use gc_arena::{Arena, Collect, Mutation, Rootable};
 
 use crate::{
     compiler::compile,
+    errors::ExternError,
     frame::{FrameMode, Frames},
     libs,
-    objects::{
-        Closure, GcError, GcStrInterner, Registry, RuntimeCode, StashedError, StashedValue, Table,
-    },
+    objects::{Closure, GcStrInterner, Registry, RuntimeCode, StashedValue, Table},
 };
 
 #[derive(Clone, Collect)]
@@ -114,7 +113,7 @@ impl Lucia {
         }
     }
 
-    pub fn run_code(&mut self, input: &str) -> Result<StashedValue, StashedError> {
+    pub fn run_code(&mut self, input: &str) -> Result<StashedValue, ExternError> {
         let allocator = &bumpalo::Bump::new();
         self.run(|ctx| {
             let interner = GcStrInterner::new(ctx);
@@ -129,10 +128,7 @@ impl Lucia {
         self.run_frame();
         self.run(|ctx| {
             if let Some(e) = &ctx.state.frames.0.borrow().error {
-                Err(ctx
-                    .state
-                    .registry
-                    .stash(&ctx, GcError::new(&ctx, e.clone())))
+                Err(e.kind.clone().into())
             } else {
                 Ok(ctx
                     .state

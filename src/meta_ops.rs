@@ -6,7 +6,7 @@ use compact_str::ToCompactString;
 use gc_arena::{lock::RefLock, Collect, Gc};
 
 use crate::{
-    errors::{Error, ErrorKind},
+    errors::{Error, RuntimeError},
     objects::{Callback, CallbackReturn, Function, IntoValue, Str, Table, Value},
     Context,
 };
@@ -42,13 +42,13 @@ pub enum MetaMethod {
 
 macro_rules! meta_operator_error {
     ($ctx:expr, $operator:expr, $arg1:expr) => {
-        Error::new(ErrorKind::MetaUnOperator {
+        Error::new(RuntimeError::MetaUnOperator {
             operator: $operator,
             operand: $arg1.value_type(),
         })
     };
     ($ctx:expr, $operator:expr, $arg1:expr, $arg2:expr) => {
-        Error::new(ErrorKind::MetaBinOperator {
+        Error::new(RuntimeError::MetaBinOperator {
             operator: $operator,
             operand: ($arg1.value_type(), $arg2.value_type()),
         })

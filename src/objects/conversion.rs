@@ -1,7 +1,7 @@
 use compact_str::CompactString;
 
 use crate::{
-    errors::{Error, ErrorKind},
+    errors::{Error, RuntimeError},
     objects::{
         Callback, Closure, Function, Str, Table, TableEntries, TableState, UserData, Value,
         ValueType,
@@ -20,7 +20,7 @@ pub trait FromValue<'gc>: Sized {
 
 macro_rules! unexpected_type_error {
     ($expected:expr, $found:expr) => {
-        Error::new(ErrorKind::UnexpectedType {
+        Error::new(RuntimeError::UnexpectedType {
             expected: $expected,
             found: $found.value_type(),
         })

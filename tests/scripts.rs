@@ -16,10 +16,7 @@ fn test_scripts() {
             let _ = writeln!(stdout(), "running {:?}", path.file_name().unwrap());
             let mut lucia = Lucia::new();
             if let Err(err) = lucia.run_code(&input) {
-                lucia.run(|ctx| {
-                    let err = ctx.state.registry.fetch(&err);
-                    panic!("error encountered running: {}", err);
-                });
+                panic!("error encountered running: {}", err);
             }
         } else {
             let _ = writeln!(stdout(), "skipping file {:?}", path);

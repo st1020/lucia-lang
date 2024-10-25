@@ -3,7 +3,7 @@ use crate::{
         code::FunctionKind,
         opcode::{JumpTarget, OpCode},
     },
-    errors::{Error, ErrorKind},
+    errors::{Error, LuciaError, RuntimeError},
     frame::{CatchErrorKind, Frame, FramesState},
     meta_ops,
     objects::{Closure, Function, IntoValue, RuntimeConstValue, Table, Value},
@@ -28,7 +28,7 @@ impl<'gc> FramesState<'gc> {
         macro_rules! operator_error {
             ($operator:expr, $arg1:expr) => {
                 Error::with_traceback(
-                    ErrorKind::UnOperator {
+                    RuntimeError::UnOperator {
                         operator: $operator,
                         operand: $arg1.value_type(),
                     },
@@ -37,7 +37,7 @@ impl<'gc> FramesState<'gc> {
             };
             ($operator:expr, $arg1:expr, $arg2:expr) => {
                 Error::with_traceback(
-                    ErrorKind::BinOperator {
+                    RuntimeError::BinOperator {
                         operator: $operator,
                         operand: ($arg1.value_type(), $arg2.value_type()),
                     },
@@ -329,7 +329,7 @@ impl<'gc> FramesState<'gc> {
                 }
                 OpCode::Throw => {
                     let tos = frame.stack.pop().unwrap();
-                    return Err(tos.into());
+                    return Err(Error::new(LuciaError::Error(tos)));
                 }
                 OpCode::ReturnCall(i) => {
                     let args = frame.stack.split_off(frame.stack.len() - i);

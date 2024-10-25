@@ -3,7 +3,7 @@ use std::fmt;
 use gc_arena::{Collect, DynamicRoot, DynamicRootSet, Mutation, Rootable};
 
 use crate::{
-    objects::{Callback, Closure, Function, GcError, Str, Table, UserData, Value},
+    objects::{Callback, Closure, Function, Str, Table, UserData, Value},
     utils::{impl_enum_from, Float},
 };
 
@@ -95,7 +95,6 @@ define_stash!(Table, StashedTable);
 define_stash!(Closure, StashedClosure);
 define_stash!(Callback, StashedCallback);
 define_stash!(UserData, StashedUserData);
-define_stash!(GcError, StashedError);
 
 #[derive(Debug, Clone)]
 pub enum StashedFunction {
