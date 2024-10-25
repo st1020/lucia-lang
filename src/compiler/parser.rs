@@ -173,6 +173,7 @@ impl<'alloc, 'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'alloc
         );
         let function = Box::new_in(
             Function {
+                name: None,
                 kind: FunctionKind::Function,
                 params: Vec::new_in(self.allocator),
                 variadic: None,
@@ -397,6 +398,7 @@ impl<'alloc, 'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'alloc
             let name = Box::new_in(self.parse_ident()?, self.allocator);
             let (params, variadic) = self.parse_params()?;
             let function = Function {
+                name: Some(name.name),
                 kind: FunctionKind::Function,
                 params,
                 variadic,
@@ -676,6 +678,7 @@ impl<'alloc, 'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'alloc
         } else if self.eat(TokenKind::Fn) {
             let (params, variadic) = self.parse_params()?;
             ExprKind::Function(Function {
+                name: None,
                 kind: FunctionKind::Function,
                 params,
                 variadic,
@@ -687,6 +690,7 @@ impl<'alloc, 'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'alloc
         } else if self.check(TokenKind::VBar) {
             let (params, variadic) = self.parse_closure_params()?;
             ExprKind::Function(Function {
+                name: None,
                 kind: FunctionKind::Closure,
                 params,
                 variadic,
@@ -697,6 +701,7 @@ impl<'alloc, 'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'alloc
             })
         } else if self.eat(TokenKind::Do) {
             ExprKind::Function(Function {
+                name: None,
                 kind: FunctionKind::Do,
                 params: Vec::new_in(self.allocator),
                 variadic: None,

@@ -289,6 +289,7 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
             function.params.len() + if function.variadic.is_some() { 1 } else { 0 },
         );
         let code = Code {
+            name: function.name,
             params: function.params.iter().map(|x| x.ident.name).collect(),
             variadic: function.variadic.as_ref().map(|x| x.ident.name),
             kind: function.kind,

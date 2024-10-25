@@ -24,6 +24,7 @@ impl<S: AsRef<str>> fmt::Display for Program<'_, S> {
 /// A function.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Function<'a, S> {
+    pub name: Option<S>,
     pub kind: FunctionKind,
     pub params: Vec<'a, TypedIdent<'a, S>>,
     pub variadic: Option<Box<'a, TypedIdent<'a, S>>>,

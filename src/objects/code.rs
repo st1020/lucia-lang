@@ -18,6 +18,8 @@ define_object!(RuntimeCode, RuntimeCodeInner<'gc>, inner_eq);
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Collect)]
 #[collect(no_drop)]
 pub struct RuntimeCodeInner<'gc> {
+    /// Function name.
+    pub name: Option<Str<'gc>>,
     /// Name of parameters.
     pub params: Vec<Str<'gc>>,
     /// Name of variadic parameter.
@@ -45,7 +47,8 @@ impl<'gc> RuntimeCode<'gc> {
         RuntimeCode(Gc::new(
             mc,
             RuntimeCodeInner {
-                params: function.params.into_iter().collect(),
+                name: function.name,
+                params: function.params,
                 variadic: function.variadic,
                 kind: function.kind,
                 code: function.code,
@@ -54,9 +57,9 @@ impl<'gc> RuntimeCode<'gc> {
                     .into_iter()
                     .map(|v| RuntimeConstValue::new(mc, v))
                     .collect(),
-                local_names: function.local_names.into_iter().collect(),
-                global_names: function.global_names.into_iter().collect(),
-                upvalue_names: function.upvalue_names.into_iter().collect(),
+                local_names: function.local_names,
+                global_names: function.global_names,
+                upvalue_names: function.upvalue_names,
                 stack_size: function.stack_size,
             },
         ))
