@@ -13,7 +13,7 @@ pub fn io_lib<'gc>(ctx: Context<'gc>) -> Table<'gc> {
     t.set(
         ctx,
         "print",
-        Callback::from_fn(&ctx, |args: Varargs<'gc>| match args.len() {
+        Callback::from(&ctx, |args: Varargs<'gc>| match args.len() {
             0 => (),
             1 => print!("{}", args.first().unwrap()),
             _ => print!("{}", args.iter().join(" ")),
@@ -22,7 +22,7 @@ pub fn io_lib<'gc>(ctx: Context<'gc>) -> Table<'gc> {
     t.set(
         ctx,
         "println",
-        Callback::from_fn(&ctx, |args: Varargs<'gc>| match args.len() {
+        Callback::from(&ctx, |args: Varargs<'gc>| match args.len() {
             0 => println!(),
             1 => println!("{}", args.first().unwrap()),
             _ => println!("{}", args.iter().join(" ")),
@@ -31,7 +31,7 @@ pub fn io_lib<'gc>(ctx: Context<'gc>) -> Table<'gc> {
     t.set(
         ctx,
         "input",
-        Callback::from_fn(&ctx, || {
+        Callback::from(&ctx, || {
             let mut t = String::new();
             io::stdin().read_line(&mut t).unwrap();
             t.strip_suffix('\n').unwrap_or(&t).to_compact_string()

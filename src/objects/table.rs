@@ -1,7 +1,4 @@
-use std::{
-    hash::{Hash, Hasher},
-    mem,
-};
+use std::{hash, mem};
 
 use compact_str::{format_compact, CompactString};
 use gc_arena::{lock::RefLock, Collect, Gc, Mutation};
@@ -26,8 +23,8 @@ impl<'gc> PartialEq for Table<'gc> {
 
 impl<'gc> Eq for Table<'gc> {}
 
-impl<'gc> Hash for Table<'gc> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
+impl<'gc> hash::Hash for Table<'gc> {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
         Gc::as_ptr(self.0).hash(state)
     }
 }

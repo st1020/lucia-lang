@@ -92,8 +92,7 @@ impl<'gc> Callback<'gc> {
         }
 
         // SAFETY: We can't auto-implement `Collect` due to the function pointer lifetimes, but
-        // function pointers can't hold any data. It would be nice if function pointers could have
-        // higher rank `for<'gc>` lifetimes.
+        // function pointers can't hold any data.
         unsafe impl<'gc, C: Collect> Collect for HeaderCallback<'gc, C> {
             fn needs_trace() -> bool
             where
@@ -112,7 +111,7 @@ impl<'gc> Callback<'gc> {
             HeaderCallback {
                 header: CallbackInner {
                     call: |ptr, ctx, args| unsafe {
-                        let hc = ptr as *mut HeaderCallback<C>;
+                        let hc = ptr as *const HeaderCallback<C>;
                         ((*hc).callback).call(ctx, args)
                     },
                 },
@@ -123,20 +122,25 @@ impl<'gc> Callback<'gc> {
         Self(unsafe { Gc::cast::<CallbackInner>(hc) })
     }
 
-    pub fn from_fn<F, T>(mc: &Mutation<'gc>, call: F) -> Callback<'gc>
+    pub fn from<F, T>(mc: &Mutation<'gc>, call: F) -> Callback<'gc>
     where
         F: 'static + IntoCallback<'gc, T>,
     {
-        Self::from_fn_raw(mc, move |ctx, args| call.call(ctx, args))
+        Self::from_fn(mc, move |ctx, args| call.call(ctx, args))
     }
 
-    pub fn from_fn_raw<F>(mc: &Mutation<'gc>, call: F) -> Callback<'gc>
+    /// Create a callback from a Rust function.
+    ///
+    /// The function must be `'static` because Rust closures cannot implement `Collect`. If you need
+    /// to associate GC data with this function, use [`Callback::from_fn_with`].
+    pub fn from_fn<F>(mc: &Mutation<'gc>, call: F) -> Callback<'gc>
     where
         F: 'static + Fn(Context<'gc>, Vec<Value<'gc>>) -> CallbackResult<'gc>,
     {
         Self::from_fn_with(mc, (), move |_, ctx, args| call(ctx, args))
     }
 
+    /// Create a callback from a Rust function together with a GC object.
     pub fn from_fn_with<R, F>(mc: &Mutation<'gc>, root: R, call: F) -> Callback<'gc>
     where
         R: 'gc + Collect,

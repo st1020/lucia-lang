@@ -13,6 +13,12 @@ const CANONICAL_ZERO_BITS: u64 = 0x0u64;
 #[collect(require_static)]
 pub struct Float(pub f64);
 
+impl From<f32> for Float {
+    fn from(value: f32) -> Self {
+        Float(value.into())
+    }
+}
+
 impl From<f64> for Float {
     fn from(value: f64) -> Self {
         Float(value)

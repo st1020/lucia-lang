@@ -12,19 +12,19 @@ pub fn load_builtin<'gc>(ctx: Context<'gc>) {
     builtins.set(
         ctx,
         "id",
-        Callback::from_fn(&ctx, |v: Value<'gc>| {
+        Callback::from(&ctx, |v: Value<'gc>| {
             v.id().map(|x| i64::try_from(usize::from(x)).unwrap())
         }),
     );
     builtins.set(
         ctx,
         "type",
-        Callback::from_fn(&ctx, |v: Value<'gc>| v.value_type().name()),
+        Callback::from(&ctx, |v: Value<'gc>| v.value_type().name()),
     );
     builtins.set(
         ctx,
         "assert",
-        Callback::from_fn(&ctx, |v: bool, msg: Varargs<'gc>| {
+        Callback::from(&ctx, |v: bool, msg: Varargs<'gc>| {
             if !v {
                 Err(Error::new(LuciaError::Assert(
                     msg.first().cloned().unwrap_or(Value::Null),
@@ -34,16 +34,16 @@ pub fn load_builtin<'gc>(ctx: Context<'gc>) {
             }
         }),
     );
-    builtins.set(ctx, "len", Callback::from_fn(&ctx, meta_ops::len));
-    builtins.set(ctx, "bool", Callback::from_fn(&ctx, meta_ops::bool));
-    builtins.set(ctx, "int", Callback::from_fn(&ctx, meta_ops::int));
-    builtins.set(ctx, "float", Callback::from_fn(&ctx, meta_ops::float));
-    builtins.set(ctx, "str", Callback::from_fn(&ctx, meta_ops::str));
-    builtins.set(ctx, "repr", Callback::from_fn(&ctx, meta_ops::repr));
+    builtins.set(ctx, "len", Callback::from(&ctx, meta_ops::len));
+    builtins.set(ctx, "bool", Callback::from(&ctx, meta_ops::bool));
+    builtins.set(ctx, "int", Callback::from(&ctx, meta_ops::int));
+    builtins.set(ctx, "float", Callback::from(&ctx, meta_ops::float));
+    builtins.set(ctx, "str", Callback::from(&ctx, meta_ops::str));
+    builtins.set(ctx, "repr", Callback::from(&ctx, meta_ops::repr));
     builtins.set(
         ctx,
         "range",
-        Callback::from_fn(&ctx, |ctx: Context<'gc>, start: i64, end: i64| {
+        Callback::from(&ctx, |ctx: Context<'gc>, start: i64, end: i64| {
             #[derive(Collect)]
             #[collect[no_drop]]
             struct RangeIter {

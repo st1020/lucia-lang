@@ -40,21 +40,6 @@ pub enum MetaMethod {
     Repr,
 }
 
-macro_rules! meta_operator_error {
-    ($ctx:expr, $operator:expr, $arg1:expr) => {
-        Error::new(RuntimeError::MetaUnOperator {
-            operator: $operator,
-            operand: $arg1.value_type(),
-        })
-    };
-    ($ctx:expr, $operator:expr, $arg1:expr, $arg2:expr) => {
-        Error::new(RuntimeError::MetaBinOperator {
-            operator: $operator,
-            operand: ($arg1.value_type(), $arg2.value_type()),
-        })
-    };
-}
-
 impl MetaMethod {
     pub const fn name(self) -> &'static str {
         match self {
@@ -103,6 +88,21 @@ impl<'gc> IntoValue<'gc> for MetaMethod {
 pub enum MetaResult<'gc, const N: usize> {
     Value(Value<'gc>),
     Call(Function<'gc>, [Value<'gc>; N]),
+}
+
+macro_rules! meta_operator_error {
+    ($ctx:expr, $operator:expr, $arg1:expr) => {
+        Error::new(RuntimeError::MetaUnOperator {
+            operator: $operator,
+            operand: $arg1.value_type(),
+        })
+    };
+    ($ctx:expr, $operator:expr, $arg1:expr, $arg2:expr) => {
+        Error::new(RuntimeError::MetaBinOperator {
+            operator: $operator,
+            operand: ($arg1.value_type(), $arg2.value_type()),
+        })
+    };
 }
 
 pub fn call<'gc>(ctx: Context<'gc>, v: Value<'gc>) -> Result<Function<'gc>, Error<'gc>> {

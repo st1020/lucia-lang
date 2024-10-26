@@ -5,7 +5,7 @@ use gc_arena::{Collect, Gc};
 
 use crate::{
     objects::{Function, Str, Table, UserData},
-    utils::{escape_str, Float},
+    utils::{escape_str, impl_enum_from, Float},
 };
 
 /// Enum of all lucia values.
@@ -30,6 +30,22 @@ pub enum Value<'gc> {
     /// `userdata` - An UserData.
     UserData(UserData<'gc>),
 }
+
+impl From<()> for Value<'_> {
+    fn from(_: ()) -> Self {
+        Value::Null
+    }
+}
+
+impl_enum_from!(Value<'gc>, {
+    Bool(bool),
+    Int(i64),
+    Float(Float),
+    Str(Str<'gc>),
+    Table(Table<'gc>),
+    Function(Function<'gc>),
+    UserData(UserData<'gc>),
+});
 
 impl<'gc> Value<'gc> {
     pub fn metatable(self) -> Option<Table<'gc>> {
