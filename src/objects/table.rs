@@ -1,6 +1,6 @@
+use core::fmt;
 use std::{hash, mem};
 
-use compact_str::{format_compact, CompactString};
 use gc_arena::{lock::RefLock, Collect, Gc, Mutation};
 use indexmap::IndexMap;
 
@@ -26,6 +26,12 @@ impl<'gc> Eq for Table<'gc> {}
 impl<'gc> hash::Hash for Table<'gc> {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
         Gc::as_ptr(self.0).hash(state)
+    }
+}
+
+impl fmt::Display for Table<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<table {:p}>", Gc::as_ptr(self.into_inner()))
     }
 }
 
@@ -113,33 +119,6 @@ impl<'gc> Table<'gc> {
         metatable: Option<Table<'gc>>,
     ) -> Option<Table<'gc>> {
         mem::replace(&mut self.0.borrow_mut(mc).metatable, metatable)
-    }
-
-    /// Return the repr string of the table.
-    pub(crate) fn repr_table(self, t: Value<'gc>) -> CompactString {
-        let mut temp = Vec::new();
-        for i in 0..self.len() {
-            if let Some((k, v)) = self.get_index(i) {
-                temp.push(format!(
-                    "{}: {}",
-                    if k.is(t) {
-                        CompactString::const_new("<table>")
-                    } else if let Value::Table(k_t) = k {
-                        k_t.repr_table(t)
-                    } else {
-                        k.repr()
-                    },
-                    if v.is(t) {
-                        CompactString::const_new("<table>")
-                    } else if let Value::Table(v_t) = v {
-                        v_t.repr_table(t)
-                    } else {
-                        v.repr()
-                    },
-                ))
-            }
-        }
-        format_compact!("{{{}}}", temp.join(", "))
     }
 }
 

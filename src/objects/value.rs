@@ -1,11 +1,11 @@
 use std::{fmt, num::NonZeroUsize};
 
-use compact_str::{format_compact, CompactString, ToCompactString};
+use compact_str::{CompactString, ToCompactString};
 use gc_arena::{Collect, Gc};
 
 use crate::{
     objects::{Function, Str, Table, UserData},
-    utils::{escape_str, impl_enum_from, Float},
+    utils::{impl_enum_from, Float},
 };
 
 /// Enum of all lucia values.
@@ -64,23 +64,16 @@ impl<'gc> Value<'gc> {
             Self::Float(_) => None,
             Self::Str(v) => NonZeroUsize::new(Gc::as_ptr(v.into_inner()) as usize),
             Self::Table(v) => NonZeroUsize::new(Gc::as_ptr(v.into_inner()) as usize),
-            Self::Function(Function::Closure(v)) => {
-                NonZeroUsize::new(Gc::as_ptr(v.into_inner()) as usize)
-            }
-            Self::Function(Function::Callback(v)) => {
-                NonZeroUsize::new(Gc::as_ptr(v.into_inner()) as usize)
-            }
+            Self::Function(v) => NonZeroUsize::new(v.const_ptr() as usize),
             Self::UserData(v) => NonZeroUsize::new(Gc::as_ptr(v.into_inner()) as usize),
         }
     }
 
     pub fn is(self, other: Value<'gc>) -> bool {
-        match (self, other) {
-            (Self::Null, Self::Null)
-            | (Self::Bool(_), Self::Bool(_))
-            | (Self::Int(_), Self::Int(_))
-            | (Self::Float(_), Self::Float(_)) => self == other,
-            _ => self.id() == other.id(),
+        if let (Some(this), Some(other)) = (self.id(), other.id()) {
+            this == other
+        } else {
+            self == other
         }
     }
 
@@ -100,16 +93,6 @@ impl<'gc> Value<'gc> {
     pub fn is_null(self) -> bool {
         matches!(self, Self::Null)
     }
-
-    pub fn repr(self) -> CompactString {
-        if let Self::Str(s) = self {
-            format_compact!("\"{}\"", escape_str(&s, false))
-        } else if let Self::Table(t) = self {
-            t.repr_table(self)
-        } else {
-            self.to_compact_string()
-        }
-    }
 }
 
 impl<'gc> fmt::Display for Value<'gc> {
@@ -120,12 +103,9 @@ impl<'gc> fmt::Display for Value<'gc> {
             Self::Int(v) => write!(f, "{}", v),
             Self::Float(v) => write!(f, "{}", v),
             Self::Str(v) => write!(f, "{}", v),
-            Self::Table(v) => write!(f, "<table {:p}>", v.into_inner()),
-            Self::Function(Function::Closure(v)) => write!(f, "<function {:p}>", v.into_inner()),
-            Self::Function(Function::Callback(v)) => {
-                write!(f, "<function {:p}>", Gc::as_ptr(v.into_inner()))
-            }
-            Self::UserData(v) => write!(f, "<userdata {:p}>", Gc::as_ptr(v.into_inner())),
+            Self::Table(v) => write!(f, "{}", v),
+            Self::Function(v) => write!(f, "{}", v),
+            Self::UserData(v) => write!(f, "{}", v),
         }
     }
 }
@@ -188,12 +168,7 @@ impl From<Value<'_>> for ExternValue {
             Value::Float(v) => ExternValue::Float(v),
             Value::Str(v) => ExternValue::Str(v.to_compact_string()),
             Value::Table(v) => ExternValue::Table(Gc::as_ptr(v.into_inner()) as _),
-            Value::Function(Function::Closure(v)) => {
-                ExternValue::Function(Gc::as_ptr(v.into_inner()) as _)
-            }
-            Value::Function(Function::Callback(v)) => {
-                ExternValue::Function(Gc::as_ptr(v.into_inner()) as _)
-            }
+            Value::Function(v) => ExternValue::Function(v.const_ptr()),
             Value::UserData(v) => ExternValue::UserData(Gc::as_ptr(v.into_inner()) as _),
         }
     }

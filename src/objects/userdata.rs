@@ -1,3 +1,4 @@
+use core::fmt;
 use std::{
     hash::{Hash, Hasher},
     mem,
@@ -56,6 +57,12 @@ impl<'gc> Eq for UserData<'gc> {}
 impl<'gc> Hash for UserData<'gc> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.hash(state)
+    }
+}
+
+impl fmt::Display for UserData<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<userdata {:p}>", Gc::as_ptr(self.0.into_inner()))
     }
 }
 

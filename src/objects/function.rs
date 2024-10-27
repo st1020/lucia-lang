@@ -3,7 +3,7 @@ use std::{
     ops::{Bound, RangeBounds},
 };
 
-use gc_arena::Collect;
+use gc_arena::{Collect, Gc};
 
 use crate::{
     objects::{Callback, Closure},
@@ -22,6 +22,21 @@ impl_enum_from!(Function<'gc>, {
     Closure(Closure<'gc>),
     Callback(Callback<'gc>),
 });
+
+impl<'gc> Function<'gc> {
+    pub fn const_ptr(&self) -> *const () {
+        match self {
+            Function::Closure(v) => Gc::as_ptr(v.into_inner()) as *const (),
+            Function::Callback(v) => Gc::as_ptr(v.into_inner()) as *const (),
+        }
+    }
+}
+
+impl fmt::Display for Function<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "<function {:p}>", self.const_ptr())
+    }
+}
 
 /// The required number of arguments when calling a function.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Collect)]

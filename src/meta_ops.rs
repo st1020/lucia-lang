@@ -7,7 +7,7 @@ use gc_arena::{lock::RefLock, Collect, Gc};
 
 use crate::{
     errors::{Error, RuntimeError},
-    objects::{Callback, CallbackReturn, Function, IntoValue, Str, Table, Value},
+    objects::{Callback, CallbackReturn, Function, IntoValue, Repr, Str, Table, Value},
     Context,
 };
 
