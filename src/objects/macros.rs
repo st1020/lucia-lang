@@ -23,7 +23,7 @@ macro_rules! define_object {
         }
     };
 
-    ($name:ident, $inner_name:ty, inner_eq) => {
+    ($name:ident, $inner_name:ty, inner) => {
         define_object!($name, $inner_name);
 
         impl<'gc> PartialEq for $name<'gc> {
@@ -39,9 +39,15 @@ macro_rules! define_object {
                 (*self.0).hash(state);
             }
         }
+
+        impl std::fmt::Display for $name<'_> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{}", self.0)
+            }
+        }
     };
 
-    ($name:ident, $inner_name:ty, ptr_eq) => {
+    ($name:ident, $inner_name:ty, ptr, $display_name:literal) => {
         define_object!($name, $inner_name);
 
         impl<'gc> PartialEq for $name<'gc> {
@@ -55,6 +61,12 @@ macro_rules! define_object {
         impl<'gc> std::hash::Hash for $name<'gc> {
             fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
                 Gc::as_ptr(self.0).hash(state);
+            }
+        }
+
+        impl std::fmt::Display for $name<'_> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "<{} {:p}>", $display_name, Gc::as_ptr(self.into_inner()))
             }
         }
     };

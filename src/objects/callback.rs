@@ -75,7 +75,7 @@ pub trait CallbackFn<'gc>: Collect {
     fn call(&self, ctx: Context<'gc>, args: Vec<Value<'gc>>) -> CallbackResult<'gc>;
 }
 
-define_object!(Callback, CallbackInner<'gc>, ptr_eq);
+define_object!(Callback, CallbackInner<'gc>, ptr, "callback");
 
 #[derive(Debug)]
 pub struct CallbackInner<'gc> {

@@ -14,12 +14,10 @@ pub fn table_lib<'gc>(ctx: Context<'gc>) -> Table<'gc> {
         Callback::from(&ctx, |ctx: Context<'gc>, t: Table<'gc>| {
             Callback::from_fn_with(
                 &ctx,
-                (t, Gc::new(&ctx, RefLock::new(0usize))),
-                |(t, i), ctx, _args| {
-                    let mut i = i.borrow_mut(&ctx);
-                    *i += 1;
+                Gc::new(&ctx, RefLock::new(t.iter())),
+                |iter, ctx, _args| {
                     Ok(CallbackReturn::Return(
-                        t.get_index(*i - 1).map_or(Value::Null, |(k, _)| k),
+                        iter.borrow_mut(&ctx).next().map_or(Value::Null, |(k, _)| k),
                     ))
                 },
             )
@@ -31,12 +29,10 @@ pub fn table_lib<'gc>(ctx: Context<'gc>) -> Table<'gc> {
         Callback::from(&ctx, |ctx: Context<'gc>, t: Table<'gc>| {
             Callback::from_fn_with(
                 &ctx,
-                (t, Gc::new(&ctx, RefLock::new(0usize))),
-                |(t, i), ctx, _args| {
-                    let mut i = i.borrow_mut(&ctx);
-                    *i += 1;
+                Gc::new(&ctx, RefLock::new(t.iter())),
+                |iter, ctx, _args| {
                     Ok(CallbackReturn::Return(
-                        t.get_index(*i - 1).map_or(Value::Null, |(_, v)| v),
+                        iter.borrow_mut(&ctx).next().map_or(Value::Null, |(_, v)| v),
                     ))
                 },
             )

@@ -1,3 +1,5 @@
+use std::fmt;
+
 use gc_arena::{static_collect, Collect, Gc, Mutation};
 
 use crate::{
@@ -13,7 +15,31 @@ use crate::{
 static_collect!(OpCode);
 static_collect!(FunctionKind);
 
-define_object!(RuntimeCode, RuntimeCodeInner<'gc>, inner_eq);
+define_object!(RuntimeCode, RuntimeCodeInner<'gc>, inner);
+
+impl<'gc> RuntimeCode<'gc> {
+    pub fn new(mc: &Mutation<'gc>, function: Code<Str<'gc>>) -> Self {
+        RuntimeCode(Gc::new(
+            mc,
+            RuntimeCodeInner {
+                name: function.name,
+                params: function.params,
+                variadic: function.variadic,
+                kind: function.kind,
+                code: function.code,
+                consts: function
+                    .consts
+                    .into_iter()
+                    .map(|v| RuntimeConstValue::new(mc, v))
+                    .collect(),
+                local_names: function.local_names,
+                global_names: function.global_names,
+                upvalue_names: function.upvalue_names,
+                stack_size: function.stack_size,
+            },
+        ))
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Collect)]
 #[collect(no_drop)]
@@ -42,27 +68,9 @@ pub struct RuntimeCodeInner<'gc> {
     pub stack_size: usize,
 }
 
-impl<'gc> RuntimeCode<'gc> {
-    pub fn new(mc: &Mutation<'gc>, function: Code<Str<'gc>>) -> Self {
-        RuntimeCode(Gc::new(
-            mc,
-            RuntimeCodeInner {
-                name: function.name,
-                params: function.params,
-                variadic: function.variadic,
-                kind: function.kind,
-                code: function.code,
-                consts: function
-                    .consts
-                    .into_iter()
-                    .map(|v| RuntimeConstValue::new(mc, v))
-                    .collect(),
-                local_names: function.local_names,
-                global_names: function.global_names,
-                upvalue_names: function.upvalue_names,
-                stack_size: function.stack_size,
-            },
-        ))
+impl fmt::Display for RuntimeCodeInner<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
 

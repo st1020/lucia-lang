@@ -1,39 +1,16 @@
-use core::fmt;
-use std::{hash, mem};
+use std::mem;
 
 use gc_arena::{lock::RefLock, Collect, Gc, Mutation};
 use indexmap::IndexMap;
 
 use crate::{
-    objects::{IntoValue, Value},
+    objects::{define_object, IntoValue, Value},
     Context,
 };
 
 pub type TableInner<'gc> = RefLock<TableState<'gc>>;
 
-#[derive(Debug, Clone, Copy, Collect)]
-#[collect(no_drop)]
-pub struct Table<'gc>(Gc<'gc, TableInner<'gc>>);
-
-impl<'gc> PartialEq for Table<'gc> {
-    fn eq(&self, other: &Table<'gc>) -> bool {
-        Gc::ptr_eq(self.0, other.0) || self.0.borrow().entries == other.0.borrow().entries
-    }
-}
-
-impl<'gc> Eq for Table<'gc> {}
-
-impl<'gc> hash::Hash for Table<'gc> {
-    fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        Gc::as_ptr(self.0).hash(state)
-    }
-}
-
-impl fmt::Display for Table<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "<table {:p}>", Gc::as_ptr(self.into_inner()))
-    }
-}
+define_object!(Table, TableInner<'gc>, ptr, "table");
 
 impl<'gc> Table<'gc> {
     pub fn new(mc: &Mutation<'gc>) -> Self {
@@ -42,14 +19,6 @@ impl<'gc> Table<'gc> {
 
     pub fn from(mc: &Mutation<'gc>, table_state: TableState<'gc>) -> Self {
         Table(Gc::new(mc, RefLock::new(table_state)))
-    }
-
-    pub fn from_inner(inner: Gc<'gc, TableInner<'gc>>) -> Self {
-        Self(inner)
-    }
-
-    pub fn into_inner(self) -> Gc<'gc, TableInner<'gc>> {
-        self.0
     }
 
     pub fn get<K: IntoValue<'gc>>(self, ctx: Context<'gc>, key: K) -> Value<'gc> {
@@ -120,6 +89,10 @@ impl<'gc> Table<'gc> {
     ) -> Option<Table<'gc>> {
         mem::replace(&mut self.0.borrow_mut(mc).metatable, metatable)
     }
+
+    pub fn iter(self) -> TableIter<'gc> {
+        TableIter { table: self, i: 0 }
+    }
 }
 
 #[derive(Debug, Default, Collect)]
@@ -164,3 +137,38 @@ impl<'gc> FromIterator<(Value<'gc>, Value<'gc>)> for TableEntries<'gc> {
         }
     }
 }
+
+#[derive(Debug, Collect)]
+#[collect(no_drop)]
+pub struct TableIter<'gc> {
+    table: Table<'gc>,
+    i: usize,
+}
+
+impl<'gc> Iterator for TableIter<'gc> {
+    type Item = (Value<'gc>, Value<'gc>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.nth(0)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.table.len() - self.i, Some(self.table.len() - self.i))
+    }
+
+    fn count(self) -> usize {
+        self.table.len() - self.i
+    }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        self.i += n + 1;
+        self.table.get_index(self.i - 1)
+    }
+
+    fn last(mut self) -> Option<Self::Item> {
+        self.i = self.table.len();
+        self.table.get_index(self.i - 1)
+    }
+}
+
+impl<'gc> ExactSizeIterator for TableIter<'gc> {}

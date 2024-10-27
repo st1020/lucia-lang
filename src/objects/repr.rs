@@ -4,7 +4,7 @@ use compact_str::{format_compact, CompactString, ToCompactString};
 use gc_arena::Gc;
 
 use crate::{
-    objects::{Function, Str, Table, UserData, Value},
+    objects::{Callback, Closure, Function, Str, Table, UserData, Value},
     utils::{escape_str, Float},
 };
 
@@ -23,7 +23,15 @@ macro_rules! impl_display_repr {
         )*
     };
 }
-impl_display_repr!(bool, i64, Float, Function<'_>, UserData<'_>);
+impl_display_repr!(
+    bool,
+    i64,
+    Float,
+    Closure<'_>,
+    Callback<'_>,
+    Function<'_>,
+    UserData<'_>,
+);
 
 impl Repr for Str<'_> {
     fn repr(&self) -> CompactString {

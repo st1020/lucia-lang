@@ -7,7 +7,7 @@ use crate::{
     objects::{define_object, RuntimeCode, Value},
 };
 
-define_object!(Closure, ClosureInner<'gc>, ptr_eq);
+define_object!(Closure, ClosureInner<'gc>, ptr, "closure");
 
 impl<'gc> Closure<'gc> {
     pub fn new(

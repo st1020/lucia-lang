@@ -6,7 +6,7 @@ use rustc_hash::FxBuildHasher;
 
 use crate::{compiler::interning::StringInterner, objects::define_object, Context};
 
-define_object!(Str, StrInner, inner_eq);
+define_object!(Str, StrInner, inner);
 
 impl<'gc> Str<'gc> {
     pub fn new(mc: &Mutation<'gc>, s: CompactString) -> Str<'gc> {
@@ -26,12 +26,6 @@ impl<'gc> Borrow<str> for Str<'gc> {
     }
 }
 
-impl<'gc> fmt::Display for Str<'gc> {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.write_str(self)
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct StrInner(CompactString);
 
@@ -42,6 +36,12 @@ impl ops::Deref for StrInner {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl fmt::Display for StrInner {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt.write_str(self)
     }
 }
 

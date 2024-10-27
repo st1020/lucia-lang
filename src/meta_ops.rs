@@ -7,7 +7,7 @@ use gc_arena::{lock::RefLock, Collect, Gc};
 
 use crate::{
     errors::{Error, RuntimeError},
-    objects::{Callback, CallbackReturn, Function, IntoValue, Repr, Str, Table, Value},
+    objects::{Callback, CallbackReturn, Equal, Function, IntoValue, Repr, Str, Table, Value},
     Context,
 };
 
@@ -122,11 +122,9 @@ pub fn call<'gc>(ctx: Context<'gc>, v: Value<'gc>) -> Result<Function<'gc>, Erro
 pub fn raw_iter<'gc>(ctx: Context<'gc>, t: Table<'gc>) -> Callback<'gc> {
     Callback::from_fn_with(
         &ctx,
-        (t, Gc::new(&ctx, RefLock::new(0usize))),
-        |(t, i), ctx, _args| {
-            let mut i = i.borrow_mut(&ctx);
-            *i += 1;
-            Ok(CallbackReturn::Return(t.get_index(*i - 1).map_or(
+        Gc::new(&ctx, RefLock::new(t.iter())),
+        |iter, ctx, _args| {
+            Ok(CallbackReturn::Return(iter.borrow_mut(&ctx).next().map_or(
                 Value::Null,
                 |(k, v)| {
                     let t = Table::new(&ctx);
@@ -302,13 +300,13 @@ macro_rules! eq_ne {
                 }
             }
 
-            Ok(MetaResult::Value((tos1 $op tos).into()))
+            Ok(MetaResult::Value((tos1.$op(&tos)).into()))
         }
     };
 }
 
-eq_ne!(eq, ==, Eq);
-eq_ne!(ne, !=, Ne);
+eq_ne!(eq, equal, Eq);
+eq_ne!(ne, not_equal, Ne);
 
 bin_op!(gt, >, Gt);
 bin_op!(ge, >=, Ge);
