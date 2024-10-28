@@ -11,3 +11,33 @@ add(1)
 assert(t == 1)
 sub(2)
 assert(t == -1)
+
+
+fn foo() {
+    t = 0
+    add = |x| {
+        t += x
+    }
+    sub = |x| {
+        t -= x
+    }
+    get = || {
+        return t
+    }
+    return [add, sub, get]
+}
+
+add1, sub1, get1 = foo()
+add2, sub2, get2 = foo()
+
+assert(get1() == 0)
+add1(1)
+assert(get1() == 1)
+sub1(2)
+assert(get1() == -1)
+
+assert(get2() == 0)
+add2(1)
+assert(get2() == 1)
+sub2(2)
+assert(get2() == -1)
