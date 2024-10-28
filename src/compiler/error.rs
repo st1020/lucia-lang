@@ -10,7 +10,7 @@ use crate::utils::{EscapeError, Join};
 use super::token::TokenKind;
 
 /// The compiler error type.
-#[derive(Debug, Clone, Error)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum CompilerError {
     #[error(
         "unexpected token (expected {}, found {}) {:?}",

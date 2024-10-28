@@ -1,15 +1,16 @@
 //! Errors of this crate.
 
-use std::{fmt, hash};
+use std::fmt;
 
 use gc_arena::Collect;
 use thiserror::Error;
 
 use crate::{
     compiler::opcode::OpCode,
-    frame::{Frame, FrameMode},
+    frame::Frame,
     meta_ops::MetaMethod,
     objects::{ArgumentRange, ExternValue, Value, ValueType},
+    thread::ThreadMode,
     utils::{Indent, Join},
 };
 
@@ -29,12 +30,6 @@ impl<'gc> PartialEq for Error<'gc> {
 
 impl<'gc> Eq for Error<'gc> {}
 
-impl<'gc> hash::Hash for Error<'gc> {
-    fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        self.kind.hash(state);
-    }
-}
-
 impl<'gc> fmt::Display for Error<'gc> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Error: {}", self.kind)?;
@@ -51,7 +46,6 @@ impl<'gc> fmt::Display for Error<'gc> {
                         writeln!(f, "    callback: {:?}", callback)?;
                         writeln!(f, "    args: {}", args.iter().join(", "))?;
                     }
-                    Frame::Calling => (),
                 }
             }
             writeln!(f)?;
@@ -74,10 +68,14 @@ impl<'gc> Error<'gc> {
             traceback: Some(traceback),
         }
     }
+
+    pub fn into_extern(self) -> ExternError {
+        ExternError::from(self.kind)
+    }
 }
 
 /// Kind of all errors.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Collect, Error)]
+#[derive(Debug, Clone, PartialEq, Eq, Collect, Error)]
 #[collect(no_drop)]
 pub enum ErrorKind<'gc> {
     #[error("{0}")]
@@ -91,7 +89,7 @@ impl ErrorKind<'_> {
         !matches!(
             self,
             ErrorKind::LuciaError(LuciaError::Panic(_))
-                | ErrorKind::RuntimeError(RuntimeError::BadFrameMode { .. })
+                | ErrorKind::RuntimeError(RuntimeError::BadThreadMode { .. })
         )
     }
 }
@@ -115,13 +113,13 @@ pub enum LuciaError<'gc> {
 }
 
 /// Kind of Runtime Error.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Collect, Error)]
+#[derive(Debug, Clone, PartialEq, Eq, Collect, Error)]
 #[collect(no_drop)]
 pub enum RuntimeError {
     #[error("bad frame mode (expected {expected}, found {found})")]
-    BadFrameMode {
-        expected: FrameMode,
-        found: FrameMode,
+    BadThreadMode {
+        expected: ThreadMode,
+        found: ThreadMode,
     },
     #[error("unexpected type error (expected {expected}, found {found})")]
     UnexpectedType {
@@ -155,7 +153,7 @@ pub enum RuntimeError {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Error)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ExternError {
     #[error("{0}")]
     LuciaError(#[from] ExternLuciaError),

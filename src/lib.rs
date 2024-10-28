@@ -22,16 +22,19 @@
 //! println("Hello World!")
 //! "#;
 //! let mut lucia = Lucia::new();
-//! lucia.run_code(input);
+//! let code = lucia.compile(input).unwrap();
+//! lucia.execute(&code).unwrap();
 //! ```
 
 pub mod compiler;
 pub mod context;
 pub mod errors;
 pub mod frame;
+pub mod fuel;
 pub mod libs;
 pub mod meta_ops;
 pub mod objects;
+pub mod thread;
 pub mod utils;
 mod vm;
 

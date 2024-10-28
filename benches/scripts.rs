@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 
 use std::fs;
 
@@ -10,9 +10,11 @@ pub fn benchmark_scripts(c: &mut Criterion) {
         let path = dir.expect("could not read dir entry").path();
         if path.extension().is_some_and(|ext| ext == "lucia") {
             let input = fs::read_to_string(&path).expect("could not read file contents");
+            let mut lucia = Lucia::new();
+            let code = lucia.compile(&input).unwrap();
             c.bench_function(
                 &format!("run {:?}", path.file_name().unwrap().to_str().unwrap()),
-                |b| b.iter(|| Lucia::new().run_code(black_box(&input)).unwrap()),
+                |b| b.iter(|| lucia.execute(&code).unwrap()),
             );
         }
     }

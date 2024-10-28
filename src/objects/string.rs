@@ -45,21 +45,21 @@ impl fmt::Display for StrInner {
     }
 }
 
-pub struct GcStrInterner<'gc> {
+pub struct StrInterner<'gc> {
     context: Context<'gc>,
     interner: HashSet<Str<'gc>, FxBuildHasher>,
 }
 
-impl<'gc> GcStrInterner<'gc> {
+impl<'gc> StrInterner<'gc> {
     pub fn new(context: Context<'gc>) -> Self {
-        GcStrInterner {
+        StrInterner {
             context,
             interner: HashSet::with_hasher(FxBuildHasher),
         }
     }
 }
 
-impl<'gc> StringInterner for GcStrInterner<'gc> {
+impl<'gc> StringInterner for StrInterner<'gc> {
     type String = Str<'gc>;
 
     fn intern(&mut self, s: &str) -> Self::String {
@@ -73,7 +73,7 @@ impl<'gc> StringInterner for GcStrInterner<'gc> {
     }
 }
 
-unsafe impl<'gc> Collect for GcStrInterner<'gc> {
+unsafe impl<'gc> Collect for StrInterner<'gc> {
     fn needs_trace() -> bool {
         true
     }

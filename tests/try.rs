@@ -9,5 +9,7 @@ fn b () {
 }
 res = try! b()
     "#;
-    Lucia::new().run_code(input).unwrap();
+    let mut lucia = Lucia::new();
+    let code = lucia.compile(input).unwrap();
+    lucia.execute(&code).unwrap();
 }

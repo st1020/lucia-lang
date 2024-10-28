@@ -15,7 +15,8 @@ fn test_scripts() {
             let input = fs::read_to_string(&path).expect("could not read file contents");
             let _ = writeln!(stdout(), "running {:?}", path.file_name().unwrap());
             let mut lucia = Lucia::new();
-            if let Err(err) = lucia.run_code(&input) {
+            let code = lucia.compile(&input).unwrap();
+            if let Err(err) = lucia.execute(&code) {
                 panic!("error encountered running: {}", err);
             }
         } else {

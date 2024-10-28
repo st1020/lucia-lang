@@ -4,13 +4,14 @@ use crate::{
         opcode::{JumpTarget, OpCode},
     },
     errors::{Error, LuciaError, RuntimeError},
-    frame::{CatchErrorKind, Frame, FramesState},
+    frame::{CatchErrorKind, Frame},
     meta_ops,
     objects::{Closure, Function, IntoValue, RuntimeConstValue, Table, Value},
+    thread::ThreadState,
     Context,
 };
 
-impl<'gc> FramesState<'gc> {
+impl<'gc> ThreadState<'gc> {
     /// Run this stack frame.
     pub(crate) fn run_vm(
         &mut self,
