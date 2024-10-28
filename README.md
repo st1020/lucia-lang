@@ -9,7 +9,15 @@ Lucia-lang is still in the early stages of development.
 
 The `v0.1.0` is a very early prototype with a simple GC, but it has some bugs and safety issues.
 
-The `v0.2.0` is a complete rewrite that uses [gc-arena](https://github.com/kyren/gc-arena) as GC and includes some code from [piccolo](https://github.com/triplehex/piccolo).
+The `v0.2.0` is a complete rewrite that uses [gc-arena](https://github.com/kyren/gc-arena) as GC and includes some code from [piccolo](https://github.com/kyren/piccolo).
+
+## References
+
+This project heavily references the following projects:
+
+- [piccolo](https://github.com/kyren/piccolo)
+- [oxc](https://github.com/oxc-project/oxc)
+- [rustc](https://github.com/rust-lang/rust)
 
 ## License
 
