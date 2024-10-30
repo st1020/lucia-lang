@@ -1,12 +1,12 @@
 //! The index types used in the compiler.
 
-use std::num::NonZeroU32;
+use std::{fmt, num::NonZeroU32};
 
 use index_vec::Idx;
 
 macro_rules! define_index {
     ($($name:ident),*) => {$(
-        #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+        #[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
         pub struct $name(NonZeroU32);
 
         impl $name {
@@ -32,6 +32,18 @@ macro_rules! define_index {
 
             fn index(self) -> usize {
                 self.get() as usize
+            }
+        }
+
+        impl fmt::Debug for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "{}", self.get())
+            }
+        }
+
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "{}", self.get())
             }
         }
 
