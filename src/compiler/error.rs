@@ -42,8 +42,6 @@ pub enum CompilerError {
     BreakOutsideLoop { range: TextRange },
     #[error("continue outside loop {:?}", .range)]
     ContinueOutsideLoop { range: TextRange },
-    #[error("global outside loop {:?}", .range)]
-    GlobalOutsideFunction { range: TextRange },
     #[error("return outside loop {:?}", .range)]
     ReturnOutsideFunction { range: TextRange },
     #[error("throw outside loop {:?}", .range)]

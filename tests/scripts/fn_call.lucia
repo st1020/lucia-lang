@@ -8,8 +8,7 @@ add = fn(a, b) {
 }
 assert(add(1, 2) == 3)
 
-global gcd
-fn gcd(x, y) {
+glo fn gcd(x, y) {
     if y == 0 {
         return x
     } else {

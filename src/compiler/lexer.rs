@@ -342,7 +342,7 @@ impl<'a> Cursor<'a> {
             "continue" => Continue,
             "throw" => Throw,
             "return" => Return,
-            "global" => Global,
+            "glo" => Glo,
             "import" => Import,
             "as" => As,
             "is" => Is,

@@ -617,15 +617,25 @@ impl<'a, S: AsRef<str> + Copy + Eq + Ord> TypeChecker<'a, S> {
                     self.context().throws_type = Some(throw_type);
                 }
             }
-            StmtKind::Global { arguments: _ } => (),
             StmtKind::Import {
                 path: _,
                 path_str: _,
                 kind: _,
             } => (),
-            StmtKind::Fn { name, function } => {
+            StmtKind::Fn {
+                glo: _,
+                name,
+                function,
+            } => {
                 let ty = self.check_function(function)?;
                 self.set_symbol_type(name, ty)?;
+            }
+            StmtKind::GloAssign { left, right } => {
+                let right_type = self.check_expr(right)?;
+                if let Some(t) = &left.ty {
+                    self.set_symbol_type(&left.ident, (&t.kind).into())?;
+                }
+                self.set_symbol_type(&left.ident, right_type)?;
             }
             StmtKind::Assign { left, right } => {
                 let right_type = self.check_expr(right)?;

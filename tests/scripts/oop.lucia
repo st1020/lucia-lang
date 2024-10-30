@@ -1,8 +1,6 @@
 import std::io::{println}
 
-global Cat
-
-Cat = do {
+glo Cat = do {
     meow_times = 0
     play_times = 0
 

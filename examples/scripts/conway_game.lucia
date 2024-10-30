@@ -1,12 +1,10 @@
 import std::io::{print, println}
 
-global width, height, cells, copy_list, init, get, set, next_generation, next_generation_all, display
+glo width: int = 0
+glo height: int = 0
+glo cells: {[int]: bool} = []
 
-width: int = 0
-height: int = 0
-cells: {[int]: bool} = []
-
-fn copy_list(list: {[int]: bool}) -> {[int]: bool} {
+glo fn copy_list(list: {[int]: bool}) -> {[int]: bool} {
     new_list = []
     for i in range(0, len(list)) {
         new_list[i] = list[i]
@@ -14,24 +12,27 @@ fn copy_list(list: {[int]: bool}) -> {[int]: bool} {
     return new_list
 }
 
-fn init(w: int, h: int) {
-    global width, height, cells
-    width = w
-    height = h
+glo fn init(w: int, h: int) {
+    glo width = w
+    glo height = h
     for i in range(0, width * height) {
         cells[i] = false
     }
 }
 
-fn get(x: int, y: int) -> bool {
-    return cells[y * width + x]
+glo fn get(x: int, y: int) -> bool {
+    value = cells[y * width + x]
+    if value == null {
+        return false
+    }
+    return value
 }
 
-fn set(x: int, y: int, value: bool) {
+glo fn set(x: int, y: int, value: bool) {
     cells[y * width + x] = value
 }
 
-fn next_generation(x: int, y: int) -> bool {
+glo fn next_generation(x: int, y: int) -> bool {
     alive_neighbors = 0
     for dx in range(-1, 2) {
         for dy in range(-1, 2) {
@@ -55,18 +56,17 @@ fn next_generation(x: int, y: int) -> bool {
     }
 }
 
-fn next_generation_all() {
-    global cells
+glo fn next_generation_all() {
     new_cells = copy_list(cells)
     for y in range(0, height) {
         for x in range(0, width) {
             new_cells[y * width + x] = next_generation(x, y)
         }
     }
-    cells = new_cells
+    glo cells = new_cells
 }
 
-fn display() {
+glo fn display() {
     for y in range(0, height) {
         for x in range(0, width) {
             if get(x, y) {

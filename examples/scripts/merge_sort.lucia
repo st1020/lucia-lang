@@ -1,8 +1,6 @@
 import std::io::{print, println}
 
-global merge_sort, merge
-
-fn merge_sort(arr, start: int, end: int) {
+glo fn merge_sort(arr, start: int, end: int) {
     if start < end {
         mid = (start + end) / 2
         merge_sort(arr, start, mid)
@@ -11,7 +9,7 @@ fn merge_sort(arr, start: int, end: int) {
     }
 }
 
-fn merge(arr, start: int, mid: int, end: int) {
+glo fn merge(arr, start: int, mid: int, end: int) {
     n1 = mid - start + 1
     n2 = end - mid
 

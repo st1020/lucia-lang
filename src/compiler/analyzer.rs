@@ -86,7 +86,7 @@ pub struct Symbol<S> {
 pub enum SymbolKind {
     Local,
     Upvalue,
-    Global { writable: bool },
+    Global,
 }
 
 /// Semantic information of a Lucia program.
@@ -168,19 +168,14 @@ impl<S: AsRef<str> + Copy> SemanticAnalyzer<S> {
     }
 
     fn declare_read(&mut self, ident: &Ident<'_, S>) {
-        self.declare_reference(ident, false, SymbolKind::Global { writable: false });
+        self.declare_reference(ident, SymbolKind::Global);
     }
 
     fn declare_write(&mut self, ident: &Ident<'_, S>) {
-        self.declare_reference(ident, true, SymbolKind::Local);
+        self.declare_reference(ident, SymbolKind::Local);
     }
 
-    fn declare_reference(
-        &mut self,
-        ident: &Ident<'_, S>,
-        need_writable: bool,
-        default: SymbolKind,
-    ) {
+    fn declare_reference(&mut self, ident: &Ident<'_, S>, default: SymbolKind) {
         let mut scope_id = self.current_scope_id;
         loop {
             let scope = &self.scopes[scope_id];
@@ -200,12 +195,7 @@ impl<S: AsRef<str> + Copy> SemanticAnalyzer<S> {
                         ident.symbol_id.set(Some(symbol_id));
                         return;
                     }
-                    SymbolKind::Global { writable } => {
-                        if scope_id == self.current_scope_id && (!need_writable || writable) {
-                            ident.symbol_id.set(Some(symbol_id));
-                            return;
-                        }
-                    }
+                    SymbolKind::Global => (),
                 }
             }
             if scope.kind == ScopeKind::Function {
@@ -334,11 +324,6 @@ impl<S: AsRef<str> + Copy> SemanticAnalyzer<S> {
             StmtKind::Continue => (),
             StmtKind::Return { argument } => self.analyze_expr(argument),
             StmtKind::Throw { argument } => self.analyze_expr(argument),
-            StmtKind::Global { arguments } => {
-                for argument in arguments {
-                    self.declare_symbol(&argument.ident, SymbolKind::Global { writable: true });
-                }
-            }
             StmtKind::Import {
                 path,
                 path_str: _,
@@ -346,19 +331,31 @@ impl<S: AsRef<str> + Copy> SemanticAnalyzer<S> {
             } => match kind {
                 ImportKind::Simple(alias) => {
                     let ident = alias.as_ref().map_or(path.last().unwrap(), |v| v);
-                    self.declare_symbol(ident, SymbolKind::Global { writable: true });
+                    self.declare_symbol(ident, SymbolKind::Global);
                 }
                 ImportKind::Nested(items) => {
                     for (name, alias) in items {
                         let ident = alias.as_ref().unwrap_or(name);
-                        self.declare_symbol(ident, SymbolKind::Global { writable: true });
+                        self.declare_symbol(ident, SymbolKind::Global);
                     }
                 }
                 ImportKind::Glob => (),
             },
-            StmtKind::Fn { name, function } => {
+            StmtKind::Fn {
+                glo,
+                name,
+                function,
+            } => {
                 self.analyze_function(function);
-                self.declare_write(name);
+                if *glo {
+                    self.declare_symbol(name, SymbolKind::Global);
+                } else {
+                    self.declare_write(name);
+                }
+            }
+            StmtKind::GloAssign { left, right } => {
+                self.analyze_expr(right);
+                self.declare_symbol(&left.ident, SymbolKind::Global);
             }
             StmtKind::Assign { left, right } => {
                 self.analyze_expr(right);

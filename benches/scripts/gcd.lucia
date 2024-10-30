@@ -1,5 +1,4 @@
-global gcd
-fn gcd(x, y) {
+glo fn gcd(x, y) {
     if y == 0 {
         return x
     } else {

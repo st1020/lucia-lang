@@ -350,9 +350,6 @@ impl<'alloc, 'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'alloc
         } else if self.eat(TokenKind::Throw) {
             let argument = Box::new_in(self.parse_expr()?, self.allocator);
             StmtKind::Throw { argument }
-        } else if self.eat(TokenKind::Global) {
-            let arguments = self.parse_items(Parser::parse_typed_ident)?;
-            StmtKind::Global { arguments }
         } else if self.eat(TokenKind::Import) {
             let mut path = Vec::new_in(self.allocator);
             loop {
@@ -396,18 +393,27 @@ impl<'alloc, 'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'alloc
             }
         } else if self.eat(TokenKind::Fn) {
             let name = Box::new_in(self.parse_ident()?, self.allocator);
-            let (params, variadic) = self.parse_params()?;
-            let function = Function {
-                name: Some(name.name),
-                kind: FunctionKind::Function,
-                params,
-                variadic,
-                returns: self.parse_returns()?,
-                throws: self.parse_throws()?,
-                body: self.parse_block()?,
-                function_id: None.into(),
-            };
-            StmtKind::Fn { name, function }
+            let function = self.parse_function(Some(name.name))?;
+            StmtKind::Fn {
+                glo: false,
+                name,
+                function,
+            }
+        } else if self.eat(TokenKind::Glo) {
+            if self.eat(TokenKind::Fn) {
+                let name = Box::new_in(self.parse_ident()?, self.allocator);
+                let function = self.parse_function(Some(name.name))?;
+                StmtKind::Fn {
+                    glo: true,
+                    name,
+                    function,
+                }
+            } else {
+                let left = Box::new_in(self.parse_typed_ident()?, self.allocator);
+                self.expect(TokenKind::Assign)?;
+                let right = Box::new_in(self.parse_expr()?, self.allocator);
+                StmtKind::GloAssign { left, right }
+            }
         } else if self.check(TokenKind::OpenBrace) {
             StmtKind::Block(self.parse_block()?)
         } else {
@@ -510,6 +516,23 @@ impl<'alloc, 'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'alloc
             ExprKind::MetaMember { table, safe } if !safe => Some(AssignLeft::MetaMember { table }),
             _ => None,
         }
+    }
+
+    fn parse_function(
+        &mut self,
+        name: Option<S::String>,
+    ) -> Result<Function<'alloc, S::String>, CompilerError> {
+        let (params, variadic) = self.parse_params()?;
+        Ok(Function {
+            name,
+            kind: FunctionKind::Function,
+            params,
+            variadic,
+            returns: self.parse_returns()?,
+            throws: self.parse_throws()?,
+            body: self.parse_block()?,
+            function_id: None.into(),
+        })
     }
 
     fn parse_expr(&mut self) -> Result<Expr<'alloc, S::String>, CompilerError> {
@@ -676,17 +699,8 @@ impl<'alloc, 'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'alloc
             )?;
             ExprKind::List { items }
         } else if self.eat(TokenKind::Fn) {
-            let (params, variadic) = self.parse_params()?;
-            ExprKind::Function(Function {
-                name: None,
-                kind: FunctionKind::Function,
-                params,
-                variadic,
-                returns: self.parse_returns()?,
-                throws: self.parse_throws()?,
-                body: self.parse_block()?,
-                function_id: None.into(),
-            })
+            let function = self.parse_function(None)?;
+            ExprKind::Function(function)
         } else if self.check(TokenKind::VBar) {
             let (params, variadic) = self.parse_closure_params()?;
             ExprKind::Function(Function {

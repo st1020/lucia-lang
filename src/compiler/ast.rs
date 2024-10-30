@@ -170,17 +170,19 @@ pub enum StmtKind<'a, S> {
     Throw {
         argument: Box<'a, Expr<'a, S>>,
     },
-    Global {
-        arguments: Vec<'a, TypedIdent<'a, S>>,
-    },
     Import {
         path: Vec<'a, Ident<'a, S>>,
         path_str: S,
         kind: ImportKind<'a, S>,
     },
     Fn {
+        glo: bool,
         name: Box<'a, Ident<'a, S>>,
         function: Function<'a, S>,
+    },
+    GloAssign {
+        left: Box<'a, TypedIdent<'a, S>>,
+        right: Box<'a, Expr<'a, S>>,
     },
     Assign {
         left: AssignLeft<'a, S>,
@@ -226,7 +228,6 @@ impl<S: AsRef<str>> fmt::Display for StmtKind<'_, S> {
             StmtKind::Continue => write!(f, "continue"),
             StmtKind::Return { argument } => write!(f, "return {argument}"),
             StmtKind::Throw { argument } => write!(f, "throw {argument}"),
-            StmtKind::Global { arguments } => write!(f, "global {}", arguments.iter().join(", ")),
             StmtKind::Import {
                 path,
                 path_str: _,
@@ -234,8 +235,21 @@ impl<S: AsRef<str>> fmt::Display for StmtKind<'_, S> {
             } => {
                 write!(f, "import {}{}", path.iter().join("::"), kind)
             }
-            StmtKind::Fn { name, function } => {
-                write!(f, "fn {}{}", name, function)
+            StmtKind::Fn {
+                glo,
+                name,
+                function,
+            } => {
+                write!(
+                    f,
+                    "{}fn {}{}",
+                    if *glo { "glo " } else { "" },
+                    name,
+                    function
+                )
+            }
+            StmtKind::GloAssign { left, right } => {
+                write!(f, "glo {left} = {right}")
             }
             StmtKind::Assign { left, right } => write!(f, "{left} = {right}"),
             StmtKind::AssignOp {

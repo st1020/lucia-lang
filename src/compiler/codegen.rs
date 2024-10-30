@@ -169,7 +169,7 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
                     .unwrap();
                 OpCode::LoadUpvalue(index)
             }
-            SymbolKind::Global { writable: _ } => {
+            SymbolKind::Global => {
                 let index = self
                     .context()
                     .global_names
@@ -196,7 +196,7 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
                     .unwrap();
                 OpCode::StoreUpvalue(index)
             }
-            SymbolKind::Global { writable: _ } => {
+            SymbolKind::Global => {
                 let index = self
                     .context()
                     .global_names
@@ -236,7 +236,7 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
                         .upvalue_names
                         .insert(symbol_id, (symbol.name, base_closure_upvalue_id));
                 }
-                SymbolKind::Global { writable: _ } => {
+                SymbolKind::Global => {
                     self.context().global_names.insert(symbol_id, symbol.name);
                 }
             }
@@ -520,11 +520,6 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
                 self.gen_expr(argument)?;
                 self.push_code(OpCode::Throw);
             }
-            StmtKind::Global { arguments: _ } => {
-                if self.function_semantic().kind == FunctionKind::Do {
-                    return Err(CompilerError::GlobalOutsideFunction { range: stmt.range });
-                }
-            }
             StmtKind::Import {
                 path,
                 path_str,
@@ -549,9 +544,17 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
                     }
                 }
             }
-            StmtKind::Fn { name, function } => {
+            StmtKind::Fn {
+                glo: _,
+                name,
+                function,
+            } => {
                 self.gen_function(function);
                 self.store(name);
+            }
+            StmtKind::GloAssign { left, right } => {
+                self.gen_expr(right)?;
+                self.store(&left.ident);
             }
             StmtKind::Assign { left, right } => {
                 self.gen_expr(right)?;

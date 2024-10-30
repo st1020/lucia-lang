@@ -71,8 +71,8 @@ pub enum TokenKind {
     Return,
     /// "throw"
     Throw,
-    /// "global"
-    Global,
+    /// "glo"
+    Glo,
     /// "import"
     Import,
     /// "as"
