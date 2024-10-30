@@ -720,22 +720,28 @@ impl<S: AsRef<str>> fmt::Display for TyKind<'_, S> {
         match self {
             TyKind::Lit(lit) => write!(f, "{lit}"),
             TyKind::Ident(ident) => write!(f, "{ident}"),
-            TyKind::Table { pairs, others } => {
-                write!(
+            TyKind::Table { pairs, others } => match (pairs.len(), others) {
+                (0, None) => write!(f, "{{}}"),
+                (0, Some(others)) => write!(f, "{{[{}]: {}}}", others.0, others.1),
+                (_, None) => write!(
                     f,
-                    "{{\n{}\n}}",
+                    "{{{}}}",
                     pairs
                         .iter()
-                        .map(|(k, v)| format!("{}: {}", k.as_ref(), v))
-                        .chain(
-                            others
-                                .iter()
-                                .map(|others| format!("[{}]{}", others.0, others.1)),
-                        )
-                        .join(",\n")
-                        .indent(4)
-                )
-            }
+                        .map(|(name, t)| format!("{}: {}", name.as_ref(), t))
+                        .join(", ")
+                ),
+                (_, Some(others)) => write!(
+                    f,
+                    "{{{}, [{}]: {}}}",
+                    pairs
+                        .iter()
+                        .map(|(name, t)| format!("{}: {}", name.as_ref(), t))
+                        .join(", "),
+                    others.0,
+                    others.1
+                ),
+            },
             TyKind::Function {
                 params,
                 variadic,
@@ -755,7 +761,7 @@ impl<S: AsRef<str>> fmt::Display for TyKind<'_, S> {
                     .as_ref()
                     .map(|throws| format!(" throw {throws}"))
                     .unwrap_or_default();
-                write!(f, "fn ({}){}{}", params_str, returns_str, throws_str)
+                write!(f, "fn({}){}{}", params_str, returns_str, throws_str)
             }
             TyKind::Option(t) => write!(f, "({}?)", t),
             TyKind::Union(union) => write!(f, "({})", union.iter().join(" | ")),
