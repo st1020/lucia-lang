@@ -98,6 +98,12 @@ pub enum TokenKind {
     /// "false"
     False,
 
+    // Three-char tokens:
+    /// "==="
+    Identical,
+    /// "!=="
+    NotIdentical,
+
     // Two-char tokens:
     /// "::"
     DoubleColon,

@@ -547,20 +547,21 @@ impl<'alloc, 'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'alloc
         let mut left = self.parse_expr_unary()?;
         loop {
             let operator = match self.current_kind().unwrap_or(TokenKind::Eof) {
-                TokenKind::Is => BinOp::Is,
-                TokenKind::And => BinOp::And,
-                TokenKind::Or => BinOp::Or,
-                TokenKind::Eq => BinOp::Eq,
-                TokenKind::NotEq => BinOp::Ne,
-                TokenKind::LtEq => BinOp::Le,
-                TokenKind::GtEq => BinOp::Ge,
-                TokenKind::Lt => BinOp::Lt,
-                TokenKind::Gt => BinOp::Gt,
                 TokenKind::Add => BinOp::Add,
                 TokenKind::Sub => BinOp::Sub,
                 TokenKind::Mul => BinOp::Mul,
                 TokenKind::Div => BinOp::Div,
                 TokenKind::Rem => BinOp::Rem,
+                TokenKind::And => BinOp::And,
+                TokenKind::Or => BinOp::Or,
+                TokenKind::Eq => BinOp::Eq,
+                TokenKind::Lt => BinOp::Lt,
+                TokenKind::LtEq => BinOp::Le,
+                TokenKind::NotEq => BinOp::Ne,
+                TokenKind::GtEq => BinOp::Ge,
+                TokenKind::Gt => BinOp::Gt,
+                TokenKind::Identical => BinOp::Identical,
+                TokenKind::NotIdentical => BinOp::NotIdentical,
                 _ => break,
             };
             if operator.precedence() < min_precedence {

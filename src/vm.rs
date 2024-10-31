@@ -232,10 +232,15 @@ impl<'gc> ThreadState<'gc> {
                 OpCode::Ge => bin_op!(ge),
                 OpCode::Lt => bin_op!(lt),
                 OpCode::Le => bin_op!(le),
-                OpCode::Is => {
+                OpCode::Identical => {
                     let tos = frame.stack.pop().unwrap();
                     let tos1 = frame.stack.pop().unwrap();
-                    frame.stack.push(Value::Bool(tos1.is(tos)));
+                    frame.stack.push(Value::Bool(tos1.identical(tos)));
+                }
+                OpCode::NotIdentical => {
+                    let tos = frame.stack.pop().unwrap();
+                    let tos1 = frame.stack.pop().unwrap();
+                    frame.stack.push(Value::Bool(!tos1.identical(tos)));
                 }
                 OpCode::Iter => {
                     let tos = frame.stack.pop().unwrap();

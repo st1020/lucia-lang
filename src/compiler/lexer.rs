@@ -231,10 +231,25 @@ impl<'a> Cursor<'a> {
             // String literal.
             c @ ('"' | '\'') => self.string(c, false),
 
+            // Identical or Eq.
+            '=' if self.eat('=') => {
+                if self.eat('=') {
+                    Identical
+                } else {
+                    Eq
+                }
+            }
+            // NotIdentical or NotEq.
+            '!' if self.eat('=') => {
+                if self.eat('=') {
+                    NotIdentical
+                } else {
+                    NotEq
+                }
+            }
+
             // Two-char tokens.
             ':' if self.eat(':') => DoubleColon,
-            '=' if self.eat('=') => Eq,
-            '!' if self.eat('=') => NotEq,
             '<' if self.eat('=') => LtEq,
             '>' if self.eat('=') => GtEq,
             '+' if self.eat('=') => AddAssign,

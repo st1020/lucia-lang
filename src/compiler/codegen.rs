@@ -27,7 +27,8 @@ impl From<BinOp> for OpCode {
             BinOp::Ne => OpCode::Ne,
             BinOp::Ge => OpCode::Ge,
             BinOp::Gt => OpCode::Gt,
-            BinOp::Is => OpCode::Is,
+            BinOp::Identical => OpCode::Identical,
+            BinOp::NotIdentical => OpCode::NotIdentical,
             BinOp::And | BinOp::Or => unreachable!(),
         }
     }
@@ -345,7 +346,8 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
                 | OpCode::Ge
                 | OpCode::Lt
                 | OpCode::Le
-                | OpCode::Is => cur -= 1,
+                | OpCode::Identical
+                | OpCode::NotIdentical => cur -= 1,
                 OpCode::Iter => (),
                 OpCode::Jump(JumpTarget(_)) => (),
                 OpCode::JumpIfNull(JumpTarget(i)) => {

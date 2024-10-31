@@ -82,8 +82,10 @@ pub enum OpCode {
     Lt,
     /// Implements `TOS = TOS1 <= TOS`.
     Le,
-    /// Implements `TOS = TOS1 is TOS`.
-    Is,
+    /// Implements `TOS = TOS1 === TOS`.
+    Identical,
+    /// Implements `TOS = TOS1 !== TOS`.
+    NotIdentical,
 
     /// Get the __iter__ of TOS and pushed it onto the stack.
     Iter,
@@ -155,7 +157,8 @@ impl fmt::Display for OpCode {
             Self::Ge => write!(f, "Ge"),
             Self::Lt => write!(f, "Lt"),
             Self::Le => write!(f, "Le"),
-            Self::Is => write!(f, "Is"),
+            Self::Identical => write!(f, "Identical"),
+            Self::NotIdentical => write!(f, "NotIdentical"),
             Self::Iter => write!(f, "Iter"),
             Self::Jump(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "Jump", i),
             Self::JumpIfNull(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "JumpIfNull", i),

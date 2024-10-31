@@ -830,7 +830,7 @@ impl<'a, S: AsRef<str> + Copy + Eq + Ord> TypeChecker<'a, S> {
                             });
                         }
                     }
-                    BinOp::Eq | BinOp::Ne | BinOp::Is => Type::Bool,
+                    BinOp::Eq | BinOp::Ne | BinOp::Identical | BinOp::NotIdentical => Type::Bool,
                     BinOp::And | BinOp::Or => {
                         left_type.expect_is_sub_type_of(&Type::Bool)?;
                         right_type.expect_is_sub_type_of(&Type::Bool)?;

@@ -69,7 +69,7 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn is(self, other: Value<'gc>) -> bool {
+    pub fn identical(self, other: Value<'gc>) -> bool {
         if let (Some(this), Some(other)) = (self.id(), other.id()) {
             this == other
         } else {
