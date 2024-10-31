@@ -242,6 +242,10 @@ impl<'gc> ThreadState<'gc> {
                     let tos1 = frame.stack.pop().unwrap();
                     frame.stack.push(Value::Bool(!tos1.identical(tos)));
                 }
+                OpCode::TypeCheck(ty) => {
+                    let tos = frame.stack.pop().unwrap();
+                    frame.stack.push(Value::Bool(tos.value_type() == ty));
+                }
                 OpCode::Iter => {
                     let tos = frame.stack.pop().unwrap();
                     frame.stack.push(meta_ops::iter(ctx, tos)?.into());

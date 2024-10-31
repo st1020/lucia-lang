@@ -1,12 +1,16 @@
 use std::{fmt, num::NonZeroUsize};
 
 use compact_str::{CompactString, ToCompactString};
-use gc_arena::{Collect, Gc};
+use gc_arena::{static_collect, Collect, Gc};
 
 use crate::{
     objects::{Function, Str, Table, UserData},
     utils::{impl_enum_from, Float},
 };
+
+pub use crate::compiler::value::ValueType;
+
+static_collect!(ValueType);
 
 /// Enum of all lucia values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Collect)]
@@ -107,41 +111,6 @@ impl<'gc> fmt::Display for Value<'gc> {
             Self::Function(v) => write!(f, "{}", v),
             Self::UserData(v) => write!(f, "{}", v),
         }
-    }
-}
-
-/// The type of Value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Collect)]
-#[collect[require_static]]
-pub enum ValueType {
-    Null,
-    Bool,
-    Int,
-    Float,
-    Str,
-    Table,
-    Function,
-    UserData,
-}
-
-impl ValueType {
-    pub const fn name(self) -> &'static str {
-        match self {
-            ValueType::Null => "null",
-            ValueType::Bool => "bool",
-            ValueType::Int => "int",
-            ValueType::Float => "float",
-            ValueType::Str => "str",
-            ValueType::Table => "table",
-            ValueType::Function => "function",
-            ValueType::UserData => "userdata",
-        }
-    }
-}
-
-impl fmt::Display for ValueType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.name())
     }
 }
 

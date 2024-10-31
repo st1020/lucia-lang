@@ -12,6 +12,7 @@ pub mod opcode;
 pub mod parser;
 pub mod token;
 pub mod typing;
+pub mod value;
 
 /// Compile the input source code into Lucia code.
 pub fn compile<S: interning::StringInterner>(

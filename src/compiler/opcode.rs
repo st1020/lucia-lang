@@ -2,6 +2,8 @@
 
 use std::fmt;
 
+use super::value::ValueType;
+
 /// The jump target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct JumpTarget(pub usize);
@@ -87,6 +89,9 @@ pub enum OpCode {
     /// Implements `TOS = TOS1 !== TOS`.
     NotIdentical,
 
+    /// Implements `TOS = TOS is type`.
+    TypeCheck(ValueType),
+
     /// Get the __iter__ of TOS and pushed it onto the stack.
     Iter,
     /// Sets the bytecode counter to target.
@@ -159,6 +164,7 @@ impl fmt::Display for OpCode {
             Self::Le => write!(f, "Le"),
             Self::Identical => write!(f, "Identical"),
             Self::NotIdentical => write!(f, "NotIdentical"),
+            Self::TypeCheck(ty) => write!(f, "{:WIDTH$}{}", "TypeCheck", ty),
             Self::Iter => write!(f, "Iter"),
             Self::Jump(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "Jump", i),
             Self::JumpIfNull(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "JumpIfNull", i),

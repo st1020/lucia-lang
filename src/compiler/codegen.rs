@@ -29,7 +29,7 @@ impl From<BinOp> for OpCode {
             BinOp::Gt => OpCode::Gt,
             BinOp::Identical => OpCode::Identical,
             BinOp::NotIdentical => OpCode::NotIdentical,
-            BinOp::And | BinOp::Or => unreachable!(),
+            BinOp::And | BinOp::Or | BinOp::Is => unreachable!(),
         }
     }
 }
@@ -348,6 +348,7 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
                 | OpCode::Le
                 | OpCode::Identical
                 | OpCode::NotIdentical => cur -= 1,
+                OpCode::TypeCheck(_) => (),
                 OpCode::Iter => (),
                 OpCode::Jump(JumpTarget(_)) => (),
                 OpCode::JumpIfNull(JumpTarget(i)) => {
@@ -692,6 +693,10 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
                     self.push_code(OpCode::from(*operator));
                 }
             },
+            ExprKind::TypeCheck { left, right } => {
+                self.gen_expr(left)?;
+                self.push_code(OpCode::TypeCheck(*right));
+            }
             ExprKind::Member {
                 table,
                 property,

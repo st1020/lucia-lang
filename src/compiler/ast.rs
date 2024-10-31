@@ -7,7 +7,10 @@ use text_size::TextRange;
 
 use crate::utils::{escape_str, Float, Indent, Join};
 
-use super::index::{FunctionId, ScopeId, SymbolId};
+use super::{
+    index::{FunctionId, ScopeId, SymbolId},
+    value::ValueType,
+};
 
 /// The root AST node.
 #[derive(Debug, PartialEq, Eq)]
@@ -326,6 +329,10 @@ pub enum ExprKind<'a, S> {
         left: Box<'a, Expr<'a, S>>,
         right: Box<'a, Expr<'a, S>>,
     },
+    TypeCheck {
+        left: Box<'a, Expr<'a, S>>,
+        right: ValueType,
+    },
     Member {
         table: Box<'a, Expr<'a, S>>,
         property: MemberKind<'a, S>,
@@ -374,6 +381,7 @@ impl<S: AsRef<str>> fmt::Display for ExprKind<'_, S> {
                 left,
                 right,
             } => write!(f, "({left} {operator} {right})"),
+            ExprKind::TypeCheck { left, right } => write!(f, "{left} is {right}"),
             ExprKind::Member {
                 table,
                 property,
@@ -506,6 +514,8 @@ pub enum BinOp {
     Identical,
     /// The '!==' operator (not identical)
     NotIdentical,
+    /// The `as` operator (type check)
+    Is,
 }
 
 impl fmt::Display for BinOp {
@@ -526,6 +536,7 @@ impl fmt::Display for BinOp {
             BinOp::Gt => write!(f, ">="),
             BinOp::Identical => write!(f, "==="),
             BinOp::NotIdentical => write!(f, "!=="),
+            BinOp::Is => write!(f, "is"),
         }
     }
 }
@@ -548,6 +559,7 @@ impl BinOp {
             BinOp::Gt => 3,
             BinOp::Identical => 3,
             BinOp::NotIdentical => 3,
+            BinOp::Is => 3,
 
             BinOp::And => 2,
 

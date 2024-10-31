@@ -17,6 +17,7 @@ use super::{
     interning::StringInterner,
     lexer::tokenize,
     token::{Token, TokenKind},
+    value::ValueType,
 };
 
 type StdVec<T> = std::vec::Vec<T>;
@@ -562,20 +563,43 @@ impl<'alloc, 'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'alloc
                 TokenKind::Gt => BinOp::Gt,
                 TokenKind::Identical => BinOp::Identical,
                 TokenKind::NotIdentical => BinOp::NotIdentical,
+                TokenKind::Is => BinOp::Is,
                 _ => break,
             };
             if operator.precedence() < min_precedence {
                 break;
             }
             self.bump();
-            let right = self.parse_expr_precedence(operator.precedence() + 1)?;
-            let kind = ExprKind::Binary {
-                operator,
-                left: Box::new_in(left, self.allocator),
-                right: Box::new_in(right, self.allocator),
+            left = match operator {
+                BinOp::Is => {
+                    let token = self.current_token().ok_or_else(|| self.unexpected())?;
+                    let right = match (token.kind, &self.input[token.range]) {
+                        (TokenKind::Null, _) => ValueType::Null,
+                        (TokenKind::Ident, "bool") => ValueType::Bool,
+                        (TokenKind::Ident, "int") => ValueType::Int,
+                        (TokenKind::Ident, "float") => ValueType::Float,
+                        (TokenKind::Ident, "str") => ValueType::Str,
+                        (TokenKind::Ident, "table") => ValueType::Table,
+                        (TokenKind::Ident, "function") => ValueType::Function,
+                        (TokenKind::Ident, "userdata") => ValueType::UserData,
+                        _ => return Err(self.unexpected()),
+                    };
+                    let left = Box::new_in(left, self.allocator);
+                    let kind = ExprKind::TypeCheck { left, right };
+                    let range = self.end_range(start);
+                    Expr { kind, range }
+                }
+                _ => {
+                    let right = self.parse_expr_precedence(operator.precedence() + 1)?;
+                    let kind = ExprKind::Binary {
+                        operator,
+                        left: Box::new_in(left, self.allocator),
+                        right: Box::new_in(right, self.allocator),
+                    };
+                    let range = self.end_range(start);
+                    Expr { kind, range }
+                }
             };
-            let range = self.end_range(start);
-            left = Expr { kind, range };
         }
         Ok(left)
     }
@@ -809,9 +833,7 @@ impl<'alloc, 'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'alloc
     }
 
     fn parse_lit(&mut self) -> Result<Lit<'alloc, S::String>, CompilerError> {
-        let Some(token) = self.current_token() else {
-            return Err(self.unexpected());
-        };
+        let token = self.current_token().ok_or_else(|| self.unexpected())?;
         let range = token.range;
         let text = &self.input[range];
         let kind = match token.kind {
@@ -869,7 +891,10 @@ impl<'alloc, 'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'alloc
     }
 
     fn parse_ident(&mut self) -> Result<Ident<'alloc, S::String>, CompilerError> {
-        let token = self.current_token().unwrap();
+        let token = self.current_token().ok_or_else(|| self.unexpected())?;
+        if !self.check(TokenKind::Ident) {
+            return Err(self.unexpected());
+        }
         let ident = Ident {
             range: token.range,
             name: self.interner.intern(&self.input[token.range]),

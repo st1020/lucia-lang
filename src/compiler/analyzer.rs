@@ -427,6 +427,9 @@ impl<S: AsRef<str> + Copy> SemanticAnalyzer<S> {
                 self.analyze_expr(left);
                 self.analyze_expr(right);
             }
+            ExprKind::TypeCheck { left, right: _ } => {
+                self.analyze_expr(left);
+            }
             ExprKind::Member {
                 table,
                 property,

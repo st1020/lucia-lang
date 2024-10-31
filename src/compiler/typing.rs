@@ -13,6 +13,7 @@ use super::{
     analyzer::Semantic,
     ast::*,
     index::{FunctionId, SymbolId},
+    value::ValueType,
 };
 
 /// The Literal Type.
@@ -836,6 +837,24 @@ impl<'a, S: AsRef<str> + Copy + Eq + Ord> TypeChecker<'a, S> {
                         right_type.expect_is_sub_type_of(&Type::Bool)?;
                         Type::Bool
                     }
+                    BinOp::Is => unreachable!(),
+                }
+            }
+            ExprKind::TypeCheck { left, right } => {
+                // type narrowing?
+                let left_type = self.check_expr(left)?;
+                match (left_type, right) {
+                    (Type::Null, ValueType::Null)
+                    | (Type::Bool, ValueType::Bool)
+                    | (Type::Int, ValueType::Int)
+                    | (Type::Float, ValueType::Float)
+                    | (Type::Str, ValueType::Str)
+                    | (Type::Table { .. }, ValueType::Table)
+                    | (Type::Function { .. }, ValueType::Function)
+                    | (Type::UserData(_), ValueType::UserData) => {
+                        Type::Literal(LiteralType::Bool(true))
+                    }
+                    _ => Type::Bool,
                 }
             }
             ExprKind::Member {
