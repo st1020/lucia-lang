@@ -76,6 +76,8 @@ impl<'gc> fmt::Display for LuciaFrame<'gc> {
 }
 
 impl<'gc> LuciaFrame<'gc> {
+    const MAX_STACK_SIZE: usize = 256;
+
     pub(crate) fn new(
         ctx: Context<'gc>,
         closure: Closure<'gc>,
@@ -83,7 +85,7 @@ impl<'gc> LuciaFrame<'gc> {
     ) -> Result<Self, Error<'gc>> {
         let function = &closure.function;
         let params_num = function.params.len();
-        let mut stack = vec![Value::Null; params_num];
+        let mut stack = Vec::with_capacity(function.stack_size.min(Self::MAX_STACK_SIZE));
         match args.len().cmp(&params_num) {
             Ordering::Less => {
                 return Err(Error::new(RuntimeError::CallArguments {
@@ -96,7 +98,7 @@ impl<'gc> LuciaFrame<'gc> {
                 }));
             }
             Ordering::Equal => {
-                stack[..params_num].copy_from_slice(&args[..]);
+                stack.append(&mut args.clone());
                 if function.variadic.is_some() {
                     stack.push(Value::Table(Table::new(&ctx)));
                 }
@@ -109,7 +111,7 @@ impl<'gc> LuciaFrame<'gc> {
                     }));
                 } else {
                     let t = args.split_off(params_num);
-                    stack[..params_num].copy_from_slice(&args[..]);
+                    stack.append(&mut args.clone());
                     stack.push(t.into_value(ctx));
                 }
             }
