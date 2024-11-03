@@ -1,4 +1,4 @@
-fn f(a, *b) {
+fn f(a, ...b) {
     assert(a == 1)
     assert(b == [2, 3])
 }

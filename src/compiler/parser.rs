@@ -800,9 +800,9 @@ impl<'alloc, 'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'alloc
         self.parse_items_between_with_last(
             TokenKind::OpenParen,
             Parser::parse_typed_ident,
-            TokenKind::Mul,
+            TokenKind::Ellipsis,
             |p| {
-                p.expect(TokenKind::Mul)?;
+                p.expect(TokenKind::Ellipsis)?;
                 Ok(Box::new_in(p.parse_typed_ident()?, p.allocator))
             },
             TokenKind::CloseParen,
@@ -813,9 +813,9 @@ impl<'alloc, 'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'alloc
         self.parse_items_between_with_last(
             TokenKind::VBar,
             Parser::parse_atom_typed_ident,
-            TokenKind::Mul,
+            TokenKind::Ellipsis,
             |p| {
-                p.expect(TokenKind::Mul)?;
+                p.expect(TokenKind::Ellipsis)?;
                 Ok(Box::new_in(p.parse_atom_typed_ident()?, p.allocator))
             },
             TokenKind::VBar,
@@ -1062,9 +1062,9 @@ impl<'alloc, 'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'alloc
             let (params, variadic) = self.parse_items_between_with_last(
                 TokenKind::OpenParen,
                 Parser::parse_type,
-                TokenKind::Mul,
+                TokenKind::Ellipsis,
                 |p| {
-                    p.expect(TokenKind::Mul)?;
+                    p.expect(TokenKind::Ellipsis)?;
                     Ok(Box::new_in(p.parse_type()?, p.allocator))
                 },
                 TokenKind::CloseParen,

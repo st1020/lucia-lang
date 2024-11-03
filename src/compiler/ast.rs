@@ -46,7 +46,7 @@ impl<S: AsRef<str>> fmt::Display for Function<'_, S> {
             .chain(
                 self.variadic
                     .iter()
-                    .map(|variadic| format!("*{}", variadic)),
+                    .map(|variadic| format!("...{}", variadic)),
             )
             .join(", ");
         let returns_str = self
@@ -855,7 +855,7 @@ impl<S: AsRef<str>> fmt::Display for TyKind<'_, S> {
                 let params_str = params
                     .iter()
                     .map(|param| param.to_string())
-                    .chain(variadic.iter().map(|variadic| format!("*{}", variadic)))
+                    .chain(variadic.iter().map(|variadic| format!("...{}", variadic)))
                     .join(", ");
                 let returns_str = returns
                     .as_ref()
