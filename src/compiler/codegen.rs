@@ -1,5 +1,7 @@
 //! The Code Generator.
 
+use std::iter;
+
 use index_vec::{index_vec, IndexVec};
 use indexmap::{IndexMap, IndexSet};
 use rustc_hash::FxBuildHasher;
@@ -11,6 +13,7 @@ use super::{
     error::CompilerError,
     index::{FunctionId, SymbolId},
     opcode::{JumpTarget, OpCode},
+    value::ValueType,
 };
 
 impl From<BinOp> for OpCode {
@@ -55,6 +58,18 @@ impl<S> MemberKind<'_, S> {
         match self {
             MemberKind::Bracket(_) => OpCode::SetItem,
             MemberKind::Dot(_) | MemberKind::DoubleColon(_) => OpCode::SetAttr,
+        }
+    }
+}
+
+impl<S: AsRef<str>> From<LitKind<S>> for ConstValue<S> {
+    fn from(value: LitKind<S>) -> Self {
+        match value {
+            LitKind::Null => ConstValue::Null,
+            LitKind::Bool(v) => ConstValue::Bool(v),
+            LitKind::Int(v) => ConstValue::Int(v),
+            LitKind::Float(v) => ConstValue::Float(v),
+            LitKind::Str(v) => ConstValue::Str(v),
         }
     }
 }
@@ -277,7 +292,8 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
             match opcode {
                 OpCode::Jump(JumpTarget(v)) => *v = jump_target_table[*v],
                 OpCode::JumpIfNull(JumpTarget(v)) => *v = jump_target_table[*v],
-                OpCode::JumpPopIfFalse(JumpTarget(v)) => *v = jump_target_table[*v],
+                OpCode::JumpPopIfNull(JumpTarget(v)) => *v = jump_target_table[*v],
+                OpCode::PopJumpIfFalse(JumpTarget(v)) => *v = jump_target_table[*v],
                 OpCode::JumpIfTrueOrPop(JumpTarget(v)) => *v = jump_target_table[*v],
                 OpCode::JumpIfFalseOrPop(JumpTarget(v)) => *v = jump_target_table[*v],
                 _ => (),
@@ -286,7 +302,6 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
 
         let stack_size = Self::get_stack_size(
             self.code(),
-            0,
             function.params.len() + if function.variadic.is_some() { 1 } else { 0 },
         );
         let code = Code {
@@ -310,30 +325,42 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
     }
 
     /// Try estimate function stack size.
-    fn get_stack_size(code: &Vec<OpCode>, mut offset: usize, init_size: usize) -> usize {
-        let mut stack_size = init_size;
-        let mut cur = init_size;
-        while offset < code.len() {
+    fn get_stack_size(code: &[OpCode], init_size: usize) -> usize {
+        let mut max_stack_depth = init_size;
+        let mut stack_depths = vec![None; code.len()];
+        let mut stack = vec![(0, init_size)]; // (offset, current_depth)
+        while let Some((offset, current_depth)) = stack.pop() {
+            if offset >= code.len() {
+                continue;
+            }
+            if let Some(prev_depth) = stack_depths[offset] {
+                if current_depth <= prev_depth {
+                    continue;
+                }
+            }
+            stack_depths[offset] = Some(current_depth);
+            max_stack_depth = max_stack_depth.max(current_depth);
+            let mut new_depth = current_depth;
             match code[offset] {
-                OpCode::Pop => cur += 1,
-                OpCode::Copy(_) => cur += 1,
+                OpCode::Pop => new_depth -= 1,
+                OpCode::Copy(_) => new_depth += 1,
                 OpCode::Swap(_) => (),
                 OpCode::LoadLocal(_)
                 | OpCode::LoadGlobal(_)
                 | OpCode::LoadUpvalue(_)
-                | OpCode::LoadConst(_) => cur += 1,
+                | OpCode::LoadConst(_) => new_depth += 1,
                 OpCode::StoreLocal(_) | OpCode::StoreGlobal(_) | OpCode::StoreUpvalue(_) => {
-                    cur -= 1
+                    new_depth -= 1
                 }
-                OpCode::Import(_) => cur += 1,
-                OpCode::ImportFrom(_) => cur += 1,
+                OpCode::Import(_) => new_depth += 1,
+                OpCode::ImportFrom(_) => new_depth += 1,
                 OpCode::ImportGlob => (),
-                OpCode::BuildTable(i) => cur = cur - i * 2 + 1,
-                OpCode::BuildList(i) => cur = cur - i + 1,
-                OpCode::GetAttr | OpCode::GetItem => cur -= 1,
+                OpCode::BuildTable(i) => new_depth = new_depth - i * 2 + 1,
+                OpCode::BuildList(i) => new_depth = new_depth - i + 1,
+                OpCode::GetAttr | OpCode::GetItem => new_depth -= 1,
                 OpCode::GetMeta => (),
-                OpCode::SetAttr | OpCode::SetItem => cur -= 2,
-                OpCode::SetMeta => cur -= 1,
+                OpCode::SetAttr | OpCode::SetItem => new_depth -= 3,
+                OpCode::SetMeta => new_depth -= 1,
                 OpCode::Neg | OpCode::Not => (),
                 OpCode::Add
                 | OpCode::Sub
@@ -347,34 +374,39 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
                 | OpCode::Lt
                 | OpCode::Le
                 | OpCode::Identical
-                | OpCode::NotIdentical => cur -= 1,
+                | OpCode::NotIdentical => new_depth -= 1,
                 OpCode::TypeCheck(_) => (),
+                OpCode::GetLen => (),
                 OpCode::Iter => (),
-                OpCode::Jump(JumpTarget(_)) => (),
-                OpCode::JumpIfNull(JumpTarget(i)) => {
-                    stack_size = stack_size.max(Self::get_stack_size(code, i, cur));
+                OpCode::Jump(JumpTarget(i)) => {
+                    stack.push((i, new_depth));
+                    continue;
                 }
-                OpCode::JumpPopIfFalse(JumpTarget(i)) => {
-                    cur -= 1;
-                    stack_size = stack_size.max(Self::get_stack_size(code, i, cur));
+                OpCode::JumpIfNull(JumpTarget(i)) => {
+                    stack.push((i, new_depth));
+                }
+                OpCode::JumpPopIfNull(JumpTarget(i)) => {
+                    stack.push((i, new_depth - 1));
+                }
+                OpCode::PopJumpIfTrue(JumpTarget(i)) | OpCode::PopJumpIfFalse(JumpTarget(i)) => {
+                    new_depth -= 1;
+                    stack.push((i, new_depth));
                 }
                 OpCode::JumpIfTrueOrPop(JumpTarget(i))
                 | OpCode::JumpIfFalseOrPop(JumpTarget(i)) => {
-                    stack_size = stack_size.max(Self::get_stack_size(code, i, cur));
-                    cur -= 1;
+                    stack.push((i, new_depth));
+                    new_depth -= 1;
                 }
                 OpCode::Call(i)
                 | OpCode::TryCall(i)
                 | OpCode::TryOptionCall(i)
-                | OpCode::TryPanicCall(i) => cur = cur - i + 1,
-                OpCode::Return | OpCode::Throw => break,
-                OpCode::ReturnCall(i) => cur = cur - i + 1,
+                | OpCode::TryPanicCall(i) => new_depth -= i,
+                OpCode::Return | OpCode::Throw | OpCode::ReturnCall(_) => continue,
                 OpCode::JumpTarget(_) => unreachable!(),
             }
-            stack_size = stack_size.max(cur);
-            offset += 1;
+            stack.push((offset + 1, new_depth));
         }
-        stack_size
+        max_stack_depth
     }
 
     fn gen_function(&mut self, function: &Function<'_, S>) {
@@ -404,7 +436,7 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
                     let false_label = self.get_jump_target();
                     let end_label = self.get_jump_target();
                     self.gen_expr(test)?;
-                    self.push_code(OpCode::JumpPopIfFalse(false_label));
+                    self.push_code(OpCode::PopJumpIfFalse(false_label));
                     self.gen_block(consequent);
                     self.push_code(OpCode::Jump(end_label));
                     self.push_code(OpCode::JumpTarget(false_label));
@@ -413,10 +445,35 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
                 } else {
                     let end_label = self.get_jump_target();
                     self.gen_expr(test)?;
-                    self.push_code(OpCode::JumpPopIfFalse(end_label));
+                    self.push_code(OpCode::PopJumpIfFalse(end_label));
                     self.gen_block(consequent);
                     self.push_code(OpCode::JumpTarget(end_label));
                 }
+            }
+            StmtKind::Match { expr, cases } => {
+                let end_label = self.get_jump_target();
+                self.gen_expr(expr)?;
+                let block_labels: Vec<_> = iter::repeat_with(|| self.get_jump_target())
+                    .take(cases.len())
+                    .collect();
+                for (i, case) in cases.iter().enumerate() {
+                    let block_label = block_labels[i];
+                    for pattern in &case.patterns.patterns {
+                        let next_pattern_label = self.get_jump_target();
+                        self.push_code(OpCode::Copy(1));
+                        self.gen_pattern(pattern, next_pattern_label)?;
+                        self.push_code(OpCode::Jump(block_label));
+                        self.push_code(OpCode::JumpTarget(next_pattern_label));
+                    }
+                }
+                self.push_code(OpCode::Jump(end_label));
+                for (i, case) in cases.iter().enumerate() {
+                    self.push_code(OpCode::JumpTarget(block_labels[i]));
+                    self.gen_block(&case.body);
+                    self.push_code(OpCode::Jump(end_label));
+                }
+                self.push_code(OpCode::JumpTarget(end_label));
+                self.push_code(OpCode::Pop);
             }
             StmtKind::Loop { body } => {
                 let continue_label = self.get_jump_target();
@@ -440,7 +497,7 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
 
                 self.push_code(OpCode::JumpTarget(continue_label));
                 self.gen_expr(test)?;
-                self.push_code(OpCode::JumpPopIfFalse(break_label));
+                self.push_code(OpCode::PopJumpIfFalse(break_label));
                 self.gen_block(body);
                 self.push_code(OpCode::Jump(continue_label));
                 self.push_code(OpCode::JumpTarget(break_label));
@@ -640,13 +697,7 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
     fn gen_expr(&mut self, expr: &Expr<'_, S>) -> Result<(), CompilerError> {
         match &expr.kind {
             ExprKind::Lit(lit) => {
-                let const_id = self.add_const(match lit.kind {
-                    LitKind::Null => ConstValue::Null,
-                    LitKind::Bool(v) => ConstValue::Bool(v),
-                    LitKind::Int(v) => ConstValue::Int(v),
-                    LitKind::Float(v) => ConstValue::Float(v),
-                    LitKind::Str(v) => ConstValue::Str(v),
-                });
+                let const_id = self.add_const(lit.kind.into());
                 self.push_code(OpCode::LoadConst(const_id));
             }
             ExprKind::Ident(ident) => self.load(ident),
@@ -796,6 +847,73 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
             MemberKind::Dot(ident) | MemberKind::DoubleColon(ident) => {
                 let const_id = self.add_const(ConstValue::Str(ident.name));
                 self.push_code(OpCode::LoadConst(const_id));
+            }
+        }
+        Ok(())
+    }
+
+    fn gen_pattern(
+        &mut self,
+        pattern: &Pattern<'_, S>,
+        next_pattern_label: JumpTarget,
+    ) -> Result<(), CompilerError> {
+        match &pattern.kind {
+            PatternKind::Lit(lit) => {
+                let const_id = self.add_const(lit.kind.into());
+                self.push_code(OpCode::LoadConst(const_id));
+                self.push_code(match lit.kind {
+                    LitKind::Null | LitKind::Bool(_) | LitKind::Int(_) | LitKind::Float(_) => {
+                        OpCode::Identical
+                    }
+                    LitKind::Str(_) => OpCode::Eq,
+                });
+                self.push_code(OpCode::PopJumpIfFalse(next_pattern_label));
+            }
+            PatternKind::Ident(ident) => {
+                self.push_code(OpCode::JumpPopIfNull(next_pattern_label));
+                self.store(ident);
+            }
+            PatternKind::Table { pairs, others } => {
+                self.push_code(OpCode::Copy(1));
+                self.push_code(OpCode::TypeCheck(ValueType::Table));
+                self.push_code(OpCode::PopJumpIfFalse(next_pattern_label));
+                if !others {
+                    self.push_code(OpCode::Copy(1));
+                    self.push_code(OpCode::GetLen);
+                    let const_id = self.add_const(ConstValue::Int(pairs.len().try_into().unwrap()));
+                    self.push_code(OpCode::LoadConst(const_id));
+                    self.push_code(OpCode::Eq);
+                    self.push_code(OpCode::PopJumpIfFalse(next_pattern_label));
+                }
+                for (k, v) in pairs {
+                    self.push_code(OpCode::Copy(1));
+                    let const_id = self.add_const(k.kind.into());
+                    self.push_code(OpCode::LoadConst(const_id));
+                    self.push_code(OpCode::GetItem);
+                    self.gen_pattern(v, next_pattern_label)?;
+                }
+                self.push_code(OpCode::Pop);
+            }
+            PatternKind::List { items, others } => {
+                self.push_code(OpCode::Copy(1));
+                self.push_code(OpCode::TypeCheck(ValueType::Table));
+                self.push_code(OpCode::PopJumpIfFalse(next_pattern_label));
+                if !others {
+                    self.push_code(OpCode::Copy(1));
+                    self.push_code(OpCode::GetLen);
+                    let const_id = self.add_const(ConstValue::Int(items.len().try_into().unwrap()));
+                    self.push_code(OpCode::LoadConst(const_id));
+                    self.push_code(OpCode::Eq);
+                    self.push_code(OpCode::PopJumpIfFalse(next_pattern_label));
+                }
+                for (i, item) in items.iter().enumerate() {
+                    self.push_code(OpCode::Copy(1));
+                    let const_id = self.add_const(ConstValue::Int(i.try_into().unwrap()));
+                    self.push_code(OpCode::LoadConst(const_id));
+                    self.push_code(OpCode::GetItem);
+                    self.gen_pattern(item, next_pattern_label)?;
+                }
+                self.push_code(OpCode::Pop);
             }
         }
         Ok(())

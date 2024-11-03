@@ -539,6 +539,13 @@ impl<'a, S: AsRef<str> + Copy + Eq + Ord> TypeChecker<'a, S> {
                     self.check_stmt(alternate)?;
                 }
             }
+            StmtKind::Match { expr, cases } => {
+                self.check_expr(expr)?;
+                for case in cases {
+                    // TODO: check pattern
+                    self.check_block(&case.body);
+                }
+            }
             StmtKind::Loop { body } => {
                 self.check_block(body);
             }

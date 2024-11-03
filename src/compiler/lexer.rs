@@ -213,6 +213,32 @@ impl<'a> Cursor<'a> {
                 _ => Sub,
             },
 
+            // Assign, Eq, Identical or FatArrow.
+            '=' => {
+                if self.eat('=') {
+                    if self.eat('=') {
+                        Identical
+                    } else {
+                        Eq
+                    }
+                } else if self.eat('>') {
+                    FatArrow
+                } else {
+                    Assign
+                }
+            }
+
+            // Dot or Ellipsis.
+            '.' => {
+                if self.first() == '.' && self.second() == '.' {
+                    self.bump();
+                    self.bump();
+                    Ellipsis
+                } else {
+                    Dot
+                }
+            }
+
             // Whitespace sequence.
             c if is_whitespace(c) => self.whitespace(),
 
@@ -231,14 +257,6 @@ impl<'a> Cursor<'a> {
             // String literal.
             c @ ('"' | '\'') => self.string(c, false),
 
-            // Identical or Eq.
-            '=' if self.eat('=') => {
-                if self.eat('=') {
-                    Identical
-                } else {
-                    Eq
-                }
-            }
             // NotIdentical or NotEq.
             '!' if self.eat('=') => {
                 if self.eat('=') {
@@ -260,7 +278,6 @@ impl<'a> Cursor<'a> {
             '\n' => self.eol(),
             '\\' if self.eat('\n') => Whitespace,
             ',' => Comma,
-            '.' => Dot,
             '(' => OpenParen,
             ')' => CloseParen,
             '{' => OpenBrace,
@@ -271,7 +288,6 @@ impl<'a> Cursor<'a> {
             '?' => Question,
             '!' => Exclamation,
             ':' => Colon,
-            '=' => Assign,
             '<' => Lt,
             '>' => Gt,
             '|' => VBar,
@@ -349,6 +365,7 @@ impl<'a> Cursor<'a> {
         match &self.input[range] {
             "if" => If,
             "else" => Else,
+            "match" => Match,
             "loop" => Loop,
             "while" => While,
             "for" => For,

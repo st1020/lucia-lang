@@ -246,6 +246,16 @@ impl<'gc> ThreadState<'gc> {
                     let tos = frame.stack.pop().unwrap();
                     frame.stack.push(Value::Bool(tos.value_type() == ty));
                 }
+                OpCode::GetLen => {
+                    let tos = frame.stack.pop().unwrap();
+                    match meta_ops::len(ctx, tos)? {
+                        meta_ops::MetaResult::Value(v) => frame.stack.push(v),
+                        meta_ops::MetaResult::Call(callee, args) => {
+                            self.call_function(ctx, callee, args.to_vec())?;
+                            break;
+                        }
+                    }
+                }
                 OpCode::Iter => {
                     let tos = frame.stack.pop().unwrap();
                     frame.stack.push(meta_ops::iter(ctx, tos)?.into());
@@ -261,7 +271,26 @@ impl<'gc> ThreadState<'gc> {
                         continue;
                     }
                 }
-                OpCode::JumpPopIfFalse(JumpTarget(i)) => {
+                OpCode::JumpPopIfNull(JumpTarget(i)) => {
+                    let tos = frame.stack.last().unwrap();
+                    if let Value::Null = tos {
+                        frame.stack.pop().unwrap();
+                        frame.pc = i;
+                        continue;
+                    }
+                }
+                OpCode::PopJumpIfTrue(JumpTarget(i)) => {
+                    let tos = frame.stack.pop().unwrap();
+                    if let Value::Bool(v) = tos {
+                        if v {
+                            frame.pc = i;
+                            continue;
+                        }
+                    } else {
+                        return Err(operator_error!(code, tos));
+                    }
+                }
+                OpCode::PopJumpIfFalse(JumpTarget(i)) => {
                     let tos = frame.stack.pop().unwrap();
                     if let Value::Bool(v) = tos {
                         if !v {
@@ -347,9 +376,7 @@ impl<'gc> ThreadState<'gc> {
                     self.tail_call(ctx, meta_ops::call(ctx, callee)?, args)?;
                     break;
                 }
-                OpCode::JumpTarget(_) => {
-                    panic!("unexpected opcode: JumpTarget")
-                }
+                OpCode::JumpTarget(_) => panic!("unexpected opcode: JumpTarget"),
             }
 
             if instructions == 0 {

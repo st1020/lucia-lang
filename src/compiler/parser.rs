@@ -328,6 +328,16 @@ impl<'alloc, 'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'alloc
                 consequent,
                 alternate,
             }
+        } else if self.eat(TokenKind::Match) {
+            let expr = Box::new_in(self.parse_expr()?, self.allocator);
+            self.expect(TokenKind::OpenBrace)?;
+            let mut cases = Vec::new_in(self.allocator);
+            while !self.eat(TokenKind::CloseBrace) {
+                self.eat_eol();
+                cases.push(self.parse_match_case()?);
+                self.eat_eol();
+            }
+            StmtKind::Match { expr, cases }
         } else if self.eat(TokenKind::Loop) {
             let body = self.parse_block()?;
             StmtKind::Loop { body }
@@ -927,6 +937,79 @@ impl<'alloc, 'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'alloc
         };
         let range = self.end_range(start);
         Ok(TypedIdent { ident, ty, range })
+    }
+
+    fn parse_match_case(&mut self) -> Result<MatchCase<'alloc, S::String>, CompilerError> {
+        let start = self.start_range();
+        let patterns = self.parse_patterns()?;
+        self.expect(TokenKind::FatArrow)?;
+        let body = self.parse_block()?;
+        let range = self.end_range(start);
+        Ok(MatchCase {
+            patterns,
+            body,
+            range,
+        })
+    }
+
+    fn parse_patterns(&mut self) -> Result<Patterns<'alloc, S::String>, CompilerError> {
+        let start = self.start_range();
+        let mut patterns = Vec::new_in(self.allocator);
+        loop {
+            patterns.push(self.parse_pattern()?);
+            if !self.eat(TokenKind::VBar) {
+                break;
+            }
+        }
+        let range = self.end_range(start);
+        Ok(Patterns { patterns, range })
+    }
+
+    fn parse_pattern(&mut self) -> Result<Pattern<'alloc, S::String>, CompilerError> {
+        let start = self.start_range();
+        let kind = if self.check(TokenKind::Ident) {
+            PatternKind::Ident(Box::new_in(self.parse_ident()?, self.allocator))
+        } else if self.check(TokenKind::OpenBrace) {
+            let (pairs, others) = self.parse_items_between_with_last(
+                TokenKind::OpenBrace,
+                |p| {
+                    let key = p.parse_lit()?;
+                    p.expect(TokenKind::Colon)?;
+                    let value = p.parse_pattern()?;
+                    Ok((key, value))
+                },
+                TokenKind::Ellipsis,
+                |p| {
+                    p.bump();
+                    Ok(())
+                },
+                TokenKind::CloseBrace,
+            )?;
+            PatternKind::Table {
+                pairs,
+                others: others.is_some(),
+            }
+        } else if self.check(TokenKind::OpenBracket) {
+            let (items, others) = self.parse_items_between_with_last(
+                TokenKind::OpenBracket,
+                Parser::parse_pattern,
+                TokenKind::Ellipsis,
+                |p| {
+                    p.bump();
+                    Ok(())
+                },
+                TokenKind::CloseBracket,
+            )?;
+            PatternKind::List {
+                items,
+                others: others.is_some(),
+            }
+        } else {
+            let lit = self.parse_lit()?;
+            PatternKind::Lit(Box::new_in(lit, self.allocator))
+        };
+        let range = self.end_range(start);
+        Ok(Pattern { kind, range })
     }
 
     fn parse_type(&mut self) -> Result<Ty<'alloc, S::String>, CompilerError> {

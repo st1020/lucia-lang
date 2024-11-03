@@ -153,6 +153,10 @@ pub enum StmtKind<'a, S> {
         consequent: Box<'a, Block<'a, S>>,
         alternate: Option<Box<'a, Stmt<'a, S>>>,
     },
+    Match {
+        expr: Box<'a, Expr<'a, S>>,
+        cases: Vec<'a, MatchCase<'a, S>>,
+    },
     Loop {
         body: Box<'a, Block<'a, S>>,
     },
@@ -222,6 +226,11 @@ impl<S: AsRef<str>> fmt::Display for StmtKind<'_, S> {
                     write!(f, "if {test} {consequent}")
                 }
             }
+            StmtKind::Match { expr, cases } => write!(
+                f,
+                "match {expr} {{\n{}\n}}",
+                cases.iter().join("\n").indent(4)
+            ),
             StmtKind::Loop { body } => write!(f, "loop {body}"),
             StmtKind::While { test, body } => write!(f, "while {test} {body}"),
             StmtKind::For { left, right, body } => {
@@ -442,7 +451,7 @@ impl<S: AsRef<str>> fmt::Display for LitKind<S> {
             LitKind::Null => write!(f, "null"),
             LitKind::Bool(v) => write!(f, "{v}"),
             LitKind::Int(v) => write!(f, "{v}"),
-            LitKind::Float(v) => write!(f, "{v}"),
+            LitKind::Float(v) => write!(f, "{v:?}"),
             LitKind::Str(v) => write!(f, "\"{}\"", escape_str(v.as_ref(), false)),
         }
     }
@@ -695,6 +704,85 @@ impl<'a, S> From<Box<'a, Ident<'a, S>>> for TypedIdent<'a, S> {
             range: value.range,
             ident: value,
             ty: None,
+        }
+    }
+}
+
+/// A match case.
+#[derive(Debug, PartialEq, Eq)]
+pub struct MatchCase<'a, S> {
+    pub patterns: Patterns<'a, S>,
+    pub body: Box<'a, Block<'a, S>>,
+    pub range: TextRange,
+}
+
+impl<S: AsRef<str>> fmt::Display for MatchCase<'_, S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} => {}", self.patterns, self.body)
+    }
+}
+
+/// Patterns.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Patterns<'a, S> {
+    pub patterns: Vec<'a, Pattern<'a, S>>,
+    pub range: TextRange,
+}
+
+impl<S: AsRef<str>> fmt::Display for Patterns<'_, S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.patterns.iter().join(" | "))
+    }
+}
+
+/// A pattern.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Pattern<'a, S> {
+    pub kind: PatternKind<'a, S>,
+    pub range: TextRange,
+}
+
+impl<S: AsRef<str>> fmt::Display for Pattern<'_, S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.kind)
+    }
+}
+
+/// Kind of pattern.
+#[derive(Debug, PartialEq, Eq)]
+pub enum PatternKind<'a, S> {
+    Lit(Box<'a, Lit<'a, S>>),
+    Ident(Box<'a, Ident<'a, S>>),
+    Table {
+        pairs: Vec<'a, (Lit<'a, S>, Pattern<'a, S>)>,
+        others: bool,
+    },
+    List {
+        items: Vec<'a, Pattern<'a, S>>,
+        others: bool,
+    },
+}
+
+impl<S: AsRef<str>> fmt::Display for PatternKind<'_, S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PatternKind::Lit(lit) => write!(f, "{}", lit),
+            PatternKind::Ident(ident) => write!(f, "{}", ident),
+            PatternKind::Table { pairs, others } => write!(
+                f,
+                "{{{}{}}}",
+                pairs
+                    .iter()
+                    .map(|(k, v)| { format!("{k}: {v}") })
+                    .join(", "),
+                if *others { ", ..." } else { "" }
+            ),
+            PatternKind::List { items, others } => write!(
+                f,
+                "[{}{}]",
+                items.iter().join(", "),
+                if *others { ", ..." } else { "" }
+            ),
         }
     }
 }

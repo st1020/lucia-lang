@@ -92,14 +92,21 @@ pub enum OpCode {
     /// Implements `TOS = TOS is type`.
     TypeCheck(ValueType),
 
+    /// Implements `TOS = len(TOS)`.
+    GetLen,
+
     /// Get the __iter__ of TOS and pushed it onto the stack.
     Iter,
     /// Sets the bytecode counter to target.
     Jump(JumpTarget),
     /// If TOS is null, sets the bytecode counter to target.
     JumpIfNull(JumpTarget),
+    /// If TOS is null, sets the bytecode counter to target and pop TOS. Otherwise, leaves TOS on the stack
+    JumpPopIfNull(JumpTarget),
+    /// If TOS is true, sets the bytecode counter to target. TOS is popped.
+    PopJumpIfTrue(JumpTarget),
     /// If TOS is false, sets the bytecode counter to target. TOS is popped.
-    JumpPopIfFalse(JumpTarget),
+    PopJumpIfFalse(JumpTarget),
     /// If TOS is true, sets the bytecode counter to target and leaves TOS on the stack. Otherwise, TOS is popped.
     JumpIfTrueOrPop(JumpTarget),
     /// If TOS is false, sets the bytecode counter to target and leaves TOS on the stack. Otherwise, TOS is popped.
@@ -165,10 +172,13 @@ impl fmt::Display for OpCode {
             Self::Identical => write!(f, "Identical"),
             Self::NotIdentical => write!(f, "NotIdentical"),
             Self::TypeCheck(ty) => write!(f, "{:WIDTH$}{}", "TypeCheck", ty),
+            Self::GetLen => write!(f, "GetLen"),
             Self::Iter => write!(f, "Iter"),
             Self::Jump(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "Jump", i),
             Self::JumpIfNull(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "JumpIfNull", i),
-            Self::JumpPopIfFalse(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "JumpPopIfFalse", i),
+            Self::JumpPopIfNull(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "JumpPopIfNull", i),
+            Self::PopJumpIfTrue(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "PopJumpIfTrue", i),
+            Self::PopJumpIfFalse(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "PopJumpIfFalse", i),
             Self::JumpIfTrueOrPop(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "JumpIfTrueOrPop", i),
             Self::JumpIfFalseOrPop(JumpTarget(i)) => {
                 write!(f, "{:WIDTH$}{}", "JumpIfFalseOrPop", i)

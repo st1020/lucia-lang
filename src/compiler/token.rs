@@ -55,6 +55,8 @@ pub enum TokenKind {
     If,
     /// "else"
     Else,
+    /// "match"
+    Match,
     /// "loop"
     Loop,
     /// "while"
@@ -103,12 +105,16 @@ pub enum TokenKind {
     Identical,
     /// "!=="
     NotIdentical,
+    /// "..."
+    Ellipsis,
 
     // Two-char tokens:
     /// "::"
     DoubleColon,
     /// "->"
     Arrow,
+    /// "=>"
+    FatArrow,
     /// "=="
     Eq,
     /// "!="

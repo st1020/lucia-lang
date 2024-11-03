@@ -306,6 +306,17 @@ impl<S: AsRef<str> + Copy> SemanticAnalyzer<S> {
                     self.analyze_stmt(alternate);
                 }
             }
+            StmtKind::Match { expr, cases } => {
+                self.analyze_expr(expr);
+                for case in cases {
+                    self.enter_scope(ScopeKind::Block, &case.body.scope_id);
+                    for pattern in &case.patterns.patterns {
+                        self.analyze_pattern(pattern);
+                    }
+                    self.analyze_stmts(&case.body);
+                    self.leave_scope();
+                }
+            }
             StmtKind::Loop { body } => self.analyze_block(body),
             StmtKind::While { test, body } => {
                 self.analyze_expr(test);
@@ -456,6 +467,23 @@ impl<S: AsRef<str> + Copy> SemanticAnalyzer<S> {
         match property {
             MemberKind::Bracket(expr) => self.analyze_expr(expr),
             MemberKind::Dot(_) | MemberKind::DoubleColon(_) => (),
+        }
+    }
+
+    fn analyze_pattern(&mut self, pattern: &Pattern<'_, S>) {
+        match &pattern.kind {
+            PatternKind::Lit(_) => (),
+            PatternKind::Ident(ident) => self.declare_symbol(ident, SymbolKind::Local),
+            PatternKind::Table { pairs, others: _ } => {
+                for (_, v) in pairs {
+                    self.analyze_pattern(v);
+                }
+            }
+            PatternKind::List { items, others: _ } => {
+                for item in items {
+                    self.analyze_pattern(item);
+                }
+            }
         }
     }
 }
