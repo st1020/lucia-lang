@@ -83,6 +83,7 @@ struct Context<S> {
     upvalue_names: IndexMap<SymbolId, (S, Option<usize>), FxBuildHasher>,
 
     jump_target_count: usize,
+    need_clear_stack_count: usize,
     continue_stack: Vec<JumpTarget>,
     break_stack: Vec<JumpTarget>,
 }
@@ -98,6 +99,7 @@ impl<S: AsRef<str>> Context<S> {
             global_names: IndexMap::with_hasher(FxBuildHasher),
             upvalue_names: IndexMap::with_hasher(FxBuildHasher),
             jump_target_count: 0,
+            need_clear_stack_count: 0,
             continue_stack: Vec::new(),
             break_stack: Vec::new(),
         }
@@ -265,6 +267,7 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
         }
         self.gen_block(&function.body);
         if function.kind == FunctionKind::Do {
+            self.push_code(OpCode::LoadLocals);
             self.push_code(OpCode::Return);
         } else if !self
             .context()
@@ -291,7 +294,6 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
         for opcode in self.code().iter_mut() {
             match opcode {
                 OpCode::Jump(JumpTarget(v)) => *v = jump_target_table[*v],
-                OpCode::JumpIfNull(JumpTarget(v)) => *v = jump_target_table[*v],
                 OpCode::JumpPopIfNull(JumpTarget(v)) => *v = jump_target_table[*v],
                 OpCode::PopJumpIfFalse(JumpTarget(v)) => *v = jump_target_table[*v],
                 OpCode::JumpIfTrueOrPop(JumpTarget(v)) => *v = jump_target_table[*v],
@@ -354,13 +356,13 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
                 }
                 OpCode::Import(_) => new_depth += 1,
                 OpCode::ImportFrom(_) => new_depth += 1,
-                OpCode::ImportGlob => (),
+                OpCode::ImportGlob => new_depth -= 1,
                 OpCode::BuildTable(i) => new_depth = new_depth - i * 2 + 1,
                 OpCode::BuildList(i) => new_depth = new_depth - i + 1,
                 OpCode::GetAttr | OpCode::GetItem => new_depth -= 1,
                 OpCode::GetMeta => (),
                 OpCode::SetAttr | OpCode::SetItem => new_depth -= 3,
-                OpCode::SetMeta => new_depth -= 1,
+                OpCode::SetMeta => new_depth -= 2,
                 OpCode::Neg | OpCode::Not => (),
                 OpCode::Add
                 | OpCode::Sub
@@ -382,9 +384,6 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
                     stack.push((i, new_depth));
                     continue;
                 }
-                OpCode::JumpIfNull(JumpTarget(i)) => {
-                    stack.push((i, new_depth));
-                }
                 OpCode::JumpPopIfNull(JumpTarget(i)) => {
                     stack.push((i, new_depth - 1));
                 }
@@ -401,7 +400,15 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
                 | OpCode::TryCall(i)
                 | OpCode::TryOptionCall(i)
                 | OpCode::TryPanicCall(i) => new_depth -= i,
-                OpCode::Return | OpCode::Throw | OpCode::ReturnCall(_) => continue,
+                OpCode::Return | OpCode::Throw => {
+                    debug_assert_eq!(new_depth, 1);
+                    continue;
+                }
+                OpCode::ReturnCall(i) => {
+                    debug_assert_eq!(new_depth, i + 1);
+                    continue;
+                }
+                OpCode::LoadLocals => new_depth += 1,
                 OpCode::JumpTarget(_) => unreachable!(),
             }
             stack.push((offset + 1, new_depth));
@@ -459,11 +466,19 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
                 for (i, case) in cases.iter().enumerate() {
                     let block_label = block_labels[i];
                     for pattern in &case.patterns.patterns {
-                        let next_pattern_label = self.get_jump_target();
+                        let mut clean_stack_labels = vec![self.get_jump_target()];
                         self.push_code(OpCode::Copy(1));
-                        self.gen_pattern(pattern, next_pattern_label)?;
+                        self.gen_pattern(pattern, 0, &mut clean_stack_labels)?;
+                        self.push_code(OpCode::Pop);
                         self.push_code(OpCode::Jump(block_label));
-                        self.push_code(OpCode::JumpTarget(next_pattern_label));
+                        for (i, clean_stack_label) in
+                            clean_stack_labels.into_iter().rev().enumerate()
+                        {
+                            if i != 0 {
+                                self.push_code(OpCode::Pop);
+                            }
+                            self.push_code(OpCode::JumpTarget(clean_stack_label));
+                        }
                     }
                 }
                 self.push_code(OpCode::Jump(end_label));
@@ -510,13 +525,14 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
                 let break_label = self.get_jump_target();
                 self.continue_stack().push(continue_label);
                 self.break_stack().push(break_label);
+                self.context().need_clear_stack_count += 1;
 
                 self.gen_expr(right)?;
                 self.push_code(OpCode::Iter);
                 self.push_code(OpCode::JumpTarget(continue_label));
                 self.push_code(OpCode::Copy(1));
                 self.push_code(OpCode::Call(0));
-                self.push_code(OpCode::JumpIfNull(break_label));
+                self.push_code(OpCode::JumpPopIfNull(break_label));
                 if left.len() == 1 {
                     self.store(&left[0]);
                 } else {
@@ -533,10 +549,10 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
                 self.push_code(OpCode::Jump(continue_label));
                 self.push_code(OpCode::JumpTarget(break_label));
                 self.push_code(OpCode::Pop);
-                self.push_code(OpCode::Pop);
 
                 self.continue_stack().pop();
                 self.break_stack().pop();
+                self.context().need_clear_stack_count -= 1;
             }
             StmtKind::Break => {
                 let opcode = OpCode::Jump(match self.break_stack().last().copied() {
@@ -555,6 +571,9 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
             StmtKind::Return { argument } => {
                 if self.function_semantic().kind == FunctionKind::Do {
                     return Err(CompilerError::ReturnOutsideFunction { range: stmt.range });
+                }
+                for _ in 0..self.context().need_clear_stack_count {
+                    self.push_code(OpCode::Pop);
                 }
                 if let ExprKind::Call { kind, .. } = argument.kind {
                     self.gen_expr(argument)?;
@@ -576,6 +595,9 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
             StmtKind::Throw { argument } => {
                 if self.function_semantic().kind == FunctionKind::Do {
                     return Err(CompilerError::ThrowOutsideFunction { range: stmt.range });
+                }
+                for _ in 0..self.context().need_clear_stack_count {
+                    self.push_code(OpCode::Pop);
                 }
                 self.gen_expr(argument)?;
                 self.push_code(OpCode::Throw);
@@ -651,7 +673,7 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
             },
             StmtKind::AssignUnpack { left, right } => {
                 self.gen_expr(right)?;
-                for _ in 0..left.len() {
+                for _ in 1..left.len() {
                     self.push_code(OpCode::Copy(1));
                 }
                 for (i, l) in left.iter().enumerate() {
@@ -756,7 +778,7 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
                 self.gen_expr(table)?;
                 let safe_label = self.get_jump_target();
                 if *safe {
-                    self.push_code(OpCode::JumpIfNull(safe_label));
+                    self.push_code(OpCode::JumpPopIfNull(safe_label));
                 }
                 match property {
                     MemberKind::Bracket(property) => {
@@ -775,7 +797,7 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
                 self.gen_expr(table)?;
                 let safe_label = self.get_jump_target();
                 if *safe {
-                    self.push_code(OpCode::JumpIfNull(safe_label));
+                    self.push_code(OpCode::JumpPopIfNull(safe_label));
                 }
                 self.push_code(OpCode::GetMeta);
                 self.push_code(OpCode::JumpTarget(safe_label));
@@ -795,7 +817,7 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
                     } => {
                         self.gen_expr(table)?;
                         if *safe {
-                            self.push_code(OpCode::JumpIfNull(safe_label));
+                            self.push_code(OpCode::JumpPopIfNull(safe_label));
                         }
                         match property {
                             MemberKind::Bracket(property) => {
@@ -855,10 +877,21 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
     fn gen_pattern(
         &mut self,
         pattern: &Pattern<'_, S>,
-        next_pattern_label: JumpTarget,
+        pattern_depth: usize,
+        clean_stack_labels: &mut Vec<JumpTarget>,
     ) -> Result<(), CompilerError> {
+        let mut get_or_push_clean_stack_label = |index: usize| {
+            if let Some(clean_stack_label) = clean_stack_labels.get(index).copied() {
+                clean_stack_label
+            } else {
+                let clean_stack_label = self.get_jump_target();
+                clean_stack_labels.push(clean_stack_label);
+                clean_stack_label
+            }
+        };
         match &pattern.kind {
             PatternKind::Lit(lit) => {
+                let next_pattern_label = get_or_push_clean_stack_label(pattern_depth);
                 let const_id = self.add_const(lit.kind.into());
                 self.push_code(OpCode::LoadConst(const_id));
                 self.push_code(match lit.kind {
@@ -870,48 +903,51 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
                 self.push_code(OpCode::PopJumpIfFalse(next_pattern_label));
             }
             PatternKind::Ident(ident) => {
+                let next_pattern_label = get_or_push_clean_stack_label(pattern_depth);
                 self.push_code(OpCode::JumpPopIfNull(next_pattern_label));
                 self.store(ident);
             }
             PatternKind::Table { pairs, others } => {
+                let clean_stack_label = get_or_push_clean_stack_label(pattern_depth + 1);
                 self.push_code(OpCode::Copy(1));
                 self.push_code(OpCode::TypeCheck(ValueType::Table));
-                self.push_code(OpCode::PopJumpIfFalse(next_pattern_label));
+                self.push_code(OpCode::PopJumpIfFalse(clean_stack_label));
                 if !others {
                     self.push_code(OpCode::Copy(1));
                     self.push_code(OpCode::GetLen);
                     let const_id = self.add_const(ConstValue::Int(pairs.len().try_into().unwrap()));
                     self.push_code(OpCode::LoadConst(const_id));
                     self.push_code(OpCode::Eq);
-                    self.push_code(OpCode::PopJumpIfFalse(next_pattern_label));
+                    self.push_code(OpCode::PopJumpIfFalse(clean_stack_label));
                 }
                 for (k, v) in pairs {
                     self.push_code(OpCode::Copy(1));
                     let const_id = self.add_const(k.kind.into());
                     self.push_code(OpCode::LoadConst(const_id));
                     self.push_code(OpCode::GetItem);
-                    self.gen_pattern(v, next_pattern_label)?;
+                    self.gen_pattern(v, pattern_depth + 1, clean_stack_labels)?;
                 }
                 self.push_code(OpCode::Pop);
             }
             PatternKind::List { items, others } => {
+                let clean_stack_label = get_or_push_clean_stack_label(pattern_depth + 1);
                 self.push_code(OpCode::Copy(1));
                 self.push_code(OpCode::TypeCheck(ValueType::Table));
-                self.push_code(OpCode::PopJumpIfFalse(next_pattern_label));
+                self.push_code(OpCode::PopJumpIfFalse(clean_stack_label));
                 if !others {
                     self.push_code(OpCode::Copy(1));
                     self.push_code(OpCode::GetLen);
                     let const_id = self.add_const(ConstValue::Int(items.len().try_into().unwrap()));
                     self.push_code(OpCode::LoadConst(const_id));
                     self.push_code(OpCode::Eq);
-                    self.push_code(OpCode::PopJumpIfFalse(next_pattern_label));
+                    self.push_code(OpCode::PopJumpIfFalse(clean_stack_label));
                 }
                 for (i, item) in items.iter().enumerate() {
                     self.push_code(OpCode::Copy(1));
                     let const_id = self.add_const(ConstValue::Int(i.try_into().unwrap()));
                     self.push_code(OpCode::LoadConst(const_id));
                     self.push_code(OpCode::GetItem);
-                    self.gen_pattern(item, next_pattern_label)?;
+                    self.gen_pattern(item, pattern_depth + 1, clean_stack_labels)?;
                 }
                 self.push_code(OpCode::Pop);
             }

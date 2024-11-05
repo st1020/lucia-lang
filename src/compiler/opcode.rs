@@ -99,8 +99,6 @@ pub enum OpCode {
     Iter,
     /// Sets the bytecode counter to target.
     Jump(JumpTarget),
-    /// If TOS is null, sets the bytecode counter to target.
-    JumpIfNull(JumpTarget),
     /// If TOS is null, sets the bytecode counter to target and pop TOS. Otherwise, leaves TOS on the stack
     JumpPopIfNull(JumpTarget),
     /// If TOS is true, sets the bytecode counter to target. TOS is popped.
@@ -126,6 +124,8 @@ pub enum OpCode {
     Throw,
     /// Same as "Call(usize); Return;", this is for tail call optimization.
     ReturnCall(usize),
+    /// Pushes a table of local names onto the stack.
+    LoadLocals,
 
     /// A jump target, only used during code generation.
     JumpTarget(JumpTarget),
@@ -175,7 +175,6 @@ impl fmt::Display for OpCode {
             Self::GetLen => write!(f, "GetLen"),
             Self::Iter => write!(f, "Iter"),
             Self::Jump(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "Jump", i),
-            Self::JumpIfNull(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "JumpIfNull", i),
             Self::JumpPopIfNull(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "JumpPopIfNull", i),
             Self::PopJumpIfTrue(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "PopJumpIfTrue", i),
             Self::PopJumpIfFalse(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "PopJumpIfFalse", i),
@@ -190,6 +189,7 @@ impl fmt::Display for OpCode {
             Self::Return => write!(f, "Return"),
             Self::Throw => write!(f, "Throw"),
             Self::ReturnCall(i) => write!(f, "{:WIDTH$}{}", "ReturnCall", i),
+            Self::LoadLocals => write!(f, "LoadLocals"),
             Self::JumpTarget(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "JumpTarget", i),
         }
     }

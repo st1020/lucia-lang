@@ -1,8 +1,5 @@
 use crate::{
-    compiler::{
-        code::FunctionKind,
-        opcode::{JumpTarget, OpCode},
-    },
+    compiler::opcode::{JumpTarget, OpCode},
     errors::{Error, LuciaError, RuntimeError},
     frame::{CatchErrorKind, Frame},
     meta_ops,
@@ -264,13 +261,6 @@ impl<'gc> ThreadState<'gc> {
                     frame.pc = i;
                     continue;
                 }
-                OpCode::JumpIfNull(JumpTarget(i)) => {
-                    let tos = frame.stack.last().unwrap();
-                    if let Value::Null = tos {
-                        frame.pc = i;
-                        continue;
-                    }
-                }
                 OpCode::JumpPopIfNull(JumpTarget(i)) => {
                     let tos = frame.stack.last().unwrap();
                     if let Value::Null = tos {
@@ -356,17 +346,12 @@ impl<'gc> ThreadState<'gc> {
                     break;
                 }
                 OpCode::Return => {
-                    if function.kind == FunctionKind::Do {
-                        let table = Table::new(&ctx);
-                        for i in 0..function.local_names.len() {
-                            table.set(ctx, function.local_names[i], frame.locals[i]);
-                        }
-                        frame.stack.push(Value::Table(table));
-                    }
+                    debug_assert_eq!(frame.stack.len(), 1);
                     self.return_upper(ctx);
                     break;
                 }
                 OpCode::Throw => {
+                    debug_assert_eq!(frame.stack.len(), 1);
                     let tos = frame.stack.pop().unwrap();
                     return Err(Error::new(LuciaError::Error(tos)));
                 }
@@ -375,6 +360,13 @@ impl<'gc> ThreadState<'gc> {
                     let callee = frame.stack.pop().unwrap();
                     self.tail_call(ctx, meta_ops::call(ctx, callee)?, args)?;
                     break;
+                }
+                OpCode::LoadLocals => {
+                    let table = Table::new(&ctx);
+                    for i in 0..function.local_names.len() {
+                        table.set(ctx, function.local_names[i], frame.locals[i]);
+                    }
+                    frame.stack.push(Value::Table(table));
                 }
                 OpCode::JumpTarget(_) => panic!("unexpected opcode: JumpTarget"),
             }
