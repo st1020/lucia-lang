@@ -151,6 +151,8 @@ pub enum RuntimeError {
         operator: MetaMethod,
         operand: (ValueType, ValueType),
     },
+    #[error("divide by zero")]
+    DivideByZero,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

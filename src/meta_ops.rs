@@ -1,6 +1,9 @@
 //! The meta method used in lucia lang.
 
-use std::fmt;
+use std::{
+    fmt,
+    ops::{Div, Mul, Rem, Sub},
+};
 
 use compact_str::ToCompactString;
 use gc_arena::{lock::RefLock, Collect, Gc};
@@ -157,7 +160,7 @@ pub fn iter<'gc>(ctx: Context<'gc>, v: Value<'gc>) -> Result<Function<'gc>, Erro
 }
 
 macro_rules! get_table {
-    ($name:tt, $meta_method:tt) => {
+    ($name:ident, $meta_method:ident) => {
         pub fn $name<'gc>(
             ctx: Context<'gc>,
             table: Value<'gc>,
@@ -182,12 +185,11 @@ macro_rules! get_table {
         }
     };
 }
-
 get_table!(get_attr, GetAttr);
 get_table!(get_item, GetItem);
 
 macro_rules! set_table {
-    ($name:tt, $meta_method:tt) => {
+    ($name:ident, $meta_method:ident) => {
         pub fn $name<'gc>(
             ctx: Context<'gc>,
             table: Value<'gc>,
@@ -216,7 +218,6 @@ macro_rules! set_table {
         }
     };
 }
-
 set_table!(set_attr, SetAttr);
 set_table!(set_item, SetItem);
 
@@ -235,29 +236,6 @@ pub fn neg<'gc>(ctx: Context<'gc>, v: Value<'gc>) -> Result<MetaResult<'gc, 1>, 
     }
 }
 
-macro_rules! bin_op {
-    ($name:tt, $op:tt, $meta_method:tt) => {
-        pub fn $name<'gc>(
-            ctx: Context<'gc>,
-            v1: Value<'gc>,
-            v2: Value<'gc>,
-        ) -> Result<MetaResult<'gc, 2>, Error<'gc>> {
-            if let Some(metatable) = v1.metatable() {
-                let t = metatable.get(ctx, MetaMethod::$meta_method);
-                if !t.is_null() {
-                    return Ok(MetaResult::Call(call(ctx, t)?, [v1, v2]));
-                }
-            }
-
-            match (v1, v2) {
-                (Value::Int(v1), Value::Int(v2)) => Ok(MetaResult::Value((v1 $op v2).into())),
-                (Value::Float(v1), Value::Float(v2)) => Ok(MetaResult::Value((v1 $op v2).into())),
-                _ => Err(meta_operator_error!(ctx, MetaMethod::$meta_method, v1, v2)),
-            }
-        }
-    };
-}
-
 pub fn add<'gc>(
     ctx: Context<'gc>,
     v1: Value<'gc>,
@@ -271,7 +249,7 @@ pub fn add<'gc>(
     }
 
     match (v1, v2) {
-        (Value::Int(v1), Value::Int(v2)) => Ok(MetaResult::Value((v1 + v2).into())),
+        (Value::Int(v1), Value::Int(v2)) => Ok(MetaResult::Value((v1.wrapping_add(v2)).into())),
         (Value::Float(v1), Value::Float(v2)) => Ok(MetaResult::Value((v1 + v2).into())),
         (Value::Str(v1), Value::Str(v2)) => Ok(MetaResult::Value(Value::Str(Str::new(
             &ctx,
@@ -281,13 +259,68 @@ pub fn add<'gc>(
     }
 }
 
-bin_op!(sub, -, Sub);
-bin_op!(mul, *, Mul);
-bin_op!(div, /, Div);
-bin_op!(rem, %, Rem);
+macro_rules! sub_mul {
+    ($name:ident, $int_op:ident, $float_op:ident, $meta_method:ident) => {
+        pub fn $name<'gc>(
+            ctx: Context<'gc>,
+            v1: Value<'gc>,
+            v2: Value<'gc>,
+        ) -> Result<MetaResult<'gc, 2>, Error<'gc>> {
+            if let Some(metatable) = v1.metatable() {
+                let t = metatable.get(ctx, MetaMethod::$meta_method);
+                if !t.is_null() {
+                    return Ok(MetaResult::Call(call(ctx, t)?, [v1, v2]));
+                }
+            }
+
+            match (v1, v2) {
+                (Value::Int(v1), Value::Int(v2)) => Ok(MetaResult::Value((v1.$int_op(v2)).into())),
+                (Value::Float(v1), Value::Float(v2)) => {
+                    Ok(MetaResult::Value((v1.$float_op(v2)).into()))
+                }
+                _ => Err(meta_operator_error!(ctx, MetaMethod::$meta_method, v1, v2)),
+            }
+        }
+    };
+}
+sub_mul!(sub, wrapping_sub, sub, Sub);
+sub_mul!(mul, wrapping_mul, mul, Mul);
+
+macro_rules! div_rem {
+    ($name:ident, $int_op:ident, $float_op:ident, $meta_method:ident) => {
+        pub fn $name<'gc>(
+            ctx: Context<'gc>,
+            v1: Value<'gc>,
+            v2: Value<'gc>,
+        ) -> Result<MetaResult<'gc, 2>, Error<'gc>> {
+            if let Some(metatable) = v1.metatable() {
+                let t = metatable.get(ctx, MetaMethod::$meta_method);
+                if !t.is_null() {
+                    return Ok(MetaResult::Call(call(ctx, t)?, [v1, v2]));
+                }
+            }
+
+            match (v1, v2) {
+                (Value::Int(v1), Value::Int(v2)) => {
+                    if v2 == 0 {
+                        Err(Error::new(RuntimeError::DivideByZero))
+                    } else {
+                        Ok(MetaResult::Value((v1.$int_op(v2)).into()))
+                    }
+                }
+                (Value::Float(v1), Value::Float(v2)) => {
+                    Ok(MetaResult::Value((v1.$float_op(v2)).into()))
+                }
+                _ => Err(meta_operator_error!(ctx, MetaMethod::$meta_method, v1, v2)),
+            }
+        }
+    };
+}
+div_rem!(div, wrapping_div, div, Div);
+div_rem!(rem, wrapping_rem, rem, Rem);
 
 macro_rules! eq_ne {
-    ($name:tt, $op:tt, $meta_method:tt) => {
+    ($name:ident, $op:ident, $meta_method:ident) => {
         pub fn $name<'gc>(
             ctx: Context<'gc>,
             tos: Value<'gc>,
@@ -304,14 +337,35 @@ macro_rules! eq_ne {
         }
     };
 }
-
 eq_ne!(eq, equal, Eq);
 eq_ne!(ne, not_equal, Ne);
 
-bin_op!(gt, >, Gt);
-bin_op!(ge, >=, Ge);
-bin_op!(lt, <, Lt);
-bin_op!(le, <=, Le);
+macro_rules! cmp {
+    ($name:ident, $op:ident, $meta_method:ident) => {
+        pub fn $name<'gc>(
+            ctx: Context<'gc>,
+            v1: Value<'gc>,
+            v2: Value<'gc>,
+        ) -> Result<MetaResult<'gc, 2>, Error<'gc>> {
+            if let Some(metatable) = v1.metatable() {
+                let t = metatable.get(ctx, MetaMethod::$meta_method);
+                if !t.is_null() {
+                    return Ok(MetaResult::Call(call(ctx, t)?, [v1, v2]));
+                }
+            }
+
+            match (v1, v2) {
+                (Value::Int(v1), Value::Int(v2)) => Ok(MetaResult::Value((v1.$op(&v2)).into())),
+                (Value::Float(v1), Value::Float(v2)) => Ok(MetaResult::Value((v1.$op(&v2)).into())),
+                _ => Err(meta_operator_error!(ctx, MetaMethod::$meta_method, v1, v2)),
+            }
+        }
+    };
+}
+cmp!(gt, gt, Gt);
+cmp!(ge, ge, Ge);
+cmp!(lt, lt, Lt);
+cmp!(le, le, Le);
 
 pub fn len<'gc>(ctx: Context<'gc>, v: Value<'gc>) -> Result<MetaResult<'gc, 1>, Error<'gc>> {
     if let Some(metatable) = v.metatable() {
