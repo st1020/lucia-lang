@@ -321,7 +321,8 @@ impl<'gc> ThreadState<'gc> {
                 OpCode::TryPanicCall(i) => call!(i, CallStatusKind::TryPanic),
                 OpCode::Return => {
                     debug_assert_eq!(frame.stack.len(), 1);
-                    self.return_upper(ctx);
+                    let value = frame.stack.pop().unwrap();
+                    self.return_upper(ctx, value);
                     break;
                 }
                 OpCode::Throw => {

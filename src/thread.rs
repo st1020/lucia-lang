@@ -204,14 +204,9 @@ impl<'gc> ThreadState<'gc> {
         }
     }
 
-    pub(crate) fn return_upper(&mut self, ctx: Context<'gc>) {
-        match self.frames.pop() {
-            Some(Frame::Lucia(LuciaFrame { mut stack, .. })) => {
-                let return_value = stack.pop().expect("stack error");
-                self.return_to(ctx, return_value);
-            }
-            _ => panic!("top frame is not lua frame"),
-        }
+    pub(crate) fn return_upper(&mut self, ctx: Context<'gc>, return_value: Value<'gc>) {
+        self.frames.pop().expect("top frame is not lua frame");
+        self.return_to(ctx, return_value);
     }
 
     pub(crate) fn return_error(&mut self, ctx: Context<'gc>, mut e: Error<'gc>) {
