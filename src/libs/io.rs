@@ -3,7 +3,7 @@ use std::io;
 use compact_str::ToCompactString;
 
 use crate::{
-    objects::{Callback, Table, Varargs},
+    objects::{Callback, Table, Value},
     utils::Join,
     Context,
 };
@@ -13,7 +13,7 @@ pub fn io_lib<'gc>(ctx: Context<'gc>) -> Table<'gc> {
     t.set(
         ctx,
         "print",
-        Callback::from(&ctx, |args: Varargs<'gc>| match args.len() {
+        Callback::from(&ctx, |args: &[Value<'gc>]| match args.len() {
             0 => (),
             1 => print!("{}", args.first().unwrap()),
             _ => print!("{}", args.iter().join(" ")),
@@ -22,7 +22,7 @@ pub fn io_lib<'gc>(ctx: Context<'gc>) -> Table<'gc> {
     t.set(
         ctx,
         "println",
-        Callback::from(&ctx, |args: Varargs<'gc>| match args.len() {
+        Callback::from(&ctx, |args: &[Value<'gc>]| match args.len() {
             0 => println!(),
             1 => println!("{}", args.first().unwrap()),
             _ => println!("{}", args.iter().join(" ")),

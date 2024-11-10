@@ -3,7 +3,7 @@ use gc_arena::{lock::RefLock, Collect, Gc};
 use crate::{
     errors::{Error, LuciaError},
     meta_ops,
-    objects::{Callback, CallbackReturn, Value, Varargs},
+    objects::{Callback, CallbackReturn, Value},
     Context,
 };
 
@@ -24,7 +24,7 @@ pub fn load_builtin<'gc>(ctx: Context<'gc>) {
     builtins.set(
         ctx,
         "assert",
-        Callback::from(&ctx, |v: bool, msg: Varargs<'gc>| {
+        Callback::from(&ctx, |v: bool, msg: &[Value<'gc>]| {
             if !v {
                 Err(Error::new(LuciaError::Assert(
                     msg.first().cloned().unwrap_or(Value::Null),

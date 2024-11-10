@@ -87,7 +87,7 @@ impl<'gc> Thread<'gc> {
             match state.frames.pop().expect("no frame to step") {
                 Frame::Callback(callback, args) => {
                     fuel.consume(Self::FUEL_PER_CALLBACK);
-                    match callback.call(ctx, args) {
+                    match callback.call(ctx, &args) {
                         Ok(CallbackReturn::Return(v)) => state.return_to(ctx, v),
                         Ok(CallbackReturn::TailCall(f, args)) => {
                             if let Err(e) =

@@ -1,5 +1,3 @@
-use std::ops;
-
 use gc_arena::{Collect, Gc, Mutation};
 
 use crate::{
@@ -72,15 +70,14 @@ impl<'gc, T: IntoCallbackReturn<'gc>> IntoCallbackResult<'gc> for Result<T, Erro
 }
 
 pub trait CallbackFn<'gc>: Collect {
-    fn call(&self, ctx: Context<'gc>, args: Vec<Value<'gc>>) -> CallbackResult<'gc>;
+    fn call(&self, ctx: Context<'gc>, args: &[Value<'gc>]) -> CallbackResult<'gc>;
 }
 
 define_object!(Callback, CallbackInner<'gc>, ptr, "callback");
 
 #[derive(Debug)]
 pub struct CallbackInner<'gc> {
-    call:
-        unsafe fn(*const CallbackInner<'gc>, Context<'gc>, Vec<Value<'gc>>) -> CallbackResult<'gc>,
+    call: unsafe fn(*const CallbackInner<'gc>, Context<'gc>, &[Value<'gc>]) -> CallbackResult<'gc>,
 }
 
 impl<'gc> Callback<'gc> {
@@ -135,7 +132,7 @@ impl<'gc> Callback<'gc> {
     /// to associate GC data with this function, use [`Callback::from_fn_with`].
     pub fn from_fn<F>(mc: &Mutation<'gc>, call: F) -> Callback<'gc>
     where
-        F: 'static + Fn(Context<'gc>, Vec<Value<'gc>>) -> CallbackResult<'gc>,
+        F: 'static + Fn(Context<'gc>, &[Value<'gc>]) -> CallbackResult<'gc>,
     {
         Self::from_fn_with(mc, (), move |_, ctx, args| call(ctx, args))
     }
@@ -144,7 +141,7 @@ impl<'gc> Callback<'gc> {
     pub fn from_fn_with<R, F>(mc: &Mutation<'gc>, root: R, call: F) -> Callback<'gc>
     where
         R: 'gc + Collect,
-        F: 'static + Fn(&R, Context<'gc>, Vec<Value<'gc>>) -> CallbackResult<'gc>,
+        F: 'static + Fn(&R, Context<'gc>, &[Value<'gc>]) -> CallbackResult<'gc>,
     {
         #[derive(Collect)]
         #[collect(no_drop)]
@@ -157,9 +154,9 @@ impl<'gc> Callback<'gc> {
         impl<'gc, R, F> CallbackFn<'gc> for RootCallback<R, F>
         where
             R: 'gc + Collect,
-            F: 'static + Fn(&R, Context<'gc>, Vec<Value<'gc>>) -> CallbackResult<'gc>,
+            F: 'static + Fn(&R, Context<'gc>, &[Value<'gc>]) -> CallbackResult<'gc>,
         {
-            fn call(&self, ctx: Context<'gc>, args: Vec<Value<'gc>>) -> CallbackResult<'gc> {
+            fn call(&self, ctx: Context<'gc>, args: &[Value<'gc>]) -> CallbackResult<'gc> {
                 (self.call)(&self.root, ctx, args)
             }
         }
@@ -167,31 +164,13 @@ impl<'gc> Callback<'gc> {
         Callback::new(mc, RootCallback { root, call })
     }
 
-    pub fn call(self, ctx: Context<'gc>, args: Vec<Value<'gc>>) -> CallbackResult<'gc> {
+    pub fn call(self, ctx: Context<'gc>, args: &[Value<'gc>]) -> CallbackResult<'gc> {
         unsafe { (self.0.call)(Gc::as_ptr(self.0), ctx, args) }
     }
 }
 
-#[derive(Debug, Clone, Collect)]
-#[collect(no_drop)]
-pub struct Varargs<'gc>(Vec<Value<'gc>>);
-
-impl<'gc> ops::Deref for Varargs<'gc> {
-    type Target = Vec<Value<'gc>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<'gc> ops::DerefMut for Varargs<'gc> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
 pub trait IntoCallback<'gc, Marker> {
-    fn call(&self, ctx: Context<'gc>, args: Vec<Value<'gc>>) -> CallbackResult<'gc>;
+    fn call(&self, ctx: Context<'gc>, args: &[Value<'gc>]) -> CallbackResult<'gc>;
 }
 
 macro_rules! impl_into_callback {
@@ -202,7 +181,7 @@ macro_rules! impl_into_callback {
             Ret: IntoCallbackResult<'gc>,
             $($t: FromValue<'gc>,)*
         {
-            fn call(&self, ctx: Context<'gc>, args: Vec<Value<'gc>>) -> CallbackResult<'gc> {
+            fn call(&self, ctx: Context<'gc>, args: &[Value<'gc>]) -> CallbackResult<'gc> {
                 let args_len = args.len();
                 let required = ArgumentRange::from($len);
                 if !required.contains(args_len) {
@@ -217,13 +196,13 @@ macro_rules! impl_into_callback {
             }
         }
 
-        impl<'gc, Func, Ret, $($t,)*> IntoCallback<'gc, fn($($t,)* Varargs<'gc>) -> Ret> for Func
+        impl<'gc, Func, Ret, $($t,)*> IntoCallback<'gc, fn($($t,)* &[Value<'gc>]) -> Ret> for Func
         where
-            Func: Fn($($t,)* Varargs<'gc>) -> Ret,
+            Func: Fn($($t,)* &[Value<'gc>]) -> Ret,
             Ret: IntoCallbackResult<'gc>,
             $($t: FromValue<'gc>,)*
         {
-            fn call(&self, ctx: Context<'gc>, args: Vec<Value<'gc>>) -> CallbackResult<'gc> {
+            fn call(&self, ctx: Context<'gc>, args: &[Value<'gc>]) -> CallbackResult<'gc> {
                 let args_len = args.len();
                 let required = ArgumentRange::from(($len, None));
                 if !required.contains(args_len) {
@@ -234,7 +213,7 @@ macro_rules! impl_into_callback {
                         },
                     ));
                 }
-                self($($t::from_value(args[$idx])?,)* Varargs(args[$len..].to_vec())).into_callback_result(ctx)
+                self($($t::from_value(args[$idx])?,)* &args[$len..]).into_callback_result(ctx)
             }
         }
 
@@ -244,7 +223,7 @@ macro_rules! impl_into_callback {
             Ret: IntoCallbackResult<'gc>,
             $($t: FromValue<'gc>,)*
         {
-            fn call(&self, ctx: Context<'gc>, args: Vec<Value<'gc>>) -> CallbackResult<'gc> {
+            fn call(&self, ctx: Context<'gc>, args: &[Value<'gc>]) -> CallbackResult<'gc> {
                 let args_len = args.len();
                 let required = ArgumentRange::from($len);
                 if !required.contains(args_len) {
@@ -259,13 +238,13 @@ macro_rules! impl_into_callback {
             }
         }
 
-        impl<'gc, Func, Ret, $($t,)*> IntoCallback<'gc, fn(Context<'gc>, $($t,)* Varargs<'gc>) -> Ret> for Func
+        impl<'gc, Func, Ret, $($t,)*> IntoCallback<'gc, fn(Context<'gc>, $($t,)* &[Value<'gc>]) -> Ret> for Func
         where
-            Func: Fn(Context<'gc>, $($t,)* Varargs<'gc>) -> Ret,
+            Func: Fn(Context<'gc>, $($t,)* &[Value<'gc>]) -> Ret,
             Ret: IntoCallbackResult<'gc>,
             $($t: FromValue<'gc>,)*
         {
-            fn call(&self, ctx: Context<'gc>, args: Vec<Value<'gc>>) -> CallbackResult<'gc> {
+            fn call(&self, ctx: Context<'gc>, args: &[Value<'gc>]) -> CallbackResult<'gc> {
                 let args_len = args.len();
                 let required = ArgumentRange::from(($len, None));
                 if !required.contains(args_len) {
@@ -276,7 +255,7 @@ macro_rules! impl_into_callback {
                         },
                     ));
                 }
-                self(ctx, $($t::from_value(args[$idx])?,)* Varargs(args[$len..].to_vec())).into_callback_result(ctx)
+                self(ctx, $($t::from_value(args[$idx])?,)* &args[$len..]).into_callback_result(ctx)
             }
         }
     };
@@ -315,7 +294,7 @@ mod tests {
         struct CB();
 
         impl<'gc> CallbackFn<'gc> for CB {
-            fn call(&self, _ctx: Context<'gc>, _args: Vec<Value<'gc>>) -> CallbackResult<'gc> {
+            fn call(&self, _ctx: Context<'gc>, _args: &[Value<'gc>]) -> CallbackResult<'gc> {
                 Ok(CallbackReturn::Return(Value::Int(42)))
             }
         }
@@ -326,7 +305,7 @@ mod tests {
             let ctx = state.ctx(mc);
             let dyn_callback = Callback::new(mc, CB());
             assert_eq!(
-                dyn_callback.call(ctx, Vec::new()),
+                dyn_callback.call(ctx, &[]),
                 Ok(CallbackReturn::Return(Value::Int(42)))
             );
         });
