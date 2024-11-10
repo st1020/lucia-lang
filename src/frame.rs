@@ -11,14 +11,15 @@ use crate::{
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Collect)]
 #[collect[require_static]]
-pub enum CatchErrorKind {
-    None,
+pub enum CallStatusKind {
+    Normal,
+    IgnoreReturn,
     Try,
     TryOption,
     TryPanic,
 }
 
-impl fmt::Display for CatchErrorKind {
+impl fmt::Display for CallStatusKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(&self, f)
     }
@@ -27,8 +28,8 @@ impl fmt::Display for CatchErrorKind {
 #[derive(Debug, Clone, Collect)]
 #[collect(no_drop)]
 pub enum Frame<'gc> {
-    // An running Lua frame.
-    Lua(LuciaFrame<'gc>),
+    // An running Lucia frame.
+    Lucia(LuciaFrame<'gc>),
     // A callback that has been queued but not called yet.
     Callback(Callback<'gc>, Vec<Value<'gc>>),
 }
@@ -41,7 +42,7 @@ pub struct LuciaFrame<'gc> {
     pub locals: Vec<Value<'gc>>,
     pub upvalues: Vec<UpValue<'gc>>,
     pub stack: Vec<Value<'gc>>,
-    pub catch_error: CatchErrorKind,
+    pub call_status: CallStatusKind,
 }
 
 impl<'gc> fmt::Display for LuciaFrame<'gc> {
@@ -70,7 +71,7 @@ impl<'gc> fmt::Display for LuciaFrame<'gc> {
                 .join(", ")
         )?;
         writeln!(f, "stack: [{}]", self.stack.iter().join(", "))?;
-        write!(f, "catch_error: {:?}", self.catch_error)?;
+        write!(f, "call_status: {:?}", self.call_status)?;
         Ok(())
     }
 }
@@ -131,7 +132,7 @@ impl<'gc> LuciaFrame<'gc> {
             locals: vec![Value::Null; function.local_names.len()],
             upvalues,
             stack,
-            catch_error: CatchErrorKind::None,
+            call_status: CallStatusKind::Normal,
         })
     }
 }

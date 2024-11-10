@@ -1,7 +1,7 @@
 use crate::{
     compiler::opcode::{JumpTarget, OpCode},
     errors::{Error, LuciaError, RuntimeError},
-    frame::{CatchErrorKind, Frame},
+    frame::{CallStatusKind, Frame},
     meta_ops,
     objects::{Closure, Function, IntoValue, RuntimeConstValue, Table, TableEntries, Value},
     thread::ThreadState,
@@ -18,7 +18,7 @@ impl<'gc> ThreadState<'gc> {
         assert_ne!(instructions, 0);
 
         let frame = match self.frames.last_mut() {
-            Some(Frame::Lua(frame)) => frame,
+            Some(Frame::Lucia(frame)) => frame,
             _ => panic!("top frame is not lua frame"),
         };
         let function = &frame.closure.function;
@@ -48,7 +48,7 @@ impl<'gc> ThreadState<'gc> {
                 match $meta_result? {
                     meta_ops::MetaResult::Value(v) => frame.stack.push(v),
                     meta_ops::MetaResult::Call(callee, args) => {
-                        self.call_function(ctx, callee, args.to_vec())?;
+                        self.call_function(ctx, callee, args.to_vec(), CallStatusKind::Normal)?;
                         break;
                     }
                 }
@@ -76,10 +76,23 @@ impl<'gc> ThreadState<'gc> {
                 match meta_ops::$name(ctx, table, key, value)? {
                     meta_ops::MetaResult::Value(_) => (),
                     meta_ops::MetaResult::Call(callee, args) => {
-                        self.call_function(ctx, callee, args.to_vec())?;
+                        self.call_function(
+                            ctx,
+                            callee,
+                            args.to_vec(),
+                            CallStatusKind::IgnoreReturn,
+                        )?;
                         break;
                     }
                 }
+            }};
+        }
+        macro_rules! call {
+            ($i:expr, $call_status:expr) => {{
+                let args = frame.stack.split_off(frame.stack.len() - $i);
+                let callee = frame.stack.pop().unwrap();
+                self.call_function(ctx, meta_ops::call(ctx, callee)?, args, $call_status)?;
+                break;
             }};
         }
 
@@ -302,34 +315,10 @@ impl<'gc> ThreadState<'gc> {
                         _ => return Err(operator_error!(code, value)),
                     }
                 }
-                OpCode::Call(i) => {
-                    frame.catch_error = CatchErrorKind::None;
-                    let args = frame.stack.split_off(frame.stack.len() - i);
-                    let callee = frame.stack.pop().unwrap();
-                    self.call_function(ctx, meta_ops::call(ctx, callee)?, args)?;
-                    break;
-                }
-                OpCode::TryCall(i) => {
-                    frame.catch_error = CatchErrorKind::Try;
-                    let args = frame.stack.split_off(frame.stack.len() - i);
-                    let callee = frame.stack.pop().unwrap();
-                    self.call_function(ctx, meta_ops::call(ctx, callee)?, args)?;
-                    break;
-                }
-                OpCode::TryOptionCall(i) => {
-                    frame.catch_error = CatchErrorKind::TryOption;
-                    let args = frame.stack.split_off(frame.stack.len() - i);
-                    let callee = frame.stack.pop().unwrap();
-                    self.call_function(ctx, meta_ops::call(ctx, callee)?, args)?;
-                    break;
-                }
-                OpCode::TryPanicCall(i) => {
-                    frame.catch_error = CatchErrorKind::TryPanic;
-                    let args = frame.stack.split_off(frame.stack.len() - i);
-                    let callee = frame.stack.pop().unwrap();
-                    self.call_function(ctx, meta_ops::call(ctx, callee)?, args)?;
-                    break;
-                }
+                OpCode::Call(i) => call!(i, CallStatusKind::Normal),
+                OpCode::TryCall(i) => call!(i, CallStatusKind::Try),
+                OpCode::TryOptionCall(i) => call!(i, CallStatusKind::TryOption),
+                OpCode::TryPanicCall(i) => call!(i, CallStatusKind::TryPanic),
                 OpCode::Return => {
                     debug_assert_eq!(frame.stack.len(), 1);
                     self.return_upper(ctx);

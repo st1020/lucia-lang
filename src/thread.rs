@@ -6,7 +6,7 @@ use gc_arena::{lock::RefLock, Collect, Gc, Mutation};
 
 use crate::{
     errors::{Error, ErrorKind, LuciaError, RuntimeError},
-    frame::{CatchErrorKind, Frame, LuciaFrame},
+    frame::{CallStatusKind, Frame, LuciaFrame},
     fuel::Fuel,
     objects::{define_object, CallbackReturn, Function, IntoValue, Table, Value},
     Context,
@@ -18,7 +18,7 @@ use crate::{
 pub enum ThreadMode {
     /// No frames are on the thread and there are no available results, the thread can be started.
     Stopped,
-    /// Thread has an active Lua or Callback frame.
+    /// Thread has an active Lucia or Callback frame.
     Normal,
     /// A callback that this thread owns is currently being run.
     Running,
@@ -68,11 +68,11 @@ impl<'gc> Thread<'gc> {
         let mut state = self
             .check_mode(&ctx, ThreadMode::Stopped)
             .map_err(Error::new)?;
-        state.call_function(ctx, function, args)?;
+        state.call_function(ctx, function, args, CallStatusKind::Normal)?;
         Ok(())
     }
 
-    /// If the thread is in `Normal` mode, either run the Lua VM for a while or step any callback
+    /// If the thread is in `Normal` mode, either run the Lucia VM for a while or step any callback
     /// that we are waiting on.
     pub fn step(self, ctx: Context<'gc>, fuel: &mut Fuel) -> Result<bool, RuntimeError> {
         Ok(loop {
@@ -90,14 +90,16 @@ impl<'gc> Thread<'gc> {
                     match callback.call(ctx, args) {
                         Ok(CallbackReturn::Return(v)) => state.return_to(ctx, v),
                         Ok(CallbackReturn::TailCall(f, args)) => {
-                            if let Err(e) = state.call_function(ctx, f, args) {
+                            if let Err(e) =
+                                state.call_function(ctx, f, args, CallStatusKind::Normal)
+                            {
                                 state.return_error(ctx, e);
                             }
                         }
                         Err(e) => state.return_error(ctx, e),
                     }
                 }
-                frame @ Frame::Lua { .. } => {
+                frame @ Frame::Lucia { .. } => {
                     state.frames.push(frame);
                     match state.run_vm(ctx, Self::VM_GRANULARITY) {
                         Ok(instructions_run) => fuel.consume(instructions_run.try_into().unwrap()),
@@ -158,9 +160,13 @@ impl<'gc> ThreadState<'gc> {
         ctx: Context<'gc>,
         function: Function<'gc>,
         args: Vec<Value<'gc>>,
+        call_status: CallStatusKind,
     ) -> Result<(), Error<'gc>> {
+        if let Some(Frame::Lucia(frame)) = self.frames.last_mut() {
+            frame.call_status = call_status;
+        }
         self.frames.push(match function {
-            Function::Closure(closure) => Frame::Lua(LuciaFrame::new(ctx, closure, args)?),
+            Function::Closure(closure) => Frame::Lucia(LuciaFrame::new(ctx, closure, args)?),
             Function::Callback(callback) => Frame::Callback(callback, args),
         });
         Ok(())
@@ -173,7 +179,7 @@ impl<'gc> ThreadState<'gc> {
         args: Vec<Value<'gc>>,
     ) -> Result<(), Error<'gc>> {
         *self.frames.last_mut().expect("top frame is not lua frame") = match function {
-            Function::Closure(closure) => Frame::Lua(LuciaFrame::new(ctx, closure, args)?),
+            Function::Closure(closure) => Frame::Lucia(LuciaFrame::new(ctx, closure, args)?),
             Function::Callback(callback) => Frame::Callback(callback, args),
         };
         Ok(())
@@ -181,15 +187,16 @@ impl<'gc> ThreadState<'gc> {
 
     pub(crate) fn return_to(&mut self, ctx: Context<'gc>, return_value: Value<'gc>) {
         match self.frames.last_mut() {
-            Some(Frame::Lua(LuciaFrame {
-                stack, catch_error, ..
-            })) => match catch_error {
-                CatchErrorKind::Try => {
+            Some(Frame::Lucia(LuciaFrame {
+                stack, call_status, ..
+            })) => match call_status {
+                CallStatusKind::Try => {
                     let table = Table::new(&ctx);
                     table.set(ctx, 0, return_value);
                     table.set(ctx, 1, Value::Null);
                     stack.push(table.into_value(ctx));
                 }
+                CallStatusKind::IgnoreReturn => (),
                 _ => stack.push(return_value),
             },
             None => self.return_value = return_value,
@@ -199,7 +206,7 @@ impl<'gc> ThreadState<'gc> {
 
     pub(crate) fn return_upper(&mut self, ctx: Context<'gc>) {
         match self.frames.pop() {
-            Some(Frame::Lua(LuciaFrame { mut stack, .. })) => {
+            Some(Frame::Lucia(LuciaFrame { mut stack, .. })) => {
                 let return_value = stack.pop().expect("stack error");
                 self.return_to(ctx, return_value);
             }
@@ -213,13 +220,13 @@ impl<'gc> ThreadState<'gc> {
         }
         if e.kind.recoverable() {
             for (c, f) in self.frames.iter_mut().enumerate().rev() {
-                if let Frame::Lua(LuciaFrame {
-                    catch_error, stack, ..
+                if let Frame::Lucia(LuciaFrame {
+                    call_status, stack, ..
                 }) = f
                 {
-                    match catch_error {
-                        CatchErrorKind::None => (),
-                        CatchErrorKind::Try => {
+                    match call_status {
+                        CallStatusKind::Normal | CallStatusKind::IgnoreReturn => (),
+                        CallStatusKind::Try => {
                             let table = Table::new(&ctx);
                             table.set(ctx, 0, Value::Null);
                             table.set(
@@ -235,12 +242,12 @@ impl<'gc> ThreadState<'gc> {
                             self.frames.truncate(c + 1);
                             return;
                         }
-                        CatchErrorKind::TryOption => {
+                        CallStatusKind::TryOption => {
                             stack.push(Value::Null);
                             self.frames.truncate(c + 1);
                             return;
                         }
-                        CatchErrorKind::TryPanic => {
+                        CallStatusKind::TryPanic => {
                             self.frames.clear();
                             self.error = Some(e);
                             return;

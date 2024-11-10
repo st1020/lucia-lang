@@ -37,7 +37,7 @@ impl<'gc> fmt::Display for Error<'gc> {
             writeln!(f, "Traceback:")?;
             for (i, frame) in traceback.iter().rev().enumerate() {
                 match frame {
-                    Frame::Lua(frame) => {
+                    Frame::Lucia(frame) => {
                         writeln!(f, "[{}] lucia frame", i)?;
                         writeln!(f, "{}", frame.indent(4))?;
                     }
