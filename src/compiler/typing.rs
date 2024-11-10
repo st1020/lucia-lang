@@ -823,7 +823,7 @@ impl<'a, S: AsRef<str> + Copy + Eq + Ord> TypeChecker<'a, S> {
                             });
                         }
                     }
-                    BinOp::Lt | BinOp::Le | BinOp::Ge | BinOp::Gt => {
+                    BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
                         if left_type == Type::Any && right_type == Type::Any
                             || left_type.is_sub_type_of(&Type::Int)
                                 && right_type.is_sub_type_of(&Type::Int)

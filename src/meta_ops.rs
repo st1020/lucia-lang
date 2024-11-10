@@ -323,17 +323,17 @@ macro_rules! eq_ne {
     ($name:ident, $op:ident, $meta_method:ident) => {
         pub fn $name<'gc>(
             ctx: Context<'gc>,
-            tos: Value<'gc>,
-            tos1: Value<'gc>,
+            v1: Value<'gc>,
+            v2: Value<'gc>,
         ) -> Result<MetaResult<'gc, 2>, Error<'gc>> {
-            if let Some(metatable) = tos1.metatable() {
+            if let Some(metatable) = v1.metatable() {
                 let t = metatable.get(ctx, MetaMethod::$meta_method);
                 if !t.is_null() {
-                    return Ok(MetaResult::Call(call(ctx, t)?, [tos1, tos]));
+                    return Ok(MetaResult::Call(call(ctx, t)?, [v1, v2]));
                 }
             }
 
-            Ok(MetaResult::Value((tos1.$op(&tos)).into()))
+            Ok(MetaResult::Value((v1.$op(&v2)).into()))
         }
     };
 }

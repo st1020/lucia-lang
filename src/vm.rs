@@ -3,7 +3,7 @@ use crate::{
     errors::{Error, LuciaError, RuntimeError},
     frame::{CatchErrorKind, Frame},
     meta_ops,
-    objects::{Closure, Function, IntoValue, RuntimeConstValue, Table, Value},
+    objects::{Closure, Function, IntoValue, RuntimeConstValue, Table, TableEntries, Value},
     thread::ThreadState,
     Context,
 };
@@ -43,27 +43,37 @@ impl<'gc> ThreadState<'gc> {
                 )
             };
         }
-
-        macro_rules! bin_op {
-            ($name:ident) => {{
-                let tos = frame.stack.pop().unwrap();
-                let tos1 = frame.stack.pop().unwrap();
-                match meta_ops::$name(ctx, tos1, tos)? {
+        macro_rules! call_meta_method {
+            ($meta_result:expr) => {
+                match $meta_result? {
                     meta_ops::MetaResult::Value(v) => frame.stack.push(v),
                     meta_ops::MetaResult::Call(callee, args) => {
                         self.call_function(ctx, callee, args.to_vec())?;
                         break;
                     }
                 }
+            };
+        }
+        macro_rules! bin_op {
+            ($name:ident) => {{
+                let rhs = frame.stack.pop().unwrap();
+                let lhs = frame.stack.pop().unwrap();
+                call_meta_method!(meta_ops::$name(ctx, lhs, rhs));
             }};
         }
-
+        macro_rules! get_table {
+            ($name:ident) => {{
+                let key = frame.stack.pop().unwrap();
+                let table = frame.stack.pop().unwrap();
+                call_meta_method!(meta_ops::$name(ctx, table, key));
+            }};
+        }
         macro_rules! set_table {
             ($name:ident) => {{
-                let tos = frame.stack.pop().unwrap();
-                let tos1 = frame.stack.pop().unwrap();
-                let tos2 = frame.stack.pop().unwrap();
-                match meta_ops::$name(ctx, tos1, tos, tos2)? {
+                let key = frame.stack.pop().unwrap();
+                let table = frame.stack.pop().unwrap();
+                let value = frame.stack.pop().unwrap();
+                match meta_ops::$name(ctx, table, key, value)? {
                     meta_ops::MetaResult::Value(_) => (),
                     meta_ops::MetaResult::Call(callee, args) => {
                         self.call_function(ctx, callee, args.to_vec())?;
@@ -77,10 +87,9 @@ impl<'gc> ThreadState<'gc> {
             let code = function.code[frame.pc];
             frame.pc += 1;
 
-            // println!("{} {} {:?}", frame.pc, code, frame.stack);
             match code {
                 OpCode::Pop => {
-                    frame.stack.pop();
+                    frame.stack.pop().unwrap();
                 }
                 OpCode::Copy(i) => {
                     frame.stack.push(frame.stack[frame.stack.len() - i]);
@@ -93,15 +102,9 @@ impl<'gc> ThreadState<'gc> {
                     frame.stack.push(frame.locals[i]);
                 }
                 OpCode::LoadGlobal(i) => {
-                    let mut v = ctx
-                        .state
-                        .globals
-                        .get(ctx, function.global_names[i].to_owned());
+                    let mut v = ctx.state.globals.get(ctx, function.global_names[i]);
                     if v.is_null() {
-                        v = ctx
-                            .state
-                            .builtins
-                            .get(ctx, function.global_names[i].to_owned());
+                        v = ctx.state.builtins.get(ctx, function.global_names[i]);
                     }
                     frame.stack.push(v);
                 }
@@ -124,11 +127,8 @@ impl<'gc> ThreadState<'gc> {
                     frame.locals[i] = frame.stack.pop().unwrap();
                 }
                 OpCode::StoreGlobal(i) => {
-                    ctx.state.globals.set(
-                        ctx,
-                        function.global_names[i].to_owned(),
-                        frame.stack.pop().unwrap(),
-                    );
+                    let value = frame.stack.pop().unwrap();
+                    ctx.state.globals.set(ctx, function.global_names[i], value);
                 }
                 OpCode::StoreUpvalue(i) => {
                     frame.upvalues[i].set(&ctx, frame.stack.pop().unwrap());
@@ -141,81 +141,72 @@ impl<'gc> ThreadState<'gc> {
                     }
                 }
                 OpCode::ImportFrom(i) => {
-                    let tos = *frame.stack.last().unwrap();
-                    if let (Value::Table(module), RuntimeConstValue::Str(v)) =
-                        (tos, function.consts[i])
+                    let module = frame.stack.last().copied().unwrap();
+                    if let (Value::Table(module), RuntimeConstValue::Str(key)) =
+                        (module, function.consts[i])
                     {
-                        frame.stack.push(module.get(ctx, v));
+                        frame.stack.push(module.get(ctx, key));
                     } else {
-                        return Err(operator_error!(code, tos));
+                        return Err(operator_error!(code, module));
                     }
                 }
                 OpCode::ImportGlob => {
-                    let tos = frame.stack.pop().unwrap();
-                    if let Value::Table(module) = tos {
-                        for (k, v) in (0..module.len()).map(|i| module.get_index(i).unwrap()) {
+                    let module = frame.stack.pop().unwrap();
+                    if let Value::Table(module) = module {
+                        for (k, v) in module.iter() {
                             if let Value::Str(k) = k {
                                 ctx.state.globals.set(ctx, k, v);
                             }
                         }
                     } else {
-                        return Err(operator_error!(code, tos));
+                        return Err(operator_error!(code, module));
                     };
                 }
                 OpCode::BuildTable(i) => {
-                    let temp = frame.stack.split_off(frame.stack.len() - i * 2);
-                    let table = Table::new(&ctx);
-                    for i in temp.chunks_exact(2) {
-                        table.set(ctx, i[0], i[1]);
-                    }
-                    frame.stack.push(Value::Table(table));
+                    let table = TableEntries::from_iter(
+                        frame
+                            .stack
+                            .split_off(frame.stack.len() - i * 2)
+                            .chunks_exact(2)
+                            .map(|chunk| (chunk[0], chunk[1])),
+                    )
+                    .into_value(ctx);
+                    frame.stack.push(table);
                 }
                 OpCode::BuildList(i) => {
-                    let temp = frame.stack.split_off(frame.stack.len() - i);
-                    frame.stack.push(temp.into_value(ctx));
+                    let table = frame.stack.split_off(frame.stack.len() - i).into_value(ctx);
+                    frame.stack.push(table);
                 }
-                OpCode::GetAttr => bin_op!(get_attr),
-                OpCode::GetItem => bin_op!(get_item),
+                OpCode::GetAttr => get_table!(get_attr),
+                OpCode::GetItem => get_table!(get_item),
                 OpCode::GetMeta => {
-                    let tos = frame.stack.pop().unwrap();
-                    frame
-                        .stack
-                        .push(tos.metatable().map_or(Value::Null, Value::Table));
+                    let value = frame.stack.pop().unwrap();
+                    let metatable = value.metatable().into_value(ctx);
+                    frame.stack.push(metatable);
                 }
                 OpCode::SetAttr => set_table!(set_attr),
                 OpCode::SetItem => set_table!(set_item),
                 OpCode::SetMeta => {
-                    let tos = frame.stack.pop().unwrap();
-                    let tos1 = frame.stack.pop().unwrap();
-                    match tos {
-                        Value::Table(t) => match tos1 {
-                            Value::Null => {
-                                t.set_metatable(&ctx, None);
-                            }
-                            Value::Table(tos1) => {
-                                t.set_metatable(&ctx, Some(tos1));
-                            }
-                            _ => return Err(operator_error!(code, tos, tos1)),
-                        },
-                        _ => return Err(operator_error!(code, tos, tos1)),
+                    let table = frame.stack.pop().unwrap();
+                    let metatable = frame.stack.pop().unwrap();
+                    match (table, metatable) {
+                        (Value::Table(table), Value::Null) => table.set_metatable(&ctx, None),
+                        (Value::Table(table), Value::Table(metatable)) => {
+                            table.set_metatable(&ctx, Some(metatable))
+                        }
+                        _ => return Err(operator_error!(code, table, metatable)),
                     }
                 }
                 OpCode::Neg => {
-                    let tos = frame.stack.pop().unwrap();
-                    match meta_ops::neg(ctx, tos)? {
-                        meta_ops::MetaResult::Value(v) => frame.stack.push(v),
-                        meta_ops::MetaResult::Call(callee, args) => {
-                            self.call_function(ctx, callee, args.to_vec())?;
-                            break;
-                        }
-                    }
+                    let value = frame.stack.pop().unwrap();
+                    call_meta_method!(meta_ops::neg(ctx, value));
                 }
                 OpCode::Not => {
-                    let tos = frame.stack.pop().unwrap();
-                    if let Value::Bool(v) = tos {
+                    let value = frame.stack.pop().unwrap();
+                    if let Value::Bool(v) = value {
                         frame.stack.push(Value::Bool(!v));
                     } else {
-                        return Err(operator_error!(code, tos));
+                        return Err(operator_error!(code, value));
                     }
                 }
                 OpCode::Add => bin_op!(add),
@@ -230,91 +221,85 @@ impl<'gc> ThreadState<'gc> {
                 OpCode::Lt => bin_op!(lt),
                 OpCode::Le => bin_op!(le),
                 OpCode::Identical => {
-                    let tos = frame.stack.pop().unwrap();
-                    let tos1 = frame.stack.pop().unwrap();
-                    frame.stack.push(Value::Bool(tos1.identical(tos)));
+                    let rhs = frame.stack.pop().unwrap();
+                    let lhs = frame.stack.pop().unwrap();
+                    frame.stack.push(Value::Bool(lhs.identical(rhs)));
                 }
                 OpCode::NotIdentical => {
-                    let tos = frame.stack.pop().unwrap();
-                    let tos1 = frame.stack.pop().unwrap();
-                    frame.stack.push(Value::Bool(!tos1.identical(tos)));
+                    let rhs = frame.stack.pop().unwrap();
+                    let lhs = frame.stack.pop().unwrap();
+                    frame.stack.push(Value::Bool(!lhs.identical(rhs)));
                 }
                 OpCode::TypeCheck(ty) => {
-                    let tos = frame.stack.pop().unwrap();
-                    frame.stack.push(Value::Bool(tos.value_type() == ty));
+                    let value = frame.stack.pop().unwrap();
+                    frame.stack.push(Value::Bool(value.value_type() == ty));
                 }
                 OpCode::GetLen => {
-                    let tos = frame.stack.pop().unwrap();
-                    match meta_ops::len(ctx, tos)? {
-                        meta_ops::MetaResult::Value(v) => frame.stack.push(v),
-                        meta_ops::MetaResult::Call(callee, args) => {
-                            self.call_function(ctx, callee, args.to_vec())?;
-                            break;
-                        }
-                    }
+                    let value = frame.stack.pop().unwrap();
+                    call_meta_method!(meta_ops::len(ctx, value));
                 }
                 OpCode::Iter => {
-                    let tos = frame.stack.pop().unwrap();
-                    frame.stack.push(meta_ops::iter(ctx, tos)?.into());
+                    let value = frame.stack.pop().unwrap();
+                    frame.stack.push(meta_ops::iter(ctx, value)?.into());
                 }
                 OpCode::Jump(JumpTarget(i)) => {
                     frame.pc = i;
                     continue;
                 }
                 OpCode::JumpPopIfNull(JumpTarget(i)) => {
-                    let tos = frame.stack.last().unwrap();
-                    if let Value::Null = tos {
+                    let value = frame.stack.last().copied().unwrap();
+                    if let Value::Null = value {
                         frame.stack.pop().unwrap();
                         frame.pc = i;
                         continue;
                     }
                 }
                 OpCode::PopJumpIfTrue(JumpTarget(i)) => {
-                    let tos = frame.stack.pop().unwrap();
-                    if let Value::Bool(v) = tos {
-                        if v {
+                    let value = frame.stack.pop().unwrap();
+                    match value {
+                        Value::Bool(true) => {
                             frame.pc = i;
                             continue;
                         }
-                    } else {
-                        return Err(operator_error!(code, tos));
+                        Value::Bool(false) => (),
+                        _ => return Err(operator_error!(code, value)),
                     }
                 }
                 OpCode::PopJumpIfFalse(JumpTarget(i)) => {
-                    let tos = frame.stack.pop().unwrap();
-                    if let Value::Bool(v) = tos {
-                        if !v {
+                    let value = frame.stack.pop().unwrap();
+                    match value {
+                        Value::Bool(true) => (),
+                        Value::Bool(false) => {
                             frame.pc = i;
                             continue;
                         }
-                    } else {
-                        return Err(operator_error!(code, tos));
+                        _ => return Err(operator_error!(code, value)),
                     }
                 }
                 OpCode::JumpIfTrueOrPop(JumpTarget(i)) => {
-                    let tos = frame.stack.last().unwrap();
-                    if let Value::Bool(v) = tos {
-                        if *v {
+                    let value = frame.stack.last().copied().unwrap();
+                    match value {
+                        Value::Bool(true) => {
                             frame.pc = i;
                             continue;
-                        } else {
+                        }
+                        Value::Bool(false) => {
                             frame.stack.pop().unwrap();
                         }
-                    } else {
-                        return Err(operator_error!(code, tos));
+                        _ => return Err(operator_error!(code, value)),
                     }
                 }
                 OpCode::JumpIfFalseOrPop(JumpTarget(i)) => {
-                    let tos = frame.stack.last().unwrap();
-                    if let Value::Bool(v) = tos {
-                        if !*v {
-                            frame.pc = i;
-                            continue;
-                        } else {
+                    let value = frame.stack.last().copied().unwrap();
+                    match value {
+                        Value::Bool(true) => {
                             frame.stack.pop().unwrap();
                         }
-                    } else {
-                        return Err(operator_error!(code, tos));
+                        Value::Bool(false) => {
+                            frame.pc = i;
+                            continue;
+                        }
+                        _ => return Err(operator_error!(code, value)),
                     }
                 }
                 OpCode::Call(i) => {
@@ -352,8 +337,8 @@ impl<'gc> ThreadState<'gc> {
                 }
                 OpCode::Throw => {
                     debug_assert_eq!(frame.stack.len(), 1);
-                    let tos = frame.stack.pop().unwrap();
-                    return Err(Error::new(LuciaError::Error(tos)));
+                    let value = frame.stack.pop().unwrap();
+                    return Err(Error::new(LuciaError::Error(value)));
                 }
                 OpCode::ReturnCall(i) => {
                     let args = frame.stack.split_off(frame.stack.len() - i);

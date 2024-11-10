@@ -1,5 +1,3 @@
-use std::mem;
-
 use gc_arena::{lock::RefLock, Collect, Gc, Mutation};
 use indexmap::IndexMap;
 
@@ -82,12 +80,8 @@ impl<'gc> Table<'gc> {
         self.0.borrow().metatable
     }
 
-    pub fn set_metatable(
-        self,
-        mc: &Mutation<'gc>,
-        metatable: Option<Table<'gc>>,
-    ) -> Option<Table<'gc>> {
-        mem::replace(&mut self.0.borrow_mut(mc).metatable, metatable)
+    pub fn set_metatable(self, mc: &Mutation<'gc>, metatable: Option<Table<'gc>>) {
+        self.0.borrow_mut(mc).metatable = metatable;
     }
 
     pub fn iter(self) -> TableIter<'gc> {

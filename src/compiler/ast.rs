@@ -509,16 +509,16 @@ pub enum BinOp {
     Or,
     /// The `==` operator (equality)
     Eq,
+    /// The `!=` operator (not equal to)
+    Ne,
     /// The `<` operator (less than)
     Lt,
     /// The `<=` operator (less than or equal to)
     Le,
-    /// The `!=` operator (not equal to)
-    Ne,
-    /// The `>=` operator (greater than or equal to)
-    Ge,
     /// The `>` operator (greater than)
     Gt,
+    /// The `>=` operator (greater than or equal to)
+    Ge,
     /// The '===' operator (identical)
     Identical,
     /// The '!==' operator (not identical)
@@ -538,11 +538,11 @@ impl fmt::Display for BinOp {
             BinOp::And => write!(f, "and"),
             BinOp::Or => write!(f, "or"),
             BinOp::Eq => write!(f, "=="),
+            BinOp::Ne => write!(f, "!="),
             BinOp::Lt => write!(f, "<"),
             BinOp::Le => write!(f, "<="),
-            BinOp::Ne => write!(f, "!="),
-            BinOp::Ge => write!(f, ">"),
-            BinOp::Gt => write!(f, ">="),
+            BinOp::Gt => write!(f, ">"),
+            BinOp::Ge => write!(f, ">="),
             BinOp::Identical => write!(f, "==="),
             BinOp::NotIdentical => write!(f, "!=="),
             BinOp::Is => write!(f, "is"),
@@ -553,25 +553,18 @@ impl fmt::Display for BinOp {
 impl BinOp {
     pub fn precedence(&self) -> u8 {
         match self {
-            BinOp::Mul => 5,
-            BinOp::Div => 5,
-            BinOp::Rem => 5,
-
-            BinOp::Add => 4,
-            BinOp::Sub => 4,
-
-            BinOp::Eq => 3,
-            BinOp::Lt => 3,
-            BinOp::Le => 3,
-            BinOp::Ne => 3,
-            BinOp::Ge => 3,
-            BinOp::Gt => 3,
-            BinOp::Identical => 3,
-            BinOp::NotIdentical => 3,
-            BinOp::Is => 3,
-
+            BinOp::Mul | BinOp::Div | BinOp::Rem => 5,
+            BinOp::Add | BinOp::Sub => 4,
+            BinOp::Eq
+            | BinOp::Ne
+            | BinOp::Lt
+            | BinOp::Le
+            | BinOp::Gt
+            | BinOp::Ge
+            | BinOp::Identical
+            | BinOp::NotIdentical
+            | BinOp::Is => 3,
             BinOp::And => 2,
-
             BinOp::Or => 1,
         }
     }
