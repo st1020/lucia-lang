@@ -185,7 +185,7 @@ pub enum StmtKind<'a, S> {
     Fn {
         glo: bool,
         name: Box<'a, Ident<'a, S>>,
-        function: Function<'a, S>,
+        function: Box<'a, Function<'a, S>>,
     },
     GloAssign {
         left: Box<'a, TypedIdent<'a, S>>,
@@ -322,7 +322,8 @@ impl<'a, S> From<Box<'a, Ident<'a, S>>> for Expr<'a, S> {
 pub enum ExprKind<'a, S> {
     Lit(Box<'a, Lit<'a, S>>),
     Ident(Box<'a, Ident<'a, S>>),
-    Function(Function<'a, S>),
+    Paren(Box<'a, Expr<'a, S>>),
+    Function(Box<'a, Function<'a, S>>),
     Table {
         properties: Vec<'a, TableProperty<'a, S>>,
     },
@@ -363,6 +364,7 @@ impl<S: AsRef<str>> fmt::Display for ExprKind<'_, S> {
         match self {
             ExprKind::Lit(lit) => write!(f, "{lit}"),
             ExprKind::Ident(ident) => write!(f, "{ident}"),
+            ExprKind::Paren(expr) => write!(f, "({expr})"),
             ExprKind::Function(function) => {
                 if function.kind == FunctionKind::Function {
                     write!(f, "fn {function}")
@@ -384,12 +386,12 @@ impl<S: AsRef<str>> fmt::Display for ExprKind<'_, S> {
                     write!(f, "[\n{}\n]", items.iter().join(",\n").indent(4))
                 }
             }
-            ExprKind::Unary { operator, argument } => write!(f, "{operator} {argument}"),
+            ExprKind::Unary { operator, argument } => write!(f, "{operator}{argument}"),
             ExprKind::Binary {
                 operator,
                 left,
                 right,
-            } => write!(f, "({left} {operator} {right})"),
+            } => write!(f, "{left} {operator} {right}"),
             ExprKind::TypeCheck { left, right } => write!(f, "{left} is {right}"),
             ExprKind::Member {
                 table,

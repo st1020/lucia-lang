@@ -718,6 +718,7 @@ impl<'a, S: AsRef<str> + Copy + Eq + Ord> TypeChecker<'a, S> {
                 .get_symbol_type(ident)
                 .cloned()
                 .unwrap_or(Type::Unknown),
+            ExprKind::Paren(expr) => self.check_expr(expr)?,
             ExprKind::Function(function) => self.check_function(function)?,
             ExprKind::Table { properties } => {
                 let mut pairs = Vec::new();

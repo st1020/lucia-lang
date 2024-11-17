@@ -414,6 +414,7 @@ impl<S: AsRef<str> + Copy> SemanticAnalyzer<S> {
         match &expr.kind {
             ExprKind::Lit(_) => (),
             ExprKind::Ident(ident) => self.declare_read(ident),
+            ExprKind::Paren(expr) => self.analyze_expr(expr),
             ExprKind::Function(function) => self.analyze_function(function),
             ExprKind::Table { properties } => {
                 for property in properties {

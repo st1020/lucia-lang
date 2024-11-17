@@ -723,6 +723,7 @@ impl<'a, S: AsRef<str> + Copy> CodeGenerator<'a, S> {
                 self.push_code(OpCode::LoadConst(const_id));
             }
             ExprKind::Ident(ident) => self.load(ident),
+            ExprKind::Paren(expr) => self.gen_expr(expr)?,
             ExprKind::Function(function) => self.gen_function(function),
             ExprKind::Table { properties } => {
                 for TableProperty { key, value, .. } in properties {
