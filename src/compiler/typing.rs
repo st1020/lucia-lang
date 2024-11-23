@@ -73,7 +73,7 @@ pub enum Type<S> {
     Union(Vec<Type<S>>),
 }
 
-impl<S: AsRef<str> + Copy + Eq + Ord> Type<S> {
+impl<S: AsRef<str> + Clone + Eq + Ord> Type<S> {
     pub fn any_table() -> Type<S> {
         Type::Table {
             pairs: Vec::new(),
@@ -232,7 +232,7 @@ impl<S: AsRef<str> + Copy + Eq + Ord> Type<S> {
     }
 }
 
-impl<S: AsRef<str> + Copy + Eq + Ord> ops::BitOr for Type<S> {
+impl<S: AsRef<str> + Clone + Eq + Ord> ops::BitOr for Type<S> {
     type Output = Type<S>;
 
     fn bitor(self, rhs: Self) -> Self::Output {
@@ -240,7 +240,7 @@ impl<S: AsRef<str> + Copy + Eq + Ord> ops::BitOr for Type<S> {
     }
 }
 
-impl<S: AsRef<str> + Copy + Eq + Ord> fmt::Display for Type<S> {
+impl<S: AsRef<str> + Clone + Eq + Ord> fmt::Display for Type<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Type::Unknown => write!(f, "unknown"),
@@ -305,9 +305,9 @@ impl<S: AsRef<str> + Copy + Eq + Ord> fmt::Display for Type<S> {
     }
 }
 
-impl<S: AsRef<str> + Copy + Eq + Ord> From<&TyKind<'_, S>> for Type<S> {
-    fn from(value: &TyKind<'_, S>) -> Self {
-        match &value {
+impl<S: AsRef<str> + Clone + Eq + Ord> From<TyKind<S>> for Type<S> {
+    fn from(value: TyKind<S>) -> Self {
+        match value {
             TyKind::Lit(lit) => lit.kind.into(),
             TyKind::Ident(ident) => match ident.name.as_ref() {
                 "never" => Type::Never,
@@ -320,12 +320,10 @@ impl<S: AsRef<str> + Copy + Eq + Ord> From<&TyKind<'_, S>> for Type<S> {
             },
             TyKind::Table { pairs, others } => Type::Table {
                 pairs: pairs
-                    .iter()
-                    .map(|(name, t)| (LiteralType::Str(*name), (&t.kind).into()))
+                    .into_iter()
+                    .map(|(name, t)| (LiteralType::Str(name), t.kind.into()))
                     .collect(),
-                others: others
-                    .as_ref()
-                    .map(|t| (Box::new((&t.0.kind).into()), Box::new((&t.1.kind).into()))),
+                others: others.map(|t| (Box::new(t.0.kind.into()), Box::new(t.1.kind.into()))),
             },
             TyKind::Function {
                 params,
@@ -333,33 +331,18 @@ impl<S: AsRef<str> + Copy + Eq + Ord> From<&TyKind<'_, S>> for Type<S> {
                 returns,
                 throws,
             } => Type::Function {
-                params: params.iter().map(|x| (&x.kind).into()).collect(),
-                variadic: Box::new(
-                    variadic
-                        .as_ref()
-                        .map(|x| (&x.kind).into())
-                        .unwrap_or(Type::Null),
-                ),
-                returns: Box::new(
-                    returns
-                        .as_ref()
-                        .map(|x| (&x.kind).into())
-                        .unwrap_or(Type::Null),
-                ),
-                throws: Box::new(
-                    throws
-                        .as_ref()
-                        .map(|x| (&x.kind).into())
-                        .unwrap_or(Type::Null),
-                ),
+                params: params.into_iter().map(|x| x.kind.into()).collect(),
+                variadic: Box::new(variadic.map(|x| x.kind.into()).unwrap_or(Type::Null)),
+                returns: Box::new(returns.map(|x| x.kind.into()).unwrap_or(Type::Null)),
+                throws: Box::new(throws.map(|x| x.kind.into()).unwrap_or(Type::Null)),
             },
-            TyKind::Option(t) => Type::from(&t.kind).optional(),
-            TyKind::Union(t) => Type::Union(t.iter().map(|x| (&x.kind).into()).collect()),
+            TyKind::Option(t) => Type::from(t.kind).optional(),
+            TyKind::Union(t) => Type::Union(t.into_iter().map(|x| x.kind.into()).collect()),
         }
     }
 }
 
-impl<S: AsRef<str> + Copy> From<LitKind<S>> for Type<S> {
+impl<S: AsRef<str> + Clone> From<LitKind<S>> for Type<S> {
     fn from(value: LitKind<S>) -> Self {
         match value {
             LitKind::Null => Type::Null,
@@ -411,8 +394,8 @@ impl<S> Context<S> {
 }
 
 /// Check type.
-pub fn check_type<S: AsRef<str> + Copy + Eq + Ord>(
-    program: &Program<'_, S>,
+pub fn check_type<S: AsRef<str> + Clone + Eq + Ord>(
+    program: &Program<S>,
     semantic: &Semantic<S>,
 ) -> Vec<TypeError<S>> {
     TypeChecker::new(semantic).check_type(program)
@@ -427,7 +410,7 @@ struct TypeChecker<'a, S> {
     errors: Vec<TypeError<S>>,
 }
 
-impl<'a, S: AsRef<str> + Copy + Eq + Ord> TypeChecker<'a, S> {
+impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
     fn new(semantic: &'a Semantic<S>) -> Self {
         Self {
             semantic,
@@ -442,11 +425,11 @@ impl<'a, S: AsRef<str> + Copy + Eq + Ord> TypeChecker<'a, S> {
         &mut self.contexts[self.current_function_id]
     }
 
-    fn get_symbol_type(&self, ident: &Ident<'_, S>) -> Option<&Type<S>> {
+    fn get_symbol_type(&self, ident: &Ident<S>) -> Option<&Type<S>> {
         self.symbol_type.get(&ident.symbol_id.get().unwrap())
     }
 
-    fn set_symbol_type(&mut self, ident: &Ident<'_, S>, ty: Type<S>) -> Result<(), TypeError<S>> {
+    fn set_symbol_type(&mut self, ident: &Ident<S>, ty: Type<S>) -> Result<(), TypeError<S>> {
         if let Some(old_type) = self.get_symbol_type(ident) {
             ty.expect_is_sub_type_of(old_type)?;
         } else {
@@ -455,14 +438,14 @@ impl<'a, S: AsRef<str> + Copy + Eq + Ord> TypeChecker<'a, S> {
         Ok(())
     }
 
-    fn check_type(mut self, program: &Program<'_, S>) -> Vec<TypeError<S>> {
+    fn check_type(mut self, program: &Program<S>) -> Vec<TypeError<S>> {
         if let Err(error) = self.check_function(&program.function) {
             self.errors.push(error);
         }
         self.errors
     }
 
-    fn check_function(&mut self, function: &Function<'_, S>) -> Result<Type<S>, TypeError<S>> {
+    fn check_function(&mut self, function: &Function<S>) -> Result<Type<S>, TypeError<S>> {
         self.current_function_id = function.function_id.get().unwrap();
 
         let param_types: Vec<Type<S>> = function
@@ -472,7 +455,7 @@ impl<'a, S: AsRef<str> + Copy + Eq + Ord> TypeChecker<'a, S> {
                 param
                     .ty
                     .as_ref()
-                    .map(|t| (&t.kind).into())
+                    .map(|t| t.kind.clone().into())
                     .unwrap_or(Type::Any)
             })
             .collect();
@@ -480,9 +463,10 @@ impl<'a, S: AsRef<str> + Copy + Eq + Ord> TypeChecker<'a, S> {
             .variadic
             .as_ref()
             .and_then(|x| x.ty.as_ref())
-            .map(|t| (&t.kind).into());
-        let returns_type: Option<Type<S>> = function.returns.as_ref().map(|t| (&t.kind).into());
-        let throws_type: Option<Type<S>> = function.throws.as_ref().map(|t| (&t.kind).into());
+            .map(|t| t.kind.clone().into());
+        let returns_type: Option<Type<S>> =
+            function.returns.as_ref().map(|t| t.kind.clone().into());
+        let throws_type: Option<Type<S>> = function.throws.as_ref().map(|t| t.kind.clone().into());
 
         for (param, t) in function.params.iter().zip(param_types.iter()) {
             self.set_symbol_type(&param.ident, t.clone())?;
@@ -518,7 +502,7 @@ impl<'a, S: AsRef<str> + Copy + Eq + Ord> TypeChecker<'a, S> {
         })
     }
 
-    fn check_block(&mut self, block: &Block<'_, S>) {
+    fn check_block(&mut self, block: &Block<S>) {
         for stmt in &block.body {
             if let Err(e) = self.check_stmt(stmt) {
                 self.errors.push(e)
@@ -526,7 +510,7 @@ impl<'a, S: AsRef<str> + Copy + Eq + Ord> TypeChecker<'a, S> {
         }
     }
 
-    fn check_stmt(&mut self, stmt: &Stmt<'_, S>) -> Result<(), TypeError<S>> {
+    fn check_stmt(&mut self, stmt: &Stmt<S>) -> Result<(), TypeError<S>> {
         match &stmt.kind {
             StmtKind::If {
                 test,
@@ -641,7 +625,7 @@ impl<'a, S: AsRef<str> + Copy + Eq + Ord> TypeChecker<'a, S> {
             StmtKind::GloAssign { left, right } => {
                 let right_type = self.check_expr(right)?;
                 if let Some(t) = &left.ty {
-                    self.set_symbol_type(&left.ident, (&t.kind).into())?;
+                    self.set_symbol_type(&left.ident, t.kind.clone().into())?;
                 }
                 self.set_symbol_type(&left.ident, right_type)?;
             }
@@ -685,13 +669,13 @@ impl<'a, S: AsRef<str> + Copy + Eq + Ord> TypeChecker<'a, S> {
 
     fn check_assign(
         &mut self,
-        left: &AssignLeft<'_, S>,
+        left: &AssignLeft<S>,
         right_type: Type<S>,
     ) -> Result<(), TypeError<S>> {
         match left {
             AssignLeft::Ident(ident) => {
                 if let Some(t) = &ident.ty {
-                    self.set_symbol_type(&ident.ident, (&t.kind).into())?;
+                    self.set_symbol_type(&ident.ident, t.kind.clone().into())?;
                 }
                 self.set_symbol_type(&ident.ident, right_type)?;
             }
@@ -711,9 +695,9 @@ impl<'a, S: AsRef<str> + Copy + Eq + Ord> TypeChecker<'a, S> {
         Ok(())
     }
 
-    fn check_expr(&mut self, expr: &Expr<'_, S>) -> Result<Type<S>, TypeError<S>> {
+    fn check_expr(&mut self, expr: &Expr<S>) -> Result<Type<S>, TypeError<S>> {
         Ok(match &expr.kind {
-            ExprKind::Lit(lit) => lit.kind.into(),
+            ExprKind::Lit(lit) => lit.kind.clone().into(),
             ExprKind::Ident(ident) => self
                 .get_symbol_type(ident)
                 .cloned()
@@ -926,14 +910,11 @@ impl<'a, S: AsRef<str> + Copy + Eq + Ord> TypeChecker<'a, S> {
         })
     }
 
-    fn check_member_kind(
-        &mut self,
-        member_kind: &MemberKind<'_, S>,
-    ) -> Result<Type<S>, TypeError<S>> {
+    fn check_member_kind(&mut self, member_kind: &MemberKind<S>) -> Result<Type<S>, TypeError<S>> {
         match member_kind {
             MemberKind::Bracket(expr) => self.check_expr(expr),
             MemberKind::Dot(ident) | MemberKind::DoubleColon(ident) => {
-                Ok(Type::Literal(LiteralType::Str(ident.name)))
+                Ok(Type::Literal(LiteralType::Str(ident.name.clone())))
             }
         }
     }

@@ -1,17 +1,12 @@
 //! The string interner.
 
-use std::{borrow::Borrow, collections::HashSet, fmt, hash, ops};
+use std::{borrow::Borrow, collections::HashSet, hash, rc::Rc};
 
-use bumpalo::{collections::String, Bump};
 use rustc_hash::FxBuildHasher;
 
 /// The string interner.
-///
-/// The interned string must implement `Copy` because a interned string is used in bumpalo's bump
-/// arena. If the interned string is `Arc<str>`, when bump arena freed, the `Drop` will not be
-/// called, which will cause the memory leak.
 pub trait StringInterner {
-    type String: AsRef<str> + Copy;
+    type String: AsRef<str> + Clone;
 
     fn intern(&mut self, s: &str) -> Self::String;
 }
@@ -68,66 +63,25 @@ impl<S: AsRef<str>> AsRef<str> for InternedString<S> {
     }
 }
 
-/// An interned atom string, a string pointer in bumpalo's bump arena.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Atom<'a>(&'a String<'a>);
-
-impl<'a> Atom<'a> {
-    pub fn as_str(&self) -> &str {
-        self.0.as_str()
-    }
-}
-
-impl ops::Deref for Atom<'_> {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        self.0
-    }
-}
-
-impl AsRef<str> for Atom<'_> {
-    fn as_ref(&self) -> &str {
-        self.0.as_str()
-    }
-}
-
-impl Borrow<str> for Atom<'_> {
+impl<S: AsRef<str>> Borrow<str> for InternedString<S> {
     fn borrow(&self) -> &str {
-        self.0.borrow()
+        self.as_ref()
     }
 }
 
-impl fmt::Display for Atom<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
+/// A basic string interner.
+#[derive(Debug, Default)]
+pub struct BasicInterner(HashSet<Rc<str>, FxBuildHasher>);
 
-/// The bump string interner.
-pub struct BumpInterner<'a> {
-    allocator: &'a Bump,
-    interner: HashSet<Atom<'a>, FxBuildHasher>,
-}
-
-impl<'a> BumpInterner<'a> {
-    pub fn new(allocator: &'a Bump) -> Self {
-        Self {
-            allocator,
-            interner: HashSet::with_hasher(FxBuildHasher),
-        }
-    }
-}
-
-impl<'a> StringInterner for BumpInterner<'a> {
-    type String = Atom<'a>;
+impl StringInterner for BasicInterner {
+    type String = Rc<str>;
 
     fn intern(&mut self, s: &str) -> Self::String {
-        if let Some(s) = self.interner.get(s) {
-            *s
+        if let Some(s) = self.0.get(s) {
+            s.clone()
         } else {
-            let s = Atom(self.allocator.alloc(String::from_str_in(s, self.allocator)));
-            self.interner.insert(s);
+            let s = Rc::from(Box::from(s));
+            self.0.insert(Rc::clone(&s));
             s
         }
     }

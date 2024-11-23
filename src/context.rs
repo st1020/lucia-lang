@@ -128,9 +128,8 @@ impl Lucia {
 
     pub fn compile(&mut self, input: &str) -> Result<StashedRuntimeCode, Vec<CompilerError>> {
         self.enter(|ctx| {
-            let allocator = &bumpalo::Bump::new();
             let interner = StrInterner::new(ctx);
-            let code = compile(allocator, interner, input)?;
+            let code = compile(interner, input)?;
             let runtime_code = RuntimeCode::new(&ctx, code);
             Ok(ctx.state.registry.stash(&ctx, runtime_code))
         })
