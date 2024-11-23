@@ -3,9 +3,11 @@
 mod escape;
 mod float;
 mod format;
+mod locatable;
 mod macros;
 
 pub use escape::*;
 pub use float::*;
 pub(crate) use format::*;
+pub use locatable::*;
 pub(crate) use macros::*;

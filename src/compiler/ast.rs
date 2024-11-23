@@ -4,12 +4,22 @@ use std::{cell::Cell, fmt};
 
 use text_size::TextRange;
 
-use crate::utils::{escape_str, Float, Indent, Join};
+use crate::utils::{escape_str, Float, Indent, Join, Locatable};
 
 use super::{
     index::{FunctionId, ScopeId, SymbolId},
     value::ValueType,
 };
+
+macro_rules! impl_locatable {
+    ($name:ident) => {
+        impl<S> Locatable for $name<S> {
+            fn range(&self) -> TextRange {
+                self.range
+            }
+        }
+    };
+}
 
 /// The root AST node.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -103,6 +113,8 @@ pub struct Block<S> {
     pub scope_id: Cell<Option<ScopeId>>,
 }
 
+impl_locatable!(Block);
+
 impl<S: AsRef<str>> fmt::Display for Block<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{{")?;
@@ -119,6 +131,8 @@ pub struct Stmt<S> {
     pub kind: StmtKind<S>,
     pub range: TextRange,
 }
+
+impl_locatable!(Stmt);
 
 impl<S: AsRef<str>> fmt::Display for Stmt<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -292,6 +306,8 @@ pub struct Expr<S> {
     pub range: TextRange,
 }
 
+impl_locatable!(Expr);
+
 impl<S: AsRef<str>> fmt::Display for Expr<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.kind)
@@ -424,6 +440,8 @@ pub struct Lit<S> {
     pub range: TextRange,
 }
 
+impl_locatable!(Lit);
+
 impl<S: AsRef<str>> fmt::Display for Lit<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.kind)
@@ -464,6 +482,8 @@ pub struct Ident<S> {
     pub range: TextRange,
     pub symbol_id: Cell<Option<SymbolId>>,
 }
+
+impl_locatable!(Ident);
 
 impl<S: AsRef<str>> fmt::Display for Ident<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -643,6 +663,8 @@ pub struct TableProperty<S> {
     pub range: TextRange,
 }
 
+impl_locatable!(TableProperty);
+
 impl<S: AsRef<str>> fmt::Display for TableProperty<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}: {}", self.key, self.value)
@@ -680,6 +702,8 @@ pub struct TypedIdent<S> {
     pub range: TextRange,
 }
 
+impl_locatable!(TypedIdent);
+
 impl<S: AsRef<str>> fmt::Display for TypedIdent<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(t) = &self.ty {
@@ -708,6 +732,8 @@ pub struct MatchCase<S> {
     pub range: TextRange,
 }
 
+impl_locatable!(MatchCase);
+
 impl<S: AsRef<str>> fmt::Display for MatchCase<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} => {}", self.patterns, self.body)
@@ -721,6 +747,8 @@ pub struct Patterns<S> {
     pub range: TextRange,
 }
 
+impl_locatable!(Patterns);
+
 impl<S: AsRef<str>> fmt::Display for Patterns<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.patterns.iter().join(" | "))
@@ -733,6 +761,8 @@ pub struct Pattern<S> {
     pub kind: PatternKind<S>,
     pub range: TextRange,
 }
+
+impl_locatable!(Pattern);
 
 impl<S: AsRef<str>> fmt::Display for Pattern<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -785,6 +815,8 @@ pub struct Ty<S> {
     pub kind: TyKind<S>,
     pub range: TextRange,
 }
+
+impl_locatable!(Ty);
 
 impl<S: AsRef<str>> fmt::Display for Ty<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

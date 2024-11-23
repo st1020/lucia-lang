@@ -4,6 +4,8 @@ use std::fmt;
 
 use text_size::TextRange;
 
+use crate::utils::Locatable;
+
 /// Parsed token.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Token {
@@ -16,6 +18,12 @@ pub struct Token {
 impl Token {
     pub fn new(kind: TokenKind, range: TextRange) -> Token {
         Token { kind, range }
+    }
+}
+
+impl Locatable for Token {
+    fn range(&self) -> TextRange {
+        self.range
     }
 }
 

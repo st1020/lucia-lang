@@ -5,7 +5,7 @@ use std::num::{ParseFloatError, ParseIntError};
 use text_size::TextRange;
 use thiserror::Error;
 
-use crate::utils::{EscapeError, Join};
+use crate::utils::{EscapeError, Join, Locatable};
 
 use super::token::TokenKind;
 
@@ -46,4 +46,19 @@ pub enum CompilerError {
     ReturnOutsideFunction { range: TextRange },
     #[error("throw outside loop {:?}", .range)]
     ThrowOutsideFunction { range: TextRange },
+}
+
+impl Locatable for CompilerError {
+    fn range(&self) -> TextRange {
+        match self {
+            CompilerError::UnexpectedToken { range, .. } => *range,
+            CompilerError::ParseIntError { range, .. } => *range,
+            CompilerError::ParseFloatError { range, .. } => *range,
+            CompilerError::EscapeError { range, .. } => *range,
+            CompilerError::BreakOutsideLoop { range, .. } => *range,
+            CompilerError::ContinueOutsideLoop { range, .. } => *range,
+            CompilerError::ReturnOutsideFunction { range, .. } => *range,
+            CompilerError::ThrowOutsideFunction { range, .. } => *range,
+        }
+    }
 }
