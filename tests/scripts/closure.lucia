@@ -41,3 +41,11 @@ add2(1)
 assert(get2() == 1)
 sub2(2)
 assert(get2() == -1)
+
+bar = |i| {
+    if i == 0 {
+        return i
+    }
+    return bar(i - 1)
+}
+assert(bar(10) == 0)

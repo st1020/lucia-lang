@@ -296,41 +296,41 @@ impl<S: AsRef<str> + Clone> SemanticAnalyzer<S> {
                 name,
                 function,
             } => {
-                self.analyze_function(function);
                 if *glo {
                     self.declare_symbol_and_write_reference(name, SymbolKind::Global);
                 } else {
                     self.declare_write_reference(name);
                 }
+                self.analyze_function(function);
             }
             StmtKind::GloAssign { left, right } => {
-                self.analyze_expr(right);
                 self.declare_symbol_and_write_reference(&left.ident, SymbolKind::Global);
+                self.analyze_expr(right);
             }
             StmtKind::Assign { left, right } => {
-                self.analyze_expr(right);
                 self.analyze_assign_left(left);
+                self.analyze_expr(right);
             }
             StmtKind::AssignOp {
                 operator: _,
                 left,
                 right,
             } => {
-                self.analyze_expr(right);
                 self.analyze_assign_left(left);
+                self.analyze_expr(right);
             }
             StmtKind::AssignUnpack { left, right } => {
-                self.analyze_expr(right);
                 for left in left {
                     self.analyze_assign_left(left);
                 }
+                self.analyze_expr(right);
             }
             StmtKind::AssignMulti { left, right } => {
-                for right in right {
-                    self.analyze_expr(right);
-                }
                 for left in left {
                     self.analyze_assign_left(left);
+                }
+                for right in right {
+                    self.analyze_expr(right);
                 }
             }
             StmtKind::Block(block) => self.analyze_block(block),

@@ -42,7 +42,7 @@ impl<S: AsRef<str>> fmt::Display for Code<S> {
         if let Some(v) = &self.variadic {
             writeln!(
                 f,
-                "params: ({}), *{}",
+                "params: ({}, ...{})",
                 self.params.iter().map(AsRef::as_ref).join(", "),
                 v.as_ref()
             )?;
@@ -55,6 +55,27 @@ impl<S: AsRef<str>> fmt::Display for Code<S> {
         }
         writeln!(f, "kind: {}", self.kind)?;
         writeln!(f, "stack_size: {}", self.stack_size)?;
+        writeln!(f, "consts: {}", self.consts.iter().join(", "))?;
+        writeln!(
+            f,
+            "local_names: {}",
+            self.local_names.iter().map(AsRef::as_ref).join(", ")
+        )?;
+        writeln!(
+            f,
+            "global_names: {}",
+            self.global_names.iter().map(AsRef::as_ref).join(", ")
+        )?;
+        writeln!(
+            f,
+            "upvalue_names: {}",
+            self.upvalue_names
+                .iter()
+                .map(|(name, base_closure_upvalue_id)| {
+                    format!("({}, {:?})", name.as_ref(), base_closure_upvalue_id)
+                })
+                .join(", ")
+        )?;
         let code_str = self
             .code
             .iter()
