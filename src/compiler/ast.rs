@@ -7,7 +7,7 @@ use text_size::TextRange;
 use crate::utils::{escape_str, Float, Indent, Join, Locatable};
 
 use super::{
-    index::{FunctionId, ScopeId, SymbolId},
+    index::{FunctionId, ReferenceId, ScopeId},
     value::ValueType,
 };
 
@@ -480,7 +480,7 @@ impl<S: AsRef<str>> fmt::Display for LitKind<S> {
 pub struct Ident<S> {
     pub name: S,
     pub range: TextRange,
-    pub symbol_id: Cell<Option<SymbolId>>,
+    pub reference_id: Cell<Option<ReferenceId>>,
 }
 
 impl_locatable!(Ident);

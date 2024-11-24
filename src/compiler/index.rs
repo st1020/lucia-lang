@@ -55,4 +55,4 @@ macro_rules! define_index {
     )*};
 }
 
-define_index!(ScopeId, SymbolId, FunctionId);
+define_index!(FunctionId, ScopeId, SymbolId, ReferenceId);

@@ -10,9 +10,9 @@ use thiserror::Error;
 use crate::utils::{Float, Join};
 
 use super::{
-    analyzer::Semantic,
     ast::*,
     index::{FunctionId, SymbolId},
+    semantic::Semantic,
     value::ValueType,
 };
 
@@ -426,14 +426,16 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
     }
 
     fn get_symbol_type(&self, ident: &Ident<S>) -> Option<&Type<S>> {
-        self.symbol_type.get(&ident.symbol_id.get().unwrap())
+        let symbol_id = self.semantic.references[ident.reference_id.get().unwrap()].symbol_id;
+        self.symbol_type.get(&symbol_id)
     }
 
     fn set_symbol_type(&mut self, ident: &Ident<S>, ty: Type<S>) -> Result<(), TypeError<S>> {
         if let Some(old_type) = self.get_symbol_type(ident) {
             ty.expect_is_sub_type_of(old_type)?;
         } else {
-            self.symbol_type.insert(ident.symbol_id.get().unwrap(), ty);
+            let symbol_id = self.semantic.references[ident.reference_id.get().unwrap()].symbol_id;
+            self.symbol_type.insert(symbol_id, ty);
         }
         Ok(())
     }

@@ -10,6 +10,7 @@ pub mod interning;
 pub mod lexer;
 pub mod opcode;
 pub mod parser;
+pub mod semantic;
 pub mod token;
 pub mod typing;
 pub mod value;

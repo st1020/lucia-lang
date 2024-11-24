@@ -6,103 +6,15 @@
 use std::cell::Cell;
 
 use index_vec::IndexVec;
-use indexmap::{IndexMap, IndexSet};
+use indexmap::IndexMap;
 use rustc_hash::FxBuildHasher;
 
 use super::{
     ast::*,
-    index::{FunctionId, ScopeId, SymbolId},
+    index::{FunctionId, ReferenceId, ScopeId, SymbolId},
     interning::InternedString,
+    semantic::*,
 };
-
-/// The semantic information of a function.
-#[derive(Debug, Clone)]
-pub struct FunctionSemantic {
-    /// The kind of function.
-    pub kind: FunctionKind,
-    /// The parent function it belongs in.
-    pub parent_id: Option<FunctionId>,
-    /// Symbols in a function.
-    pub symbols: IndexSet<SymbolId, FxBuildHasher>,
-}
-
-impl FunctionSemantic {
-    pub fn new(kind: FunctionKind, parent_id: Option<FunctionId>) -> Self {
-        Self {
-            kind,
-            parent_id,
-            symbols: IndexSet::with_hasher(FxBuildHasher),
-        }
-    }
-}
-
-/// The semantic information of a scope.
-#[derive(Debug, Clone)]
-pub struct Scope<S> {
-    /// The kind of scope.
-    pub kind: ScopeKind,
-    /// The parent scope it belongs in.
-    pub parent_id: Option<ScopeId>,
-    /// The function it belongs in.
-    pub function_id: FunctionId,
-    /// Symbol bindings in a scope.
-    ///
-    /// A binding is a mapping from an identifier name to its [`SymbolId`]
-    pub bindings: IndexMap<InternedString<S>, SymbolId, FxBuildHasher>,
-}
-
-impl<S> Scope<S> {
-    pub fn new(kind: ScopeKind, parent_id: Option<ScopeId>, function_id: FunctionId) -> Self {
-        Self {
-            kind,
-            parent_id,
-            function_id,
-            bindings: IndexMap::with_hasher(FxBuildHasher),
-        }
-    }
-}
-
-/// The kind of scope.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ScopeKind {
-    Function,
-    Closure,
-    Block,
-}
-
-/// The semantic information of a symbol.
-#[derive(Debug, Clone)]
-pub struct Symbol<S> {
-    /// The name of the symbol.
-    pub name: S,
-    /// The scope it belongs in.
-    pub scope_id: ScopeId,
-    /// The kind of symbol.
-    pub kind: SymbolKind,
-}
-
-/// The kind of symbol.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SymbolKind {
-    Local,
-    Upvalue,
-    Global,
-}
-
-/// Semantic information of a Lucia program.
-///
-/// [`Semantic`] contains the results of analyzing a program, including the
-/// [function] table, [scope] tree and [symbol] table.
-///
-/// [function]: FunctionSemantic
-/// [scope]: Scope
-/// [symbol]: Symbol
-#[derive(Debug, Clone)]
-pub struct Semantic<S> {
-    pub functions: IndexVec<FunctionId, FunctionSemantic>,
-    pub scopes: IndexVec<ScopeId, Scope<S>>,
-    pub symbols: IndexVec<SymbolId, Symbol<S>>,
-}
 
 /// Semantic Analyze.
 pub fn analyze<S: AsRef<str> + Clone>(program: &Program<S>) -> Semantic<S> {
@@ -117,6 +29,7 @@ struct SemanticAnalyzer<S> {
     functions: IndexVec<FunctionId, FunctionSemantic>,
     scopes: IndexVec<ScopeId, Scope<S>>,
     symbols: IndexVec<SymbolId, Symbol<S>>,
+    references: IndexVec<ReferenceId, Reference>,
     globals: IndexMap<InternedString<S>, SymbolId, FxBuildHasher>,
 }
 
@@ -128,6 +41,7 @@ impl<S: AsRef<str> + Clone> SemanticAnalyzer<S> {
             functions: IndexVec::new(),
             scopes: IndexVec::new(),
             symbols: IndexVec::new(),
+            references: IndexVec::new(),
             globals: IndexMap::with_hasher(FxBuildHasher),
         }
     }
@@ -138,14 +52,17 @@ impl<S: AsRef<str> + Clone> SemanticAnalyzer<S> {
             functions: self.functions,
             scopes: self.scopes,
             symbols: self.symbols,
+            references: self.references,
         }
     }
 
-    fn declare_symbol(&mut self, ident: &Ident<S>, kind: SymbolKind) {
+    fn declare_symbol(&mut self, ident: &Ident<S>, kind: SymbolKind) -> SymbolId {
         let symbol = Symbol {
             name: ident.name.clone(),
+            range: ident.range,
             scope_id: self.current_scope_id,
             kind,
+            references: Vec::new(),
         };
         let symbol_id = if matches!(kind, SymbolKind::Global { .. }) {
             if let Some(symbol_id) = self.globals.get(ident.name.as_ref()).copied() {
@@ -164,18 +81,42 @@ impl<S: AsRef<str> + Clone> SemanticAnalyzer<S> {
         self.functions[self.current_function_id]
             .symbols
             .insert(symbol_id);
-        ident.symbol_id.set(Some(symbol_id));
+        symbol_id
     }
 
-    fn declare_read(&mut self, ident: &Ident<S>) {
-        self.declare_reference(ident, SymbolKind::Global);
+    fn declare_reference(
+        &mut self,
+        symbol_id: SymbolId,
+        ident: &Ident<S>,
+        kind: ReferenceKind,
+    ) -> ReferenceId {
+        let reference = Reference {
+            symbol_id,
+            range: ident.range,
+            kind,
+        };
+        let reference_id = self.references.push(reference);
+        self.symbols[symbol_id].references.push(reference_id);
+        ident.reference_id.set(Some(reference_id));
+        reference_id
     }
 
-    fn declare_write(&mut self, ident: &Ident<S>) {
-        self.declare_reference(ident, SymbolKind::Local);
+    fn declare_symbol_and_write_reference(&mut self, ident: &Ident<S>, kind: SymbolKind) {
+        let symbol_id = self.declare_symbol(ident, kind);
+        self.declare_reference(symbol_id, ident, ReferenceKind::Write);
     }
 
-    fn declare_reference(&mut self, ident: &Ident<S>, default: SymbolKind) {
+    fn declare_read_reference(&mut self, ident: &Ident<S>) {
+        let symbol_id = self.get_or_declare_symbol(ident, SymbolKind::Global);
+        self.declare_reference(symbol_id, ident, ReferenceKind::Read);
+    }
+
+    fn declare_write_reference(&mut self, ident: &Ident<S>) {
+        let symbol_id = self.get_or_declare_symbol(ident, SymbolKind::Local);
+        self.declare_reference(symbol_id, ident, ReferenceKind::Write);
+    }
+
+    fn get_or_declare_symbol(&mut self, ident: &Ident<S>, kind: SymbolKind) -> SymbolId {
         let mut scope_id = self.current_scope_id;
         loop {
             let scope = &self.scopes[scope_id];
@@ -185,15 +126,13 @@ impl<S: AsRef<str> + Clone> SemanticAnalyzer<S> {
                     SymbolKind::Local => {
                         if scope.function_id != self.current_function_id {
                             symbol.kind = SymbolKind::Upvalue;
+                            self.declare_upvalue(symbol_id, scope_id);
                         }
-                        self.declare_upvalue(symbol_id, scope_id);
-                        ident.symbol_id.set(Some(symbol_id));
-                        return;
+                        return symbol_id;
                     }
                     SymbolKind::Upvalue => {
                         self.declare_upvalue(symbol_id, scope_id);
-                        ident.symbol_id.set(Some(symbol_id));
-                        return;
+                        return symbol_id;
                     }
                     SymbolKind::Global => (),
                 }
@@ -207,7 +146,7 @@ impl<S: AsRef<str> + Clone> SemanticAnalyzer<S> {
                 break;
             }
         }
-        self.declare_symbol(ident, default);
+        self.declare_symbol(ident, kind)
     }
 
     fn declare_upvalue(&mut self, symbol_id: SymbolId, def_scope_id: ScopeId) {
@@ -270,10 +209,10 @@ impl<S: AsRef<str> + Clone> SemanticAnalyzer<S> {
         self.enter_scope(scope_kind, &function.body.scope_id);
 
         for param in &function.params {
-            self.declare_symbol(&param.ident, SymbolKind::Local);
+            self.declare_symbol_and_write_reference(&param.ident, SymbolKind::Local);
         }
         if let Some(variadic) = &function.variadic {
-            self.declare_symbol(&variadic.ident, SymbolKind::Local);
+            self.declare_symbol_and_write_reference(&variadic.ident, SymbolKind::Local);
         }
         self.analyze_stmts(&function.body);
 
@@ -326,7 +265,7 @@ impl<S: AsRef<str> + Clone> SemanticAnalyzer<S> {
                 self.analyze_expr(right);
                 self.enter_scope(ScopeKind::Block, &body.scope_id);
                 for ident in left {
-                    self.declare_symbol(ident, SymbolKind::Local);
+                    self.declare_symbol_and_write_reference(ident, SymbolKind::Local);
                 }
                 self.analyze_stmts(body);
                 self.leave_scope();
@@ -342,12 +281,12 @@ impl<S: AsRef<str> + Clone> SemanticAnalyzer<S> {
             } => match kind {
                 ImportKind::Simple(alias) => {
                     let ident = alias.as_ref().map_or(path.last().unwrap(), |v| v);
-                    self.declare_symbol(ident, SymbolKind::Global);
+                    self.declare_symbol_and_write_reference(ident, SymbolKind::Global);
                 }
                 ImportKind::Nested(items) => {
                     for (name, alias) in items {
                         let ident = alias.as_ref().unwrap_or(name);
-                        self.declare_symbol(ident, SymbolKind::Global);
+                        self.declare_symbol_and_write_reference(ident, SymbolKind::Global);
                     }
                 }
                 ImportKind::Glob => (),
@@ -359,14 +298,14 @@ impl<S: AsRef<str> + Clone> SemanticAnalyzer<S> {
             } => {
                 self.analyze_function(function);
                 if *glo {
-                    self.declare_symbol(name, SymbolKind::Global);
+                    self.declare_symbol_and_write_reference(name, SymbolKind::Global);
                 } else {
-                    self.declare_write(name);
+                    self.declare_write_reference(name);
                 }
             }
             StmtKind::GloAssign { left, right } => {
                 self.analyze_expr(right);
-                self.declare_symbol(&left.ident, SymbolKind::Global);
+                self.declare_symbol_and_write_reference(&left.ident, SymbolKind::Global);
             }
             StmtKind::Assign { left, right } => {
                 self.analyze_expr(right);
@@ -401,7 +340,7 @@ impl<S: AsRef<str> + Clone> SemanticAnalyzer<S> {
 
     fn analyze_assign_left(&mut self, left: &AssignLeft<S>) {
         match left {
-            AssignLeft::Ident(ident) => self.declare_write(&ident.ident),
+            AssignLeft::Ident(ident) => self.declare_write_reference(&ident.ident),
             AssignLeft::Member { table, property } => {
                 self.analyze_expr(table);
                 self.analyze_member_property(property);
@@ -413,7 +352,7 @@ impl<S: AsRef<str> + Clone> SemanticAnalyzer<S> {
     fn analyze_expr(&mut self, expr: &Expr<S>) {
         match &expr.kind {
             ExprKind::Lit(_) => (),
-            ExprKind::Ident(ident) => self.declare_read(ident),
+            ExprKind::Ident(ident) => self.declare_read_reference(ident),
             ExprKind::Paren(expr) => self.analyze_expr(expr),
             ExprKind::Function(function) => self.analyze_function(function),
             ExprKind::Table { properties } => {
@@ -474,7 +413,9 @@ impl<S: AsRef<str> + Clone> SemanticAnalyzer<S> {
     fn analyze_pattern(&mut self, pattern: &Pattern<S>) {
         match &pattern.kind {
             PatternKind::Lit(_) => (),
-            PatternKind::Ident(ident) => self.declare_symbol(ident, SymbolKind::Local),
+            PatternKind::Ident(ident) => {
+                self.declare_symbol_and_write_reference(ident, SymbolKind::Local);
+            }
             PatternKind::Table { pairs, others: _ } => {
                 for (_, v) in pairs {
                     self.analyze_pattern(v);

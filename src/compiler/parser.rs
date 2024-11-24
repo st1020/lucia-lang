@@ -872,7 +872,7 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
         let ident = Ident {
             range: token.range,
             name: self.interner.intern(&self.input[token.range]),
-            symbol_id: None.into(),
+            reference_id: None.into(),
         };
         self.bump();
         Ok(ident)
