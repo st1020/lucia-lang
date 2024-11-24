@@ -426,7 +426,8 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
     }
 
     fn get_symbol_type(&self, ident: &Ident<S>) -> Option<&Type<S>> {
-        let symbol_id = self.semantic.references[ident.reference_id.get().unwrap()].symbol_id;
+        let symbol_id =
+            self.semantic.references[ident.reference_id.get().copied().unwrap()].symbol_id;
         self.symbol_type.get(&symbol_id)
     }
 
@@ -434,7 +435,8 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
         if let Some(old_type) = self.get_symbol_type(ident) {
             ty.expect_is_sub_type_of(old_type)?;
         } else {
-            let symbol_id = self.semantic.references[ident.reference_id.get().unwrap()].symbol_id;
+            let symbol_id =
+                self.semantic.references[ident.reference_id.get().copied().unwrap()].symbol_id;
             self.symbol_type.insert(symbol_id, ty);
         }
         Ok(())
@@ -448,7 +450,7 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
     }
 
     fn check_function(&mut self, function: &Function<S>) -> Result<Type<S>, TypeError<S>> {
-        self.current_function_id = function.function_id.get().unwrap();
+        self.current_function_id = function.function_id.get().copied().unwrap();
 
         let param_types: Vec<Type<S>> = function
             .params

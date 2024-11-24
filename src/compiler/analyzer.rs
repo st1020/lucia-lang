@@ -3,7 +3,7 @@
 //! Functions in the AST will be identified and processed.
 //! The kind of symbols within the scope will be determined.
 
-use std::cell::Cell;
+use std::sync::OnceLock;
 
 use index_vec::IndexVec;
 use indexmap::IndexMap;
@@ -97,7 +97,7 @@ impl<S: AsRef<str> + Clone> SemanticAnalyzer<S> {
         };
         let reference_id = self.references.push(reference);
         self.symbols[symbol_id].references.push(reference_id);
-        ident.reference_id.set(Some(reference_id));
+        ident.reference_id.set(reference_id).unwrap();
         reference_id
     }
 
@@ -158,13 +158,13 @@ impl<S: AsRef<str> + Clone> SemanticAnalyzer<S> {
         }
     }
 
-    fn enter_function(&mut self, kind: FunctionKind, function_id: &Cell<Option<FunctionId>>) {
+    fn enter_function(&mut self, kind: FunctionKind, function_id: &OnceLock<FunctionId>) {
         let parent_function_id = self.current_function_id;
 
         let function = FunctionSemantic::new(kind, Some(parent_function_id));
         self.current_function_id = self.functions.push(function);
 
-        function_id.set(Some(self.current_function_id));
+        function_id.set(self.current_function_id).unwrap();
     }
 
     fn leave_function(&mut self) {
@@ -173,13 +173,13 @@ impl<S: AsRef<str> + Clone> SemanticAnalyzer<S> {
         }
     }
 
-    fn enter_scope(&mut self, kind: ScopeKind, scope_id: &Cell<Option<ScopeId>>) {
+    fn enter_scope(&mut self, kind: ScopeKind, scope_id: &OnceLock<ScopeId>) {
         let parent_scope_id = self.current_scope_id;
 
         let scope = Scope::new(kind, Some(parent_scope_id), self.current_function_id);
         self.current_scope_id = self.scopes.push(scope);
 
-        scope_id.set(Some(self.current_scope_id));
+        scope_id.set(self.current_scope_id).unwrap();
     }
 
     fn leave_scope(&mut self) {
@@ -194,8 +194,8 @@ impl<S: AsRef<str> + Clone> SemanticAnalyzer<S> {
             .push(FunctionSemantic::new(FunctionKind::Function, None));
         let scope = Scope::new(ScopeKind::Function, None, function_id);
         let scope_id = self.scopes.push(scope);
-        program.function.function_id.set(Some(function_id));
-        program.function.body.scope_id.set(Some(scope_id));
+        program.function.function_id.set(function_id).unwrap();
+        program.function.body.scope_id.set(scope_id).unwrap();
         self.analyze_stmts(&program.function.body);
     }
 

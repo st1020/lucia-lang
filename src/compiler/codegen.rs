@@ -173,7 +173,8 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
     }
 
     fn load(&mut self, ident: &Ident<S>) {
-        let symbol_id = self.semantic.references[ident.reference_id.get().unwrap()].symbol_id;
+        let symbol_id =
+            self.semantic.references[ident.reference_id.get().copied().unwrap()].symbol_id;
         let opcode = match self.semantic.symbols[symbol_id].kind {
             SymbolKind::Local => {
                 let index = self.context().local_names.get_index_of(&symbol_id).unwrap();
@@ -200,7 +201,8 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
     }
 
     fn store(&mut self, ident: &Ident<S>) {
-        let symbol_id = self.semantic.references[ident.reference_id.get().unwrap()].symbol_id;
+        let symbol_id =
+            self.semantic.references[ident.reference_id.get().copied().unwrap()].symbol_id;
         let opcode = match self.semantic.symbols[symbol_id].kind {
             SymbolKind::Local => {
                 let index = self.context().local_names.get_index_of(&symbol_id).unwrap();
@@ -232,7 +234,7 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
     }
 
     fn gen_function_code(&mut self, function: &Function<S>) -> Code<S> {
-        self.current_function_id = function.function_id.get().unwrap();
+        self.current_function_id = function.function_id.get().copied().unwrap();
         for symbol_id in self.semantic.functions[self.current_function_id]
             .symbols
             .iter()

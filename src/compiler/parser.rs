@@ -1,6 +1,6 @@
 //! The parser.
 
-use std::iter::Peekable;
+use std::{iter::Peekable, sync::OnceLock};
 
 use text_size::{TextRange, TextSize};
 
@@ -152,7 +152,7 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
         let body = Box::new(Block {
             body,
             range,
-            scope_id: None.into(),
+            scope_id: OnceLock::new(),
         });
         let function = Box::new(Function {
             name: None,
@@ -162,7 +162,7 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
             returns: None,
             throws: None,
             body,
-            function_id: None.into(),
+            function_id: OnceLock::new(),
         });
         (Program { function }, self.errors)
     }
@@ -279,7 +279,7 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
         Ok(Box::new(Block {
             body,
             range,
-            scope_id: None.into(),
+            scope_id: OnceLock::new(),
         }))
     }
 
@@ -512,7 +512,7 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
             returns: self.parse_returns()?,
             throws: self.parse_throws()?,
             body: self.parse_block()?,
-            function_id: None.into(),
+            function_id: OnceLock::new(),
         })
     }
 
@@ -716,7 +716,7 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
                 returns: self.parse_returns()?,
                 throws: self.parse_throws()?,
                 body: self.parse_block()?,
-                function_id: None.into(),
+                function_id: OnceLock::new(),
             };
             ExprKind::Function(Box::new(function))
         } else if self.eat(TokenKind::Do) {
@@ -728,7 +728,7 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
                 body: self.parse_block()?,
                 returns: None,
                 throws: None,
-                function_id: None.into(),
+                function_id: OnceLock::new(),
             };
             ExprKind::Function(Box::new(function))
         } else if self.check(TokenKind::Try) {
@@ -872,7 +872,7 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
         let ident = Ident {
             range: token.range,
             name: self.interner.intern(&self.input[token.range]),
-            reference_id: None.into(),
+            reference_id: OnceLock::new(),
         };
         self.bump();
         Ok(ident)

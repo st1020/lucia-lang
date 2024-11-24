@@ -1,6 +1,6 @@
 //! The Lucia Abstract Syntax Tree (AST).
 
-use std::{cell::Cell, fmt};
+use std::{fmt, sync::OnceLock};
 
 use text_size::TextRange;
 
@@ -43,7 +43,7 @@ pub struct Function<S> {
     pub returns: Option<Box<Ty<S>>>,
     pub throws: Option<Box<Ty<S>>>,
     pub body: Box<Block<S>>,
-    pub function_id: Cell<Option<FunctionId>>,
+    pub function_id: OnceLock<FunctionId>,
 }
 
 impl<S: AsRef<str>> fmt::Display for Function<S> {
@@ -110,7 +110,7 @@ impl fmt::Display for FunctionKind {
 pub struct Block<S> {
     pub body: Vec<Stmt<S>>,
     pub range: TextRange,
-    pub scope_id: Cell<Option<ScopeId>>,
+    pub scope_id: OnceLock<ScopeId>,
 }
 
 impl_locatable!(Block);
@@ -480,7 +480,7 @@ impl<S: AsRef<str>> fmt::Display for LitKind<S> {
 pub struct Ident<S> {
     pub name: S,
     pub range: TextRange,
-    pub reference_id: Cell<Option<ReferenceId>>,
+    pub reference_id: OnceLock<ReferenceId>,
 }
 
 impl_locatable!(Ident);
