@@ -122,7 +122,8 @@ impl<'gc> ThreadState<'gc> {
                     frame.stack.push(v);
                 }
                 OpCode::LoadUpvalue(i) => {
-                    frame.stack.push(frame.upvalues[i].get());
+                    let upvalues = frame.closure.upvalues.borrow();
+                    frame.stack.push(upvalues[i].get());
                 }
                 OpCode::LoadConst(i) => {
                     frame.stack.push(match function.consts[i] {
@@ -131,9 +132,9 @@ impl<'gc> ThreadState<'gc> {
                         RuntimeConstValue::Int(v) => Value::Int(v),
                         RuntimeConstValue::Float(v) => Value::Float(v),
                         RuntimeConstValue::Str(v) => Value::Str(v),
-                        RuntimeConstValue::Func(v) => {
-                            Value::Function(Function::Closure(Closure::new(&ctx, v, Some(frame))))
-                        }
+                        RuntimeConstValue::Func(v) => Value::Function(Function::Closure(
+                            Closure::new(&ctx, v, Some(frame.closure)),
+                        )),
                     });
                 }
                 OpCode::StoreLocal(i) => {
@@ -144,7 +145,8 @@ impl<'gc> ThreadState<'gc> {
                     ctx.state.globals.set(ctx, function.global_names[i], value);
                 }
                 OpCode::StoreUpvalue(i) => {
-                    frame.upvalues[i].set(&ctx, frame.stack.pop().unwrap());
+                    let upvalues = frame.closure.upvalues.borrow_mut(&ctx);
+                    upvalues[i].set(&ctx, frame.stack.pop().unwrap());
                 }
                 OpCode::Import(i) => {
                     if let RuntimeConstValue::Str(v) = function.consts[i] {

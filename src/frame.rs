@@ -40,7 +40,6 @@ pub struct LuciaFrame<'gc> {
     pub pc: usize,
     pub closure: Closure<'gc>,
     pub locals: Vec<Value<'gc>>,
-    pub upvalues: Vec<UpValue<'gc>>,
     pub stack: Vec<Value<'gc>>,
     pub call_status: CallStatusKind,
 }
@@ -48,17 +47,6 @@ pub struct LuciaFrame<'gc> {
 impl<'gc> fmt::Display for LuciaFrame<'gc> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "pc: {}", self.pc)?;
-        writeln!(
-            f,
-            "upvalues: [{}]",
-            self.closure
-                .function
-                .upvalue_names
-                .iter()
-                .zip(self.closure.upvalues.iter())
-                .map(|((name, _), value)| format!("{name}: {value}"))
-                .join(", ")
-        )?;
         writeln!(
             f,
             "locals: [{}]",
@@ -118,19 +106,17 @@ impl<'gc> LuciaFrame<'gc> {
             }
         }
 
-        let mut upvalues = Vec::with_capacity(function.upvalue_names.len());
-        for (_, base_closure_upvalue_id) in &function.upvalue_names {
-            upvalues.push(base_closure_upvalue_id.map_or_else(
-                || UpValue::new(&ctx, Value::Null),
-                |id| closure.upvalues[id],
-            ));
+        let mut upvalues = closure.upvalues.borrow_mut(&ctx);
+        for (i, (_, base_closure_upvalue_id)) in function.upvalue_names.iter().enumerate() {
+            if base_closure_upvalue_id.is_none() {
+                upvalues[i] = UpValue::new(&ctx, Value::Null);
+            }
         }
 
         Ok(LuciaFrame {
             pc: 0,
             closure,
             locals: vec![Value::Null; function.local_names.len()],
-            upvalues,
             stack,
             call_status: CallStatusKind::Normal,
         })

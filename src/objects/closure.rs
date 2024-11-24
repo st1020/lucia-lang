@@ -1,11 +1,11 @@
 use std::fmt;
 
-use gc_arena::{lock::Lock, Collect, Gc, Mutation};
-
-use crate::{
-    frame::LuciaFrame,
-    objects::{define_object, RuntimeCode, Value},
+use gc_arena::{
+    lock::{Lock, RefLock},
+    Collect, Gc, Mutation,
 };
+
+use crate::objects::{define_object, RuntimeCode, Value};
 
 define_object!(Closure, ClosureInner<'gc>, ptr, "closure");
 
@@ -13,16 +13,17 @@ impl<'gc> Closure<'gc> {
     pub fn new(
         mc: &Mutation<'gc>,
         function: RuntimeCode<'gc>,
-        frame: Option<&LuciaFrame<'gc>>,
+        closure: Option<Closure<'gc>>,
     ) -> Self {
         let mut upvalues = Vec::with_capacity(function.upvalue_names.len());
 
-        if let Some(frame) = frame {
+        if let Some(closure) = closure {
+            let base_closure_upvalues = closure.upvalues.borrow();
             for (_, base_closure_upvalue_id) in &function.upvalue_names {
-                upvalues.push(
-                    base_closure_upvalue_id
-                        .map_or_else(|| UpValue::new(mc, Value::Null), |id| frame.upvalues[id]),
-                );
+                upvalues.push(base_closure_upvalue_id.map_or_else(
+                    || UpValue::new(mc, Value::Null),
+                    |id| base_closure_upvalues[id],
+                ));
             }
         } else {
             for _ in 0..function.upvalue_names.len() {
@@ -30,7 +31,13 @@ impl<'gc> Closure<'gc> {
             }
         }
 
-        Closure(Gc::new(mc, ClosureInner { upvalues, function }))
+        Closure(Gc::new(
+            mc,
+            ClosureInner {
+                upvalues: Gc::new(mc, RefLock::new(upvalues)),
+                function,
+            },
+        ))
     }
 }
 
@@ -38,7 +45,7 @@ impl<'gc> Closure<'gc> {
 #[collect(no_drop)]
 pub struct ClosureInner<'gc> {
     pub function: RuntimeCode<'gc>,
-    pub upvalues: Vec<UpValue<'gc>>,
+    pub upvalues: Gc<'gc, RefLock<Vec<UpValue<'gc>>>>,
 }
 
 #[derive(Debug, Clone, Copy, Collect)]
