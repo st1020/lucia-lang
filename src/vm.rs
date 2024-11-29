@@ -21,7 +21,7 @@ impl<'gc> ThreadState<'gc> {
             Some(Frame::Lucia(frame)) => frame,
             _ => panic!("top frame is not lua frame"),
         };
-        let function = &frame.closure.function;
+        let code = &frame.closure.code;
 
         macro_rules! operator_error {
             ($operator:expr, $arg1:expr) => {
@@ -97,10 +97,10 @@ impl<'gc> ThreadState<'gc> {
         }
 
         loop {
-            let code = function.code[frame.pc];
+            let opcode = code.code[frame.pc];
             frame.pc += 1;
 
-            match code {
+            match opcode {
                 OpCode::Pop => {
                     frame.stack.pop().unwrap();
                 }
@@ -115,9 +115,9 @@ impl<'gc> ThreadState<'gc> {
                     frame.stack.push(frame.locals[i]);
                 }
                 OpCode::LoadGlobal(i) => {
-                    let mut v = ctx.state.globals.get(ctx, function.global_names[i]);
+                    let mut v = ctx.state.globals.get(ctx, code.global_names[i]);
                     if v.is_null() {
-                        v = ctx.state.builtins.get(ctx, function.global_names[i]);
+                        v = ctx.state.builtins.get(ctx, code.global_names[i]);
                     }
                     frame.stack.push(v);
                 }
@@ -126,13 +126,13 @@ impl<'gc> ThreadState<'gc> {
                     frame.stack.push(upvalues[i].get());
                 }
                 OpCode::LoadConst(i) => {
-                    frame.stack.push(match function.consts[i] {
+                    frame.stack.push(match code.consts[i] {
                         RuntimeConstValue::Null => Value::Null,
                         RuntimeConstValue::Bool(v) => Value::Bool(v),
                         RuntimeConstValue::Int(v) => Value::Int(v),
                         RuntimeConstValue::Float(v) => Value::Float(v),
                         RuntimeConstValue::Str(v) => Value::Str(v),
-                        RuntimeConstValue::Func(v) => Value::Function(Function::Closure(
+                        RuntimeConstValue::Code(v) => Value::Function(Function::Closure(
                             Closure::new(&ctx, v, Some(frame.closure)),
                         )),
                     });
@@ -142,14 +142,14 @@ impl<'gc> ThreadState<'gc> {
                 }
                 OpCode::StoreGlobal(i) => {
                     let value = frame.stack.pop().unwrap();
-                    ctx.state.globals.set(ctx, function.global_names[i], value);
+                    ctx.state.globals.set(ctx, code.global_names[i], value);
                 }
                 OpCode::StoreUpvalue(i) => {
                     let upvalues = frame.closure.upvalues.borrow_mut(&ctx);
                     upvalues[i].set(&ctx, frame.stack.pop().unwrap());
                 }
                 OpCode::Import(i) => {
-                    if let RuntimeConstValue::Str(v) = function.consts[i] {
+                    if let RuntimeConstValue::Str(v) = code.consts[i] {
                         frame.stack.push(ctx.state.libs.get(ctx, v));
                     } else {
                         panic!("program error");
@@ -158,11 +158,11 @@ impl<'gc> ThreadState<'gc> {
                 OpCode::ImportFrom(i) => {
                     let module = frame.stack.last().copied().unwrap();
                     if let (Value::Table(module), RuntimeConstValue::Str(key)) =
-                        (module, function.consts[i])
+                        (module, code.consts[i])
                     {
                         frame.stack.push(module.get(ctx, key));
                     } else {
-                        return Err(operator_error!(code, module));
+                        return Err(operator_error!(opcode, module));
                     }
                 }
                 OpCode::ImportGlob => {
@@ -174,7 +174,7 @@ impl<'gc> ThreadState<'gc> {
                             }
                         }
                     } else {
-                        return Err(operator_error!(code, module));
+                        return Err(operator_error!(opcode, module));
                     };
                 }
                 OpCode::BuildTable(i) => {
@@ -209,7 +209,7 @@ impl<'gc> ThreadState<'gc> {
                         (Value::Table(table), Value::Table(metatable)) => {
                             table.set_metatable(&ctx, Some(metatable))
                         }
-                        _ => return Err(operator_error!(code, table, metatable)),
+                        _ => return Err(operator_error!(opcode, table, metatable)),
                     }
                 }
                 OpCode::Neg => {
@@ -221,7 +221,7 @@ impl<'gc> ThreadState<'gc> {
                     if let Value::Bool(v) = value {
                         frame.stack.push(Value::Bool(!v));
                     } else {
-                        return Err(operator_error!(code, value));
+                        return Err(operator_error!(opcode, value));
                     }
                 }
                 OpCode::Add => bin_op!(add),
@@ -277,7 +277,7 @@ impl<'gc> ThreadState<'gc> {
                             continue;
                         }
                         Value::Bool(false) => (),
-                        _ => return Err(operator_error!(code, value)),
+                        _ => return Err(operator_error!(opcode, value)),
                     }
                 }
                 OpCode::PopJumpIfFalse(JumpTarget(i)) => {
@@ -288,7 +288,7 @@ impl<'gc> ThreadState<'gc> {
                             frame.pc = i;
                             continue;
                         }
-                        _ => return Err(operator_error!(code, value)),
+                        _ => return Err(operator_error!(opcode, value)),
                     }
                 }
                 OpCode::JumpIfTrueOrPop(JumpTarget(i)) => {
@@ -301,7 +301,7 @@ impl<'gc> ThreadState<'gc> {
                         Value::Bool(false) => {
                             frame.stack.pop().unwrap();
                         }
-                        _ => return Err(operator_error!(code, value)),
+                        _ => return Err(operator_error!(opcode, value)),
                     }
                 }
                 OpCode::JumpIfFalseOrPop(JumpTarget(i)) => {
@@ -314,7 +314,7 @@ impl<'gc> ThreadState<'gc> {
                             frame.pc = i;
                             continue;
                         }
-                        _ => return Err(operator_error!(code, value)),
+                        _ => return Err(operator_error!(opcode, value)),
                     }
                 }
                 OpCode::Call(i) => call!(i, CallStatusKind::Normal),
@@ -340,8 +340,8 @@ impl<'gc> ThreadState<'gc> {
                 }
                 OpCode::LoadLocals => {
                     let table = Table::new(&ctx);
-                    for i in 0..function.local_names.len() {
-                        table.set(ctx, function.local_names[i], frame.locals[i]);
+                    for i in 0..code.local_names.len() {
+                        table.set(ctx, code.local_names[i], frame.locals[i]);
                     }
                     frame.stack.push(Value::Table(table));
                 }

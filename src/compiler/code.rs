@@ -116,8 +116,8 @@ pub enum ConstValue<S> {
     Float(Float),
     /// ""abc"", ""abc"
     Str(S),
-    /// A function.
-    Func(Box<Code<S>>),
+    /// A function code.
+    Code(Box<Code<S>>),
 }
 
 impl<S: AsRef<str>> fmt::Display for ConstValue<S> {
@@ -128,7 +128,7 @@ impl<S: AsRef<str>> fmt::Display for ConstValue<S> {
             Self::Int(v) => write!(f, "{}", v),
             Self::Float(v) => write!(f, "{}", v),
             Self::Str(v) => write!(f, "{}", v.as_ref()),
-            Self::Func(_) => write!(f, "<code>"),
+            Self::Code(_) => write!(f, "<code>"),
         }
     }
 }
@@ -141,7 +141,7 @@ impl<S: AsRef<str>> PartialEq for ConstValue<S> {
             (Self::Int(l0), Self::Int(r0)) => l0 == r0,
             (Self::Float(l0), Self::Float(r0)) => l0 == r0,
             (Self::Str(l0), Self::Str(r0)) => l0.as_ref() == r0.as_ref(),
-            (Self::Func(_), Self::Func(_)) => false,
+            (Self::Code(_), Self::Code(_)) => false,
             _ => false,
         }
     }
@@ -158,7 +158,7 @@ impl<S: AsRef<str>> hash::Hash for ConstValue<S> {
             ConstValue::Int(v) => v.hash(state),
             ConstValue::Float(v) => v.hash(state),
             ConstValue::Str(v) => v.as_ref().hash(state),
-            ConstValue::Func(_) => (),
+            ConstValue::Code(_) => (),
         }
     }
 }

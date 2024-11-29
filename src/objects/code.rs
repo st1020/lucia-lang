@@ -18,24 +18,24 @@ static_collect!(FunctionKind);
 define_object!(RuntimeCode, RuntimeCodeInner<'gc>, inner);
 
 impl<'gc> RuntimeCode<'gc> {
-    pub fn new(mc: &Mutation<'gc>, function: Code<Str<'gc>>) -> Self {
+    pub fn new(mc: &Mutation<'gc>, code: Code<Str<'gc>>) -> Self {
         RuntimeCode(Gc::new(
             mc,
             RuntimeCodeInner {
-                name: function.name,
-                params: function.params,
-                variadic: function.variadic,
-                kind: function.kind,
-                code: function.code,
-                consts: function
+                name: code.name,
+                params: code.params,
+                variadic: code.variadic,
+                kind: code.kind,
+                code: code.code,
+                consts: code
                     .consts
                     .into_iter()
                     .map(|v| RuntimeConstValue::new(mc, v))
                     .collect(),
-                local_names: function.local_names,
-                global_names: function.global_names,
-                upvalue_names: function.upvalue_names,
-                stack_size: function.stack_size,
+                local_names: code.local_names,
+                global_names: code.global_names,
+                upvalue_names: code.upvalue_names,
+                stack_size: code.stack_size,
             },
         ))
     }
@@ -88,8 +88,8 @@ pub enum RuntimeConstValue<'gc> {
     Float(Float),
     /// ""abc"", ""abc"
     Str(Str<'gc>),
-    /// A function.
-    Func(RuntimeCode<'gc>),
+    /// A function code.
+    Code(RuntimeCode<'gc>),
 }
 
 impl<'gc> RuntimeConstValue<'gc> {
@@ -100,7 +100,7 @@ impl<'gc> RuntimeConstValue<'gc> {
             ConstValue::Int(v) => RuntimeConstValue::Int(v),
             ConstValue::Float(v) => RuntimeConstValue::Float(v),
             ConstValue::Str(v) => RuntimeConstValue::Str(v),
-            ConstValue::Func(v) => RuntimeConstValue::Func(RuntimeCode::new(mc, *v)),
+            ConstValue::Code(v) => RuntimeConstValue::Code(RuntimeCode::new(mc, *v)),
         }
     }
 }

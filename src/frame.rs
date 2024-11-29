@@ -51,7 +51,7 @@ impl<'gc> fmt::Display for LuciaFrame<'gc> {
             f,
             "locals: [{}]",
             self.closure
-                .function
+                .code
                 .local_names
                 .iter()
                 .zip(self.locals.iter())
@@ -72,13 +72,13 @@ impl<'gc> LuciaFrame<'gc> {
         closure: Closure<'gc>,
         mut args: Vec<Value<'gc>>,
     ) -> Result<Self, Error<'gc>> {
-        let function = &closure.function;
-        let params_num = function.params.len();
-        let mut stack = Vec::with_capacity(function.stack_size.min(Self::MAX_STACK_SIZE));
+        let code = &closure.code;
+        let params_num = code.params.len();
+        let mut stack = Vec::with_capacity(code.stack_size.min(Self::MAX_STACK_SIZE));
         match args.len().cmp(&params_num) {
             Ordering::Less => {
                 return Err(Error::new(RuntimeError::CallArguments {
-                    required: if function.variadic.is_none() {
+                    required: if code.variadic.is_none() {
                         params_num.into()
                     } else {
                         (params_num, None).into()
@@ -88,12 +88,12 @@ impl<'gc> LuciaFrame<'gc> {
             }
             Ordering::Equal => {
                 stack.append(&mut args.clone());
-                if function.variadic.is_some() {
+                if code.variadic.is_some() {
                     stack.push(Value::Table(Table::new(&ctx)));
                 }
             }
             Ordering::Greater => {
-                if function.variadic.is_none() {
+                if code.variadic.is_none() {
                     return Err(Error::new(RuntimeError::CallArguments {
                         required: params_num.into(),
                         given: args.len(),
@@ -107,7 +107,7 @@ impl<'gc> LuciaFrame<'gc> {
         }
 
         let mut upvalues = closure.upvalues.borrow_mut(&ctx);
-        for (i, (_, base_closure_upvalue_id)) in function.upvalue_names.iter().enumerate() {
+        for (i, (_, base_closure_upvalue_id)) in code.upvalue_names.iter().enumerate() {
             if base_closure_upvalue_id.is_none() {
                 upvalues[i] = UpValue::new(&ctx, Value::Null);
             }
@@ -116,7 +116,7 @@ impl<'gc> LuciaFrame<'gc> {
         Ok(LuciaFrame {
             pc: 0,
             closure,
-            locals: vec![Value::Null; function.local_names.len()],
+            locals: vec![Value::Null; code.local_names.len()],
             stack,
             call_status: CallStatusKind::Normal,
         })
