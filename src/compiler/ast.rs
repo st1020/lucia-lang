@@ -542,7 +542,7 @@ pub enum BinOp {
     Identical,
     /// The '!==' operator (not identical)
     NotIdentical,
-    /// The `as` operator (type check)
+    /// The `is` operator (type check)
     Is,
 }
 

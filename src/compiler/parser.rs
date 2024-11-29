@@ -564,6 +564,7 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
                         (TokenKind::Ident, "userdata") => ValueType::UserData,
                         _ => return Err(self.unexpected()),
                     };
+                    self.bump();
                     let left = Box::new(left);
                     let kind = ExprKind::TypeCheck { left, right };
                     let range = self.end_range(start);
