@@ -1,0 +1,18 @@
+[package]
+name = "lucia-cli"
+description = "The CLI for Lucia Programming Language"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+lucia-lang.workspace = true
+lucia-lsp = { path = "../lucia-lsp" }
+anyhow.workspace = true
+log.workspace = true
+env_logger.workspace = true
+tokio.workspace = true
+tower-lsp.workspace = true
+clap.workspace = true

@@ -1,25 +1,61 @@
-[package]
-name = "lucia-lang"
+[workspace]
+members = [".", "crates/*"]
+
+[workspace.package]
 version = "0.2.0"
 authors = ["st1020 <me@st1020.com>"]
 edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/st1020/lucia-lang"
+
+[workspace.dependencies]
+lucia-lang = { path = "./" }
+# Compiler and Runtime
+text-size = "1"
+compact_str = "0.8"
+unicode-ident = "1"
+index_vec = "0.1"
+indexmap = "2"
+rustc-hash = "2"
+gc-arena = "0.5"
+# Error
+thiserror = "2"
+anyhow = "1"
+# Log
+log = "0.4"
+env_logger = "0.11"
+# Async
+tokio = { version = "1", features = ["rt-multi-thread", "io-std", "macros"] }
+dashmap = "6"
+# LSP
+ropey = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+tower-lsp = { version = "0.20", features = ["proposed"] }
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+[package]
+name = "lucia-lang"
 description = "Lucia programming language"
 readme = "README.md"
-repository = "https://github.com/st1020/lucia-lang"
-license = "MIT OR Apache-2.0"
 keywords = ["language", "compiler", "lexer", "parser", "lucia"]
 categories = ["compilers", "parser-implementations"]
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
-unicode-ident = "1.0"
-thiserror = "1.0"
-indexmap = "2.0"
-gc-arena = "0.5"
-bumpalo = { version = "3.0", features = ["boxed", "collections"] }
-compact_str = "0.8.0"
-text-size = "1.0"
-index_vec = "0.1"
-rustc-hash = "2.0"
+text-size.workspace = true
+compact_str.workspace = true
+unicode-ident.workspace = true
+index_vec.workspace = true
+indexmap.workspace = true
+rustc-hash.workspace = true
+gc-arena.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 criterion = "0.5"

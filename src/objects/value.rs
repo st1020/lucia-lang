@@ -157,3 +157,8 @@ impl fmt::Display for ExternValue {
         }
     }
 }
+
+// SAFETY: The pointers in `ExternValue` are not actually dereferenced at all, they are purely
+// informational.
+unsafe impl Send for ExternValue {}
+unsafe impl Sync for ExternValue {}

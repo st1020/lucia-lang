@@ -1,0 +1,20 @@
+[package]
+name = "lucia-lsp"
+description = "Lucia Language Server"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+lucia-lang.workspace = true
+text-size.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+log.workspace = true
+dashmap.workspace = true
+ropey.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tower-lsp.workspace = true
