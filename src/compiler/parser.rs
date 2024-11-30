@@ -339,40 +339,43 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
             StmtKind::Throw { argument }
         } else if self.eat(TokenKind::Import) {
             let mut path = Vec::new();
-            loop {
+            let kind = loop {
                 path.push(self.parse_ident()?);
-                self.expect(TokenKind::DoubleColon)?;
-                if !self.check(TokenKind::Ident) {
-                    break;
+                if !self.eat(TokenKind::DoubleColon) {
+                    break if self.check(TokenKind::Eol) {
+                        ImportKind::Simple(None)
+                    } else if self.eat(TokenKind::As) {
+                        ImportKind::Simple(Some(Box::new(self.parse_ident()?)))
+                    } else {
+                        return Err(self.unexpected());
+                    };
                 }
-            }
+                if !self.check(TokenKind::Ident) {
+                    break if self.check(TokenKind::OpenBrace) {
+                        let items = self.parse_items_between(
+                            TokenKind::OpenBrace,
+                            |p| {
+                                let ident = p.parse_ident()?;
+                                let alias = if p.eat(TokenKind::As) {
+                                    Some(p.parse_ident()?)
+                                } else {
+                                    None
+                                };
+                                Ok((ident, alias))
+                            },
+                            TokenKind::CloseBrace,
+                        )?;
+                        ImportKind::Nested(items)
+                    } else if self.eat(TokenKind::Mul) {
+                        ImportKind::Glob
+                    } else {
+                        return Err(self.unexpected());
+                    };
+                }
+            };
             let path_str = self
                 .interner
                 .intern(&path.iter().map(|ident| ident.name.as_ref()).join("::"));
-            let kind = if self.check(TokenKind::Eol) {
-                ImportKind::Simple(None)
-            } else if self.eat(TokenKind::As) {
-                ImportKind::Simple(Some(Box::new(self.parse_ident()?)))
-            } else if self.check(TokenKind::OpenBrace) {
-                let items = self.parse_items_between(
-                    TokenKind::OpenBrace,
-                    |p| {
-                        let ident = p.parse_ident()?;
-                        let alias = if p.eat(TokenKind::As) {
-                            Some(p.parse_ident()?)
-                        } else {
-                            None
-                        };
-                        Ok((ident, alias))
-                    },
-                    TokenKind::CloseBrace,
-                )?;
-                ImportKind::Nested(items)
-            } else if self.eat(TokenKind::Mul) {
-                ImportKind::Glob
-            } else {
-                return Err(self.unexpected());
-            };
             StmtKind::Import {
                 path,
                 path_str,
