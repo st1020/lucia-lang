@@ -365,6 +365,7 @@ pub enum ExprKind<S> {
     },
     MetaMember {
         table: Box<Expr<S>>,
+        property: MetaMemberKind,
         safe: bool,
     },
     Call {
@@ -413,8 +414,12 @@ impl<S: AsRef<str>> fmt::Display for ExprKind<S> {
                 property,
                 safe,
             } => write!(f, "{table}{}{property}", if *safe { "?" } else { "" }),
-            ExprKind::MetaMember { table, safe } => {
-                write!(f, "{table}{}[#]", if *safe { "?" } else { "" })
+            ExprKind::MetaMember {
+                table,
+                property,
+                safe,
+            } => {
+                write!(f, "{table}{}{property}", if *safe { "?" } else { "" })
             }
             ExprKind::Call {
                 callee,
@@ -610,6 +615,27 @@ impl<S: AsRef<str>> fmt::Display for MemberKind<S> {
     }
 }
 
+/// Kind of meta member expression.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MetaMemberKind {
+    /// `[]`
+    Bracket,
+    /// `.`
+    Dot,
+    /// `::`
+    DoubleColon,
+}
+
+impl fmt::Display for MetaMemberKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MetaMemberKind::Bracket => write!(f, "[#]"),
+            MetaMemberKind::Dot => write!(f, ".#"),
+            MetaMemberKind::DoubleColon => write!(f, "::#"),
+        }
+    }
+}
+
 /// Kind of import statement.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ImportKind<S> {
@@ -681,6 +707,7 @@ pub enum AssignLeft<S> {
     },
     MetaMember {
         table: Box<Expr<S>>,
+        property: MetaMemberKind,
     },
 }
 
@@ -689,7 +716,7 @@ impl<S: AsRef<str>> fmt::Display for AssignLeft<S> {
         match self {
             AssignLeft::Ident(ident) => write!(f, "{ident}"),
             AssignLeft::Member { table, property } => write!(f, "{table}{property}"),
-            AssignLeft::MetaMember { table } => write!(f, "{table}[#]"),
+            AssignLeft::MetaMember { table, property } => write!(f, "{table}{property}"),
         }
     }
 }

@@ -345,7 +345,7 @@ impl<S: AsRef<str> + Clone> SemanticAnalyzer<S> {
                 self.analyze_expr(table);
                 self.analyze_member_property(property);
             }
-            AssignLeft::MetaMember { table } => self.analyze_expr(table),
+            AssignLeft::MetaMember { table, property: _ } => self.analyze_expr(table),
         }
     }
 
@@ -389,7 +389,11 @@ impl<S: AsRef<str> + Clone> SemanticAnalyzer<S> {
                 self.analyze_expr(table);
                 self.analyze_member_property(property);
             }
-            ExprKind::MetaMember { table, safe: _ } => self.analyze_expr(table),
+            ExprKind::MetaMember {
+                table,
+                property: _,
+                safe: _,
+            } => self.analyze_expr(table),
             ExprKind::Call {
                 callee,
                 arguments,

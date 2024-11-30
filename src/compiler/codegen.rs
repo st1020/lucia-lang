@@ -674,7 +674,7 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
                     self.push_code(OpCode::Swap(2));
                     self.push_code(property.set_opcode());
                 }
-                AssignLeft::MetaMember { table } => {
+                AssignLeft::MetaMember { table, property: _ } => {
                     self.gen_expr(table)?;
                     self.push_code(OpCode::Copy(1));
                     self.push_code(OpCode::GetMeta);
@@ -718,7 +718,7 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
                 self.gen_expr_member_without_get(table, property)?;
                 self.push_code(property.set_opcode());
             }
-            AssignLeft::MetaMember { table } => {
+            AssignLeft::MetaMember { table, property: _ } => {
                 self.gen_expr(table)?;
                 self.push_code(OpCode::SetMeta);
             }
@@ -804,7 +804,11 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
                 }
                 self.push_code(OpCode::JumpTarget(safe_label));
             }
-            ExprKind::MetaMember { table, safe } => {
+            ExprKind::MetaMember {
+                table,
+                property: _,
+                safe,
+            } => {
                 self.gen_expr(table)?;
                 let safe_label = self.get_jump_target();
                 if *safe {

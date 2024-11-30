@@ -494,7 +494,11 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
                 property,
                 safe,
             } if !safe => Some(AssignLeft::Member { table, property }),
-            ExprKind::MetaMember { table, safe } if !safe => Some(AssignLeft::MetaMember { table }),
+            ExprKind::MetaMember {
+                table,
+                property,
+                safe,
+            } if !safe => Some(AssignLeft::MetaMember { table, property }),
             _ => None,
         }
     }
@@ -609,29 +613,13 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
     fn parse_expr_primary(&mut self) -> Result<Expr<S::String>, CompilerError> {
         let start = self.start_range();
         let mut ast_node = self.parse_expr_atom()?;
-        macro_rules! member_attr_expr {
-            ($member_expr_kind:path, $safe:expr) => {
-                if self.eat(TokenKind::Pound) {
-                    ExprKind::MetaMember {
-                        table: Box::new(ast_node),
-                        safe: $safe,
-                    }
-                } else {
-                    let ident = self.parse_ident()?.into();
-                    ExprKind::Member {
-                        table: Box::new(ast_node),
-                        property: $member_expr_kind(Box::new(ident)),
-                        safe: $safe,
-                    }
-                }
-            };
-        }
-        macro_rules! member_item_expr {
-            ($safe:expr) => {
+        macro_rules! member_expr {
+            (Bracket, $safe:expr) => {
                 if self.eat(TokenKind::Pound) {
                     self.expect(TokenKind::CloseBracket)?;
                     ExprKind::MetaMember {
                         table: Box::new(ast_node),
+                        property: MetaMemberKind::Bracket,
                         safe: $safe,
                     }
                 } else {
@@ -640,6 +628,23 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
                     ExprKind::Member {
                         table: Box::new(ast_node),
                         property: MemberKind::Bracket(Box::new(expr)),
+                        safe: $safe,
+                    }
+                }
+            };
+
+            ($kind:ident, $safe:expr) => {
+                if self.eat(TokenKind::Pound) {
+                    ExprKind::MetaMember {
+                        table: Box::new(ast_node),
+                        property: MetaMemberKind::$kind,
+                        safe: $safe,
+                    }
+                } else {
+                    let ident = self.parse_ident()?.into();
+                    ExprKind::Member {
+                        table: Box::new(ast_node),
+                        property: MemberKind::$kind(Box::new(ident)),
                         safe: $safe,
                     }
                 }
@@ -658,18 +663,18 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
                     kind: CallKind::None,
                 }
             } else if self.eat(TokenKind::OpenBracket) {
-                member_item_expr!(false)
+                member_expr!(Bracket, false)
             } else if self.eat(TokenKind::Dot) {
-                member_attr_expr!(MemberKind::Dot, false)
+                member_expr!(Dot, false)
             } else if self.eat(TokenKind::DoubleColon) {
-                member_attr_expr!(MemberKind::DoubleColon, false)
+                member_expr!(DoubleColon, false)
             } else if self.eat(TokenKind::Question) {
                 if self.eat(TokenKind::OpenBracket) {
-                    member_item_expr!(true)
+                    member_expr!(Bracket, true)
                 } else if self.eat(TokenKind::Dot) {
-                    member_attr_expr!(MemberKind::Dot, true)
+                    member_expr!(Dot, true)
                 } else if self.eat(TokenKind::DoubleColon) {
-                    member_attr_expr!(MemberKind::DoubleColon, true)
+                    member_expr!(DoubleColon, true)
                 } else {
                     return Err(self.unexpected());
                 }

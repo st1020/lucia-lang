@@ -690,7 +690,7 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
                         .get_member_type(&self.check_member_kind(property)?)?,
                 );
             }
-            AssignLeft::MetaMember { table } => {
+            AssignLeft::MetaMember { table, property: _ } => {
                 self.check_expr(table)?
                     .expect_is_sub_type_of(&Type::any_table().optional())?;
                 right_type.expect_is_sub_type_of(&(Type::any_table() | Type::Null))?;
@@ -861,7 +861,11 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
                 .check_expr(table)?
                 .get_member_type(&self.check_member_kind(property)?)
                 .map(|t| if *safe { t.optional() } else { t })?,
-            ExprKind::MetaMember { table, safe: _ } => {
+            ExprKind::MetaMember {
+                table,
+                property: _,
+                safe: _,
+            } => {
                 self.check_expr(table)?
                     .expect_is_sub_type_of(&Type::any_table())?;
                 Type::any_table().optional()
