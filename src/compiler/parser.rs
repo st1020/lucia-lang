@@ -118,6 +118,18 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
         }
     }
 
+    /// Consumes a token 't' if it exists. Returns the range of the given token.
+    fn eat_range(&mut self, t: TokenKind) -> Option<TextRange> {
+        let is_present = self.check(t);
+        if is_present {
+            let range = self.current_range().unwrap();
+            self.bump();
+            Some(range)
+        } else {
+            None
+        }
+    }
+
     /// Returns an error for an unexpected token.
     fn unexpected(&mut self) -> CompilerError {
         let (found, range) = self
@@ -355,13 +367,15 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
                         let items = self.parse_items_between(
                             TokenKind::OpenBrace,
                             |p| {
-                                let ident = p.parse_ident()?;
+                                let start = p.start_range();
+                                let name = p.parse_ident()?;
                                 let alias = if p.eat(TokenKind::As) {
                                     Some(p.parse_ident()?)
                                 } else {
                                     None
                                 };
-                                Ok((ident, alias))
+                                let range = p.end_range(start);
+                                Ok(ImportItem { name, alias, range })
                             },
                             TokenKind::CloseBrace,
                         )?;
@@ -385,16 +399,16 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
             let name = Box::new(self.parse_ident()?);
             let function = Box::new(self.parse_function(Some(name.name.clone()))?);
             StmtKind::Fn {
-                glo: false,
+                glo: None,
                 name,
                 function,
             }
-        } else if self.eat(TokenKind::Glo) {
+        } else if let Some(glo_range) = self.eat_range(TokenKind::Glo) {
             if self.eat(TokenKind::Fn) {
                 let name = Box::new(self.parse_ident()?);
                 let function = Box::new(self.parse_function(Some(name.name.clone()))?);
                 StmtKind::Fn {
-                    glo: true,
+                    glo: Some(glo_range),
                     name,
                     function,
                 }
@@ -414,8 +428,7 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
                     self.expr_to_assign_left(ast_node)
                         .ok_or_else(|| self.unexpected())?,
                 );
-                while self.eat(TokenKind::Comma) {
-                    let comma_range = self.current_range().unwrap_or_default();
+                while let Some(comma_range) = self.eat_range(TokenKind::Comma) {
                     let ast_node = self.parse_expr()?;
                     left.push(self.expr_to_assign_left(ast_node).ok_or_else(|| {
                         CompilerError::UnexpectedToken {
@@ -446,7 +459,10 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
                 self.bump();
                 let ty = Some(self.parse_type()?);
                 let range = self.end_range(start);
-                let left = AssignLeft::Ident(Box::new(TypedIdent { ident, ty, range }));
+                let left = AssignLeft {
+                    kind: AssignLeftKind::Ident(Box::new(TypedIdent { ident, ty, range })),
+                    range,
+                };
                 self.expect(TokenKind::Assign)?;
                 let right = Box::new(self.parse_expr()?);
                 StmtKind::Assign { left, right }
@@ -490,20 +506,24 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
     }
 
     fn expr_to_assign_left(&self, expr: Expr<S::String>) -> Option<AssignLeft<S::String>> {
-        match expr.kind {
-            ExprKind::Ident(ident) => Some(AssignLeft::Ident(Box::new(ident.into()))),
+        let kind = match expr.kind {
+            ExprKind::Ident(ident) => AssignLeftKind::Ident(Box::new(ident.into())),
             ExprKind::Member {
                 table,
                 property,
                 safe,
-            } if !safe => Some(AssignLeft::Member { table, property }),
+            } if safe.is_none() => AssignLeftKind::Member { table, property },
             ExprKind::MetaMember {
                 table,
                 property,
                 safe,
-            } if !safe => Some(AssignLeft::MetaMember { table, property }),
-            _ => None,
-        }
+            } if safe.is_none() => AssignLeftKind::MetaMember { table, property },
+            _ => return None,
+        };
+        Some(AssignLeft {
+            kind,
+            range: expr.range,
+        })
     }
 
     fn parse_function(
@@ -666,18 +686,18 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
                     kind: CallKind::None,
                 }
             } else if self.eat(TokenKind::OpenBracket) {
-                member_expr!(Bracket, false)
+                member_expr!(Bracket, None)
             } else if self.eat(TokenKind::Dot) {
-                member_expr!(Dot, false)
+                member_expr!(Dot, None)
             } else if self.eat(TokenKind::DoubleColon) {
-                member_expr!(DoubleColon, false)
-            } else if self.eat(TokenKind::Question) {
+                member_expr!(DoubleColon, None)
+            } else if let Some(range) = self.eat_range(TokenKind::Question) {
                 if self.eat(TokenKind::OpenBracket) {
-                    member_expr!(Bracket, true)
+                    member_expr!(Bracket, Some(range))
                 } else if self.eat(TokenKind::Dot) {
-                    member_expr!(Dot, true)
+                    member_expr!(Dot, Some(range))
                 } else if self.eat(TokenKind::DoubleColon) {
-                    member_expr!(DoubleColon, true)
+                    member_expr!(DoubleColon, Some(range))
                 } else {
                     return Err(self.unexpected());
                 }
@@ -740,9 +760,7 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
                 function_id: OnceLock::new(),
             };
             ExprKind::Function(Box::new(function))
-        } else if self.check(TokenKind::Try) {
-            let try_range = self.current_range().unwrap_or_default();
-            self.bump();
+        } else if let Some(try_range) = self.eat_range(TokenKind::Try) {
             let call_kind = if self.eat(TokenKind::Question) {
                 CallKind::TryOption
             } else if self.eat(TokenKind::Exclamation) {
@@ -913,7 +931,13 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
 
     fn parse_match_case(&mut self) -> Result<MatchCase<S::String>, CompilerError> {
         let start = self.start_range();
-        let patterns = self.parse_patterns()?;
+        let mut patterns = Vec::new();
+        loop {
+            patterns.push(self.parse_pattern()?);
+            if !self.eat(TokenKind::VBar) {
+                break;
+            }
+        }
         self.expect(TokenKind::FatArrow)?;
         let body = self.parse_block()?;
         let range = self.end_range(start);
@@ -924,19 +948,6 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
         })
     }
 
-    fn parse_patterns(&mut self) -> Result<Patterns<S::String>, CompilerError> {
-        let start = self.start_range();
-        let mut patterns = Vec::new();
-        loop {
-            patterns.push(self.parse_pattern()?);
-            if !self.eat(TokenKind::VBar) {
-                break;
-            }
-        }
-        let range = self.end_range(start);
-        Ok(Patterns { patterns, range })
-    }
-
     fn parse_pattern(&mut self) -> Result<Pattern<S::String>, CompilerError> {
         let start = self.start_range();
         let kind = if self.check(TokenKind::Ident) {
@@ -945,37 +956,35 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
             let (pairs, others) = self.parse_items_between_with_last(
                 TokenKind::OpenBrace,
                 |p| {
+                    let start = p.start_range();
                     let key = p.parse_lit()?;
                     p.expect(TokenKind::Colon)?;
                     let value = p.parse_pattern()?;
-                    Ok((key, value))
+                    let range = p.end_range(start);
+                    Ok(TablePatternPair { key, value, range })
                 },
                 TokenKind::Ellipsis,
                 |p| {
+                    let range = p.current_range().unwrap_or_default();
                     p.bump();
-                    Ok(())
+                    Ok(range)
                 },
                 TokenKind::CloseBrace,
             )?;
-            PatternKind::Table {
-                pairs,
-                others: others.is_some(),
-            }
+            PatternKind::Table { pairs, others }
         } else if self.check(TokenKind::OpenBracket) {
             let (items, others) = self.parse_items_between_with_last(
                 TokenKind::OpenBracket,
                 Parser::parse_pattern,
                 TokenKind::Ellipsis,
                 |p| {
+                    let range = p.current_range().unwrap_or_default();
                     p.bump();
-                    Ok(())
+                    Ok(range)
                 },
                 TokenKind::CloseBracket,
             )?;
-            PatternKind::List {
-                items,
-                others: others.is_some(),
-            }
+            PatternKind::List { items, others }
         } else {
             let lit = self.parse_lit()?;
             PatternKind::Lit(Box::new(lit))
@@ -1006,26 +1015,30 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
         let kind = if self.eat(TokenKind::OpenParen) {
             let ty = self.parse_type()?;
             self.expect(TokenKind::CloseParen)?;
-            ty.kind
+            TyKind::Paren(Box::new(ty))
         } else if self.check(TokenKind::Ident) {
             TyKind::Ident(Box::new(self.parse_ident()?))
         } else if self.check(TokenKind::OpenBrace) {
             let (pairs, others) = self.parse_items_between_with_last(
                 TokenKind::OpenBrace,
                 |p| {
+                    let start = p.start_range();
                     let key = p.parse_ident()?;
                     p.expect(TokenKind::Colon)?;
                     let value = p.parse_type()?;
-                    Ok((key.name, value))
+                    let range = p.end_range(start);
+                    Ok(TableTyPair { key, value, range })
                 },
                 TokenKind::OpenBracket,
                 |p| {
+                    let start = p.start_range();
                     p.expect(TokenKind::OpenBracket)?;
                     let key = p.parse_type()?;
                     p.expect(TokenKind::CloseBracket)?;
                     p.expect(TokenKind::Colon)?;
                     let value = p.parse_type()?;
-                    Ok(Box::new((key, value)))
+                    let range = p.end_range(start);
+                    Ok(Box::new(TableTyOther { key, value, range }))
                 },
                 TokenKind::CloseBrace,
             )?;

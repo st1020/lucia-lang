@@ -318,12 +318,14 @@ impl<S: AsRef<str> + Clone + Eq + Ord> From<TyKind<S>> for Type<S> {
                 "str" => Type::Str,
                 _ => Type::UserData(ident.name),
             },
+            TyKind::Paren(ty) => ty.kind.into(),
             TyKind::Table { pairs, others } => Type::Table {
                 pairs: pairs
                     .into_iter()
-                    .map(|(name, t)| (LiteralType::Str(name), t.kind.into()))
+                    .map(|pair| (LiteralType::Str(pair.key.name), pair.value.kind.into()))
                     .collect(),
-                others: others.map(|t| (Box::new(t.0.kind.into()), Box::new(t.1.kind.into()))),
+                others: others
+                    .map(|t| (Box::new(t.key.kind.into()), Box::new(t.value.kind.into()))),
             },
             TyKind::Function {
                 params,
@@ -676,21 +678,21 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
         left: &AssignLeft<S>,
         right_type: Type<S>,
     ) -> Result<(), TypeError<S>> {
-        match left {
-            AssignLeft::Ident(ident) => {
+        match &left.kind {
+            AssignLeftKind::Ident(ident) => {
                 if let Some(t) = &ident.ty {
                     self.set_symbol_type(&ident.ident, t.kind.clone().into())?;
                 }
                 self.set_symbol_type(&ident.ident, right_type)?;
             }
-            AssignLeft::Member { table, property } => {
+            AssignLeftKind::Member { table, property } => {
                 right_type.is_sub_type_of(
                     &self
                         .check_expr(table)?
-                        .get_member_type(&self.check_member_kind(property)?)?,
+                        .get_member_type(&self.check_member_property(property)?)?,
                 );
             }
-            AssignLeft::MetaMember { table, property: _ } => {
+            AssignLeftKind::MetaMember { table, property: _ } => {
                 self.check_expr(table)?
                     .expect_is_sub_type_of(&Type::any_table().optional())?;
                 right_type.expect_is_sub_type_of(&(Type::any_table() | Type::Null))?;
@@ -859,8 +861,8 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
                 safe,
             } => self
                 .check_expr(table)?
-                .get_member_type(&self.check_member_kind(property)?)
-                .map(|t| if *safe { t.optional() } else { t })?,
+                .get_member_type(&self.check_member_property(property)?)
+                .map(|t| if safe.is_some() { t.optional() } else { t })?,
             ExprKind::MetaMember {
                 table,
                 property: _,
@@ -918,8 +920,8 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
         })
     }
 
-    fn check_member_kind(&mut self, member_kind: &MemberKind<S>) -> Result<Type<S>, TypeError<S>> {
-        match member_kind {
+    fn check_member_property(&mut self, property: &MemberKind<S>) -> Result<Type<S>, TypeError<S>> {
+        match property {
             MemberKind::Bracket(expr) => self.check_expr(expr),
             MemberKind::Dot(ident) | MemberKind::DoubleColon(ident) => {
                 Ok(Type::Literal(LiteralType::Str(ident.name.clone())))

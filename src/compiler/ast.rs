@@ -196,7 +196,7 @@ pub enum StmtKind<S> {
         kind: ImportKind<S>,
     },
     Fn {
-        glo: bool,
+        glo: Option<TextRange>,
         name: Box<Ident<S>>,
         function: Box<Function<S>>,
     },
@@ -268,7 +268,7 @@ impl<S: AsRef<str>> fmt::Display for StmtKind<S> {
                 write!(
                     f,
                     "{}fn {}{}",
-                    if *glo { "glo " } else { "" },
+                    if glo.is_some() { "glo " } else { "" },
                     name,
                     function
                 )
@@ -361,12 +361,12 @@ pub enum ExprKind<S> {
     Member {
         table: Box<Expr<S>>,
         property: MemberKind<S>,
-        safe: bool,
+        safe: Option<TextRange>,
     },
     MetaMember {
         table: Box<Expr<S>>,
         property: MetaMemberKind,
-        safe: bool,
+        safe: Option<TextRange>,
     },
     Call {
         callee: Box<Expr<S>>,
@@ -413,13 +413,21 @@ impl<S: AsRef<str>> fmt::Display for ExprKind<S> {
                 table,
                 property,
                 safe,
-            } => write!(f, "{table}{}{property}", if *safe { "?" } else { "" }),
+            } => write!(
+                f,
+                "{table}{}{property}",
+                if safe.is_some() { "?" } else { "" }
+            ),
             ExprKind::MetaMember {
                 table,
                 property,
                 safe,
             } => {
-                write!(f, "{table}{}{property}", if *safe { "?" } else { "" })
+                write!(
+                    f,
+                    "{table}{}{property}",
+                    if safe.is_some() { "?" } else { "" }
+                )
             }
             ExprKind::Call {
                 callee,
@@ -642,7 +650,7 @@ pub enum ImportKind<S> {
     /// `import path::xxx as xxx`
     Simple(Option<Box<Ident<S>>>),
     /// `import path::{...}`
-    Nested(Vec<(Ident<S>, Option<Ident<S>>)>),
+    Nested(Vec<ImportItem<S>>),
     /// `import path::*`
     Glob,
 }
@@ -657,17 +665,27 @@ impl<S: AsRef<str>> fmt::Display for ImportKind<S> {
                     write!(f, "")
                 }
             }
-            ImportKind::Nested(v) => write!(
-                f,
-                "::{{{}}}",
-                v.iter()
-                    .map(|(name, alias)| match alias {
-                        Some(alias) => format!("{name} as {alias}"),
-                        None => format!("{name}"),
-                    })
-                    .join(", ")
-            ),
+            ImportKind::Nested(v) => write!(f, "::{{{}}}", v.iter().join(", ")),
             ImportKind::Glob => write!(f, "::*"),
+        }
+    }
+}
+
+/// An import item.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportItem<S> {
+    pub name: Ident<S>,
+    pub alias: Option<Ident<S>>,
+    pub range: TextRange,
+}
+
+impl_locatable!(ImportItem);
+
+impl<S: AsRef<str>> fmt::Display for ImportItem<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.alias {
+            Some(alias) => write!(f, "{} as {}", self.name, alias),
+            None => write!(f, "{}", self.name),
         }
     }
 }
@@ -697,9 +715,23 @@ impl<S: AsRef<str>> fmt::Display for TableProperty<S> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssignLeft<S> {
+    pub kind: AssignLeftKind<S>,
+    pub range: TextRange,
+}
+
+impl_locatable!(AssignLeft);
+
+impl<S: AsRef<str>> fmt::Display for AssignLeft<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.kind)
+    }
+}
+
 /// The left part of assign.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AssignLeft<S> {
+pub enum AssignLeftKind<S> {
     Ident(Box<TypedIdent<S>>),
     Member {
         table: Box<Expr<S>>,
@@ -711,12 +743,12 @@ pub enum AssignLeft<S> {
     },
 }
 
-impl<S: AsRef<str>> fmt::Display for AssignLeft<S> {
+impl<S: AsRef<str>> fmt::Display for AssignLeftKind<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            AssignLeft::Ident(ident) => write!(f, "{ident}"),
-            AssignLeft::Member { table, property } => write!(f, "{table}{property}"),
-            AssignLeft::MetaMember { table, property } => write!(f, "{table}{property}"),
+            AssignLeftKind::Ident(ident) => write!(f, "{ident}"),
+            AssignLeftKind::Member { table, property } => write!(f, "{table}{property}"),
+            AssignLeftKind::MetaMember { table, property } => write!(f, "{table}{property}"),
         }
     }
 }
@@ -754,7 +786,7 @@ impl<S> From<Box<Ident<S>>> for TypedIdent<S> {
 /// A match case.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MatchCase<S> {
-    pub patterns: Patterns<S>,
+    pub patterns: Vec<Pattern<S>>,
     pub body: Box<Block<S>>,
     pub range: TextRange,
 }
@@ -763,22 +795,7 @@ impl_locatable!(MatchCase);
 
 impl<S: AsRef<str>> fmt::Display for MatchCase<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} => {}", self.patterns, self.body)
-    }
-}
-
-/// Patterns.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Patterns<S> {
-    pub patterns: Vec<Pattern<S>>,
-    pub range: TextRange,
-}
-
-impl_locatable!(Patterns);
-
-impl<S: AsRef<str>> fmt::Display for Patterns<S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.patterns.iter().join(" | "))
+        write!(f, "{} => {}", self.patterns.iter().join(" | "), self.body)
     }
 }
 
@@ -803,12 +820,12 @@ pub enum PatternKind<S> {
     Lit(Box<Lit<S>>),
     Ident(Box<Ident<S>>),
     Table {
-        pairs: Vec<(Lit<S>, Pattern<S>)>,
-        others: bool,
+        pairs: Vec<TablePatternPair<S>>,
+        others: Option<TextRange>,
     },
     List {
         items: Vec<Pattern<S>>,
-        others: bool,
+        others: Option<TextRange>,
     },
 }
 
@@ -820,19 +837,32 @@ impl<S: AsRef<str>> fmt::Display for PatternKind<S> {
             PatternKind::Table { pairs, others } => write!(
                 f,
                 "{{{}{}}}",
-                pairs
-                    .iter()
-                    .map(|(k, v)| { format!("{k}: {v}") })
-                    .join(", "),
-                if *others { ", ..." } else { "" }
+                pairs.iter().join(", "),
+                if others.is_some() { ", ..." } else { "" }
             ),
             PatternKind::List { items, others } => write!(
                 f,
                 "[{}{}]",
                 items.iter().join(", "),
-                if *others { ", ..." } else { "" }
+                if others.is_some() { ", ..." } else { "" }
             ),
         }
+    }
+}
+
+/// A table pattern pair.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TablePatternPair<S> {
+    pub key: Lit<S>,
+    pub value: Pattern<S>,
+    pub range: TextRange,
+}
+
+impl_locatable!(TablePatternPair);
+
+impl<S: AsRef<str>> fmt::Display for TablePatternPair<S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.key, self.value)
     }
 }
 
@@ -856,9 +886,10 @@ impl<S: AsRef<str>> fmt::Display for Ty<S> {
 pub enum TyKind<S> {
     Lit(Box<Lit<S>>),
     Ident(Box<Ident<S>>),
+    Paren(Box<Ty<S>>),
     Table {
-        pairs: Vec<(S, Ty<S>)>,
-        others: Option<Box<(Ty<S>, Ty<S>)>>,
+        pairs: Vec<TableTyPair<S>>,
+        others: Option<Box<TableTyOther<S>>>,
     },
     Function {
         params: Vec<Ty<S>>,
@@ -875,27 +906,12 @@ impl<S: AsRef<str>> fmt::Display for TyKind<S> {
         match self {
             TyKind::Lit(lit) => write!(f, "{lit}"),
             TyKind::Ident(ident) => write!(f, "{ident}"),
+            TyKind::Paren(ty) => write!(f, "({ty})"),
             TyKind::Table { pairs, others } => match (pairs.len(), others) {
                 (0, None) => write!(f, "{{}}"),
-                (0, Some(others)) => write!(f, "{{[{}]: {}}}", others.0, others.1),
-                (_, None) => write!(
-                    f,
-                    "{{{}}}",
-                    pairs
-                        .iter()
-                        .map(|(name, t)| format!("{}: {}", name.as_ref(), t))
-                        .join(", ")
-                ),
-                (_, Some(others)) => write!(
-                    f,
-                    "{{{}, [{}]: {}}}",
-                    pairs
-                        .iter()
-                        .map(|(name, t)| format!("{}: {}", name.as_ref(), t))
-                        .join(", "),
-                    others.0,
-                    others.1
-                ),
+                (0, Some(others)) => write!(f, "{{{}}}", others),
+                (_, None) => write!(f, "{{{}}}", pairs.iter().join(", ")),
+                (_, Some(others)) => write!(f, "{{{}, {}}}", pairs.iter().join(", "), others),
             },
             TyKind::Function {
                 params,
@@ -918,8 +934,40 @@ impl<S: AsRef<str>> fmt::Display for TyKind<S> {
                     .unwrap_or_default();
                 write!(f, "fn({}){}{}", params_str, returns_str, throws_str)
             }
-            TyKind::Option(t) => write!(f, "({}?)", t),
-            TyKind::Union(union) => write!(f, "({})", union.iter().join(" | ")),
+            TyKind::Option(ty) => write!(f, "{}?", ty),
+            TyKind::Union(union) => write!(f, "{}", union.iter().join(" | ")),
         }
+    }
+}
+
+/// A table type pair.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TableTyPair<S> {
+    pub key: Ident<S>,
+    pub value: Ty<S>,
+    pub range: TextRange,
+}
+
+impl_locatable!(TableTyPair);
+
+impl<S: AsRef<str>> fmt::Display for TableTyPair<S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.key, self.value)
+    }
+}
+
+/// A table type other.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TableTyOther<S> {
+    pub key: Ty<S>,
+    pub value: Ty<S>,
+    pub range: TextRange,
+}
+
+impl_locatable!(TableTyOther);
+
+impl<S: AsRef<str>> fmt::Display for TableTyOther<S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[{}]: {}", self.key, self.value)
     }
 }

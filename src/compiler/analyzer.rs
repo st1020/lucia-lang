@@ -249,7 +249,7 @@ impl<S: AsRef<str> + Clone> SemanticAnalyzer<S> {
                 self.analyze_expr(expr);
                 for case in cases {
                     self.enter_scope(ScopeKind::Block, &case.body.scope_id);
-                    for pattern in &case.patterns.patterns {
+                    for pattern in &case.patterns {
                         self.analyze_pattern(pattern);
                     }
                     self.analyze_stmts(&case.body);
@@ -284,8 +284,8 @@ impl<S: AsRef<str> + Clone> SemanticAnalyzer<S> {
                     self.declare_symbol_and_write_reference(ident, SymbolKind::Global);
                 }
                 ImportKind::Nested(items) => {
-                    for (name, alias) in items {
-                        let ident = alias.as_ref().unwrap_or(name);
+                    for item in items {
+                        let ident = item.alias.as_ref().unwrap_or(&item.name);
                         self.declare_symbol_and_write_reference(ident, SymbolKind::Global);
                     }
                 }
@@ -296,7 +296,7 @@ impl<S: AsRef<str> + Clone> SemanticAnalyzer<S> {
                 name,
                 function,
             } => {
-                if *glo {
+                if glo.is_some() {
                     self.declare_symbol_and_write_reference(name, SymbolKind::Global);
                 } else {
                     self.declare_write_reference(name);
@@ -339,13 +339,13 @@ impl<S: AsRef<str> + Clone> SemanticAnalyzer<S> {
     }
 
     fn analyze_assign_left(&mut self, left: &AssignLeft<S>) {
-        match left {
-            AssignLeft::Ident(ident) => self.declare_write_reference(&ident.ident),
-            AssignLeft::Member { table, property } => {
+        match &left.kind {
+            AssignLeftKind::Ident(ident) => self.declare_write_reference(&ident.ident),
+            AssignLeftKind::Member { table, property } => {
                 self.analyze_expr(table);
                 self.analyze_member_property(property);
             }
-            AssignLeft::MetaMember { table, property: _ } => self.analyze_expr(table),
+            AssignLeftKind::MetaMember { table, property: _ } => self.analyze_expr(table),
         }
     }
 
@@ -421,8 +421,8 @@ impl<S: AsRef<str> + Clone> SemanticAnalyzer<S> {
                 self.declare_symbol_and_write_reference(ident, SymbolKind::Local);
             }
             PatternKind::Table { pairs, others: _ } => {
-                for (_, v) in pairs {
-                    self.analyze_pattern(v);
+                for pair in pairs {
+                    self.analyze_pattern(&pair.value);
                 }
             }
             PatternKind::List { items, others: _ } => {

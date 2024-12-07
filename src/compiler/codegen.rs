@@ -475,7 +475,7 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
                     .collect();
                 for (i, case) in cases.iter().enumerate() {
                     let block_label = block_labels[i];
-                    for pattern in &case.patterns.patterns {
+                    for pattern in &case.patterns {
                         let mut clean_stack_labels = vec![self.get_jump_target()];
                         self.push_code(OpCode::Copy(1));
                         self.gen_pattern(pattern, 0, &mut clean_stack_labels)?;
@@ -624,10 +624,10 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
                         self.store(alias.as_ref().map_or(path.last().unwrap(), |v| v))
                     }
                     ImportKind::Nested(items) => {
-                        for (name, alias) in items {
-                            let const_id = self.add_const(ConstValue::Str(name.name.clone()));
+                        for item in items {
+                            let const_id = self.add_const(ConstValue::Str(item.name.name.clone()));
                             self.push_code(OpCode::ImportFrom(const_id));
-                            self.store(alias.as_ref().unwrap_or(name));
+                            self.store(item.alias.as_ref().unwrap_or(&item.name));
                         }
                         self.push_code(OpCode::Pop);
                     }
@@ -656,14 +656,14 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
                 operator,
                 left,
                 right,
-            } => match &left {
-                AssignLeft::Ident(ident) => {
+            } => match &left.kind {
+                AssignLeftKind::Ident(ident) => {
                     self.load(&ident.ident);
                     self.gen_expr(right)?;
                     self.push_code(OpCode::from(*operator));
                     self.store(&ident.ident);
                 }
-                AssignLeft::Member { table, property } => {
+                AssignLeftKind::Member { table, property } => {
                     self.gen_expr_member_without_get(table, property)?;
                     self.push_code(OpCode::Copy(2));
                     self.push_code(OpCode::Copy(2));
@@ -674,7 +674,7 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
                     self.push_code(OpCode::Swap(2));
                     self.push_code(property.set_opcode());
                 }
-                AssignLeft::MetaMember { table, property: _ } => {
+                AssignLeftKind::MetaMember { table, property: _ } => {
                     self.gen_expr(table)?;
                     self.push_code(OpCode::Copy(1));
                     self.push_code(OpCode::GetMeta);
@@ -712,13 +712,13 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
     }
 
     fn gen_assign_left(&mut self, assign_left: &AssignLeft<S>) -> Result<(), CompilerError> {
-        match assign_left {
-            AssignLeft::Ident(ident) => self.store(&ident.ident),
-            AssignLeft::Member { table, property } => {
+        match &assign_left.kind {
+            AssignLeftKind::Ident(ident) => self.store(&ident.ident),
+            AssignLeftKind::Member { table, property } => {
                 self.gen_expr_member_without_get(table, property)?;
                 self.push_code(property.set_opcode());
             }
-            AssignLeft::MetaMember { table, property: _ } => {
+            AssignLeftKind::MetaMember { table, property: _ } => {
                 self.gen_expr(table)?;
                 self.push_code(OpCode::SetMeta);
             }
@@ -788,7 +788,7 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
             } => {
                 self.gen_expr(table)?;
                 let safe_label = self.get_jump_target();
-                if *safe {
+                if safe.is_some() {
                     self.push_code(OpCode::JumpPopIfNull(safe_label));
                 }
                 match property {
@@ -811,7 +811,7 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
             } => {
                 self.gen_expr(table)?;
                 let safe_label = self.get_jump_target();
-                if *safe {
+                if safe.is_some() {
                     self.push_code(OpCode::JumpPopIfNull(safe_label));
                 }
                 self.push_code(OpCode::GetMeta);
@@ -831,7 +831,7 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
                         safe,
                     } => {
                         self.gen_expr(table)?;
-                        if *safe {
+                        if safe.is_some() {
                             self.push_code(OpCode::JumpPopIfNull(safe_label));
                         }
                         match property {
@@ -927,7 +927,7 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
                 self.push_code(OpCode::Copy(1));
                 self.push_code(OpCode::TypeCheck(ValueType::Table));
                 self.push_code(OpCode::PopJumpIfFalse(clean_stack_label));
-                if !others {
+                if others.is_none() {
                     self.push_code(OpCode::Copy(1));
                     self.push_code(OpCode::GetLen);
                     let const_id = self.add_const(ConstValue::Int(pairs.len().try_into().unwrap()));
@@ -935,12 +935,12 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
                     self.push_code(OpCode::Eq);
                     self.push_code(OpCode::PopJumpIfFalse(clean_stack_label));
                 }
-                for (k, v) in pairs {
+                for pair in pairs {
                     self.push_code(OpCode::Copy(1));
-                    let const_id = self.add_const(k.kind.clone().into());
+                    let const_id = self.add_const(pair.key.kind.clone().into());
                     self.push_code(OpCode::LoadConst(const_id));
                     self.push_code(OpCode::GetItem);
-                    self.gen_pattern(v, pattern_depth + 1, clean_stack_labels)?;
+                    self.gen_pattern(&pair.value, pattern_depth + 1, clean_stack_labels)?;
                 }
                 self.push_code(OpCode::Pop);
             }
@@ -949,7 +949,7 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
                 self.push_code(OpCode::Copy(1));
                 self.push_code(OpCode::TypeCheck(ValueType::Table));
                 self.push_code(OpCode::PopJumpIfFalse(clean_stack_label));
-                if !others {
+                if others.is_none() {
                     self.push_code(OpCode::Copy(1));
                     self.push_code(OpCode::GetLen);
                     let const_id = self.add_const(ConstValue::Int(items.len().try_into().unwrap()));
