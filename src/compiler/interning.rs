@@ -11,7 +11,7 @@ pub trait StringInterner {
     fn intern(&mut self, s: &str) -> Self::String;
 }
 
-impl<'a, S: StringInterner> StringInterner for &'a mut S {
+impl<S: StringInterner> StringInterner for &mut S {
     type String = S::String;
 
     fn intern(&mut self, s: &str) -> Self::String {

@@ -1,5 +1,7 @@
 //! Errors of this crate.
 
+#![allow(clippy::needless_lifetimes)]
+
 use std::fmt;
 
 use gc_arena::Collect;
@@ -22,15 +24,15 @@ pub struct Error<'gc> {
     pub traceback: Option<Vec<Frame<'gc>>>,
 }
 
-impl<'gc> PartialEq for Error<'gc> {
+impl PartialEq for Error<'_> {
     fn eq(&self, other: &Self) -> bool {
         self.kind == other.kind
     }
 }
 
-impl<'gc> Eq for Error<'gc> {}
+impl Eq for Error<'_> {}
 
-impl<'gc> fmt::Display for Error<'gc> {
+impl fmt::Display for Error<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Error: {}", self.kind)?;
         if let Some(traceback) = &self.traceback {

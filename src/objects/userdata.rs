@@ -46,15 +46,15 @@ pub type UserDataInner<'gc> = AnyInner<UserDataMetaState<'gc>>;
 #[collect(no_drop)]
 pub struct UserData<'gc>(Any<'gc, UserDataMetaState<'gc>>);
 
-impl<'gc> PartialEq for UserData<'gc> {
+impl PartialEq for UserData<'_> {
     fn eq(&self, other: &Self) -> bool {
         self.0.eq(&other.0)
     }
 }
 
-impl<'gc> Eq for UserData<'gc> {}
+impl Eq for UserData<'_> {}
 
-impl<'gc> Hash for UserData<'gc> {
+impl Hash for UserData<'_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.0.hash(state)
     }
@@ -70,7 +70,7 @@ impl fmt::Display for UserData<'_> {
 #[collect(require_static)]
 pub struct Static<R>(pub R);
 
-impl<'a, R: 'static> Rootable<'a> for Static<R> {
+impl<R: 'static> Rootable<'_> for Static<R> {
     type Root = Static<R>;
 }
 

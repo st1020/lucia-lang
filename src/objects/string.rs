@@ -14,13 +14,13 @@ impl<'gc> Str<'gc> {
     }
 }
 
-impl<'gc> AsRef<str> for Str<'gc> {
+impl AsRef<str> for Str<'_> {
     fn as_ref(&self) -> &str {
         &self.0
     }
 }
 
-impl<'gc> Borrow<str> for Str<'gc> {
+impl Borrow<str> for Str<'_> {
     fn borrow(&self) -> &str {
         &self.0
     }
@@ -73,7 +73,7 @@ impl<'gc> StringInterner for StrInterner<'gc> {
     }
 }
 
-unsafe impl<'gc> Collect for StrInterner<'gc> {
+unsafe impl Collect for StrInterner<'_> {
     fn needs_trace() -> bool {
         true
     }

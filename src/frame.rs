@@ -44,7 +44,7 @@ pub struct LuciaFrame<'gc> {
     pub call_status: CallStatusKind,
 }
 
-impl<'gc> fmt::Display for LuciaFrame<'gc> {
+impl fmt::Display for LuciaFrame<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "pc: {}", self.pc)?;
         writeln!(

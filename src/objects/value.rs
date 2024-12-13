@@ -99,7 +99,7 @@ impl<'gc> Value<'gc> {
     }
 }
 
-impl<'gc> fmt::Display for Value<'gc> {
+impl fmt::Display for Value<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Null => write!(f, "null"),

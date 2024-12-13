@@ -23,7 +23,7 @@ impl_enum_from!(Function<'gc>, {
     Callback(Callback<'gc>),
 });
 
-impl<'gc> Function<'gc> {
+impl Function<'_> {
     pub fn const_ptr(&self) -> *const () {
         match self {
             Function::Closure(v) => Gc::as_ptr(v.into_inner()) as *const (),

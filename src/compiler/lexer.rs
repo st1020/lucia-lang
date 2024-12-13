@@ -181,7 +181,7 @@ enum Base {
     Decimal,
 }
 
-impl<'a> Cursor<'a> {
+impl Cursor<'_> {
     /// Parses a token from the input string.
     pub fn advance_token(&mut self) -> Token {
         let start = self.pos();

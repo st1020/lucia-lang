@@ -90,7 +90,7 @@ impl<'gc> Callback<'gc> {
 
         // SAFETY: We can't auto-implement `Collect` due to the function pointer lifetimes, but
         // function pointers can't hold any data.
-        unsafe impl<'gc, C: Collect> Collect for HeaderCallback<'gc, C> {
+        unsafe impl<C: Collect> Collect for HeaderCallback<'_, C> {
             fn needs_trace() -> bool
             where
                 Self: Sized,

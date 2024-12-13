@@ -62,7 +62,7 @@ impl<'gc> UpValue<'gc> {
     }
 }
 
-impl<'gc> fmt::Display for UpValue<'gc> {
+impl fmt::Display for UpValue<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.get())
     }

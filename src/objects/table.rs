@@ -102,7 +102,7 @@ pub struct TableEntries<'gc> {
     map: IndexMap<Value<'gc>, Value<'gc>>,
 }
 
-unsafe impl<'gc> Collect for TableEntries<'gc> {
+unsafe impl Collect for TableEntries<'_> {
     fn trace(&self, cc: &gc_arena::Collection) {
         self.array.trace(cc);
         for (key, value) in self.map.iter() {
@@ -165,4 +165,4 @@ impl<'gc> Iterator for TableIter<'gc> {
     }
 }
 
-impl<'gc> ExactSizeIterator for TableIter<'gc> {}
+impl ExactSizeIterator for TableIter<'_> {}
