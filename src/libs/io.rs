@@ -3,9 +3,9 @@ use std::io;
 use compact_str::ToCompactString;
 
 use crate::{
+    Context,
     objects::{Callback, Table, Value},
     utils::Join,
-    Context,
 };
 
 pub fn io_lib<'gc>(ctx: Context<'gc>) -> Table<'gc> {

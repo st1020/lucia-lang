@@ -2,14 +2,14 @@ use core::fmt;
 use std::cell::RefMut;
 
 use compact_str::ToCompactString;
-use gc_arena::{lock::RefLock, Collect, Gc, Mutation};
+use gc_arena::{Collect, Gc, Mutation, lock::RefLock};
 
 use crate::{
+    Context,
     errors::{Error, ErrorKind, LuciaError, RuntimeError},
     frame::{CallStatusKind, Frame, LuciaFrame},
     fuel::Fuel,
-    objects::{define_object, CallbackReturn, Function, IntoValue, Table, Value},
-    Context,
+    objects::{CallbackReturn, Function, IntoValue, Table, Value, define_object},
 };
 
 /// The current state of a [`Thread`].

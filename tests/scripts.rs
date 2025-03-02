@@ -1,6 +1,6 @@
 use std::{
     fs,
-    io::{stdout, Write},
+    io::{Write, stdout},
 };
 
 use lucia_lang::Lucia;

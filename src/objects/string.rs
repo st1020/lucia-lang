@@ -1,10 +1,10 @@
 use std::{borrow::Borrow, collections::HashSet, fmt, ops};
 
 use compact_str::CompactString;
-use gc_arena::{static_collect, Collect, Gc, Mutation};
+use gc_arena::{Collect, Gc, Mutation, static_collect};
 use rustc_hash::FxBuildHasher;
 
-use crate::{compiler::interning::StringInterner, objects::define_object, Context};
+use crate::{Context, compiler::interning::StringInterner, objects::define_object};
 
 define_object!(Str, StrInner, inner);
 

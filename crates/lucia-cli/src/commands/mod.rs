@@ -1,6 +1,6 @@
 use crate::{
-    args::{LuciaCliArgs, LuciaCliCommand},
     Context,
+    args::{LuciaCliArgs, LuciaCliCommand},
 };
 
 mod lsp;

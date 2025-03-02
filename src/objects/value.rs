@@ -1,11 +1,11 @@
 use std::{fmt, num::NonZeroUsize};
 
 use compact_str::{CompactString, ToCompactString};
-use gc_arena::{static_collect, Collect, Gc};
+use gc_arena::{Collect, Gc, static_collect};
 
 use crate::{
     objects::{Function, Str, Table, UserData},
-    utils::{impl_enum_from, Float},
+    utils::{Float, impl_enum_from},
 };
 
 pub use crate::compiler::value::ValueType;

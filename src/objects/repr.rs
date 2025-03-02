@@ -1,11 +1,11 @@
 use std::collections::HashSet;
 
-use compact_str::{format_compact, CompactString, ToCompactString};
+use compact_str::{CompactString, ToCompactString, format_compact};
 use gc_arena::Gc;
 
 use crate::{
     objects::{Callback, Closure, Function, Str, Table, UserData, Value},
-    utils::{escape_str, Float},
+    utils::{Float, escape_str},
 };
 
 pub trait Repr {

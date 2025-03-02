@@ -4,7 +4,7 @@ use gc_arena::{Collect, DynamicRoot, DynamicRootSet, Mutation, Rootable};
 
 use crate::{
     objects::{Callback, Closure, Function, RuntimeCode, Str, Table, UserData, Value},
-    utils::{impl_enum_from, Float},
+    utils::{Float, impl_enum_from},
 };
 
 /// A collection of stashed values.

@@ -1,11 +1,11 @@
 use crate::{
+    Context,
     compiler::opcode::{JumpTarget, OpCode},
     errors::{Error, LuciaError, RuntimeError},
     frame::{CallStatusKind, Frame},
     meta_ops,
     objects::{Closure, Function, IntoValue, RuntimeConstValue, Table, TableEntries, Value},
     thread::ThreadState,
-    Context,
 };
 
 impl<'gc> ThreadState<'gc> {

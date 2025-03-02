@@ -4,7 +4,7 @@ members = [".", "crates/*"]
 [workspace.package]
 version = "0.2.0"
 authors = ["st1020 <me@st1020.com>"]
-edition = "2021"
+edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/st1020/lucia-lang"
 
@@ -12,9 +12,10 @@ repository = "https://github.com/st1020/lucia-lang"
 lucia-lang = { path = "./" }
 # Compiler and Runtime
 text-size = "1"
-compact_str = "0.8"
+compact_str = "0.9"
 unicode-ident = "1"
 index_vec = "0.1"
+sorted-vec = "0.8"
 indexmap = "2"
 rustc-hash = "2"
 gc-arena = "0.5"
@@ -52,6 +53,7 @@ text-size.workspace = true
 compact_str.workspace = true
 unicode-ident.workspace = true
 index_vec.workspace = true
+sorted-vec.workspace = true
 indexmap.workspace = true
 rustc-hash.workspace = true
 gc-arena.workspace = true

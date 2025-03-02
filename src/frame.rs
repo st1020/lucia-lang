@@ -3,10 +3,10 @@ use std::{cmp::Ordering, fmt};
 use gc_arena::Collect;
 
 use crate::{
+    Context,
     errors::{Error, RuntimeError},
     objects::{Callback, Closure, IntoValue, Table, UpValue, Value},
     utils::Join,
-    Context,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Collect)]

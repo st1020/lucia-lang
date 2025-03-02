@@ -1,13 +1,13 @@
 use compact_str::{CompactString, ToCompactString};
 
 use crate::{
+    Context,
     errors::{Error, RuntimeError},
     objects::{
         Callback, Closure, Function, Str, Table, TableEntries, TableState, UserData, Value,
         ValueType,
     },
     utils::Float,
-    Context,
 };
 
 pub trait IntoValue<'gc> {

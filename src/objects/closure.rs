@@ -1,11 +1,11 @@
 use std::fmt;
 
 use gc_arena::{
-    lock::{Lock, RefLock},
     Collect, Gc, Mutation,
+    lock::{Lock, RefLock},
 };
 
-use crate::objects::{define_object, RuntimeCode, Value};
+use crate::objects::{RuntimeCode, Value, define_object};
 
 define_object!(Closure, ClosureInner<'gc>, ptr, "closure");
 

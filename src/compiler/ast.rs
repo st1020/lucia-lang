@@ -4,7 +4,7 @@ use std::{fmt, sync::OnceLock};
 
 use text_size::TextRange;
 
-use crate::utils::{escape_str, Float, Indent, Join, Locatable};
+use crate::utils::{Float, Indent, Join, Locatable, escape_str};
 
 use super::{
     index::{FunctionId, ReferenceId, ScopeId},

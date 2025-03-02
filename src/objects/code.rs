@@ -1,6 +1,6 @@
 use std::fmt;
 
-use gc_arena::{static_collect, Collect, Gc, Mutation};
+use gc_arena::{Collect, Gc, Mutation, static_collect};
 
 use crate::{
     compiler::{
@@ -8,7 +8,7 @@ use crate::{
         code::{Code, ConstValue},
         opcode::OpCode,
     },
-    objects::{define_object, Str},
+    objects::{Str, define_object},
     utils::Float,
 };
 

@@ -2,7 +2,7 @@
 
 use std::iter;
 
-use index_vec::{index_vec, IndexVec};
+use index_vec::{IndexVec, index_vec};
 use indexmap::{IndexMap, IndexSet};
 use rustc_hash::FxBuildHasher;
 

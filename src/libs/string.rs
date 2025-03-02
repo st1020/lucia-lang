@@ -1,8 +1,8 @@
 use compact_str::ToCompactString;
 
 use crate::{
-    objects::{Callback, IntoValue, Str, Table, TableEntries, Value},
     Context,
+    objects::{Callback, IntoValue, Str, Table, TableEntries, Value},
 };
 
 pub fn string_lib<'gc>(ctx: Context<'gc>) -> Table<'gc> {

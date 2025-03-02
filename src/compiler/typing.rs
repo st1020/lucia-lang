@@ -2,7 +2,7 @@
 
 use std::{fmt, ops};
 
-use index_vec::{index_vec, IndexVec};
+use index_vec::{IndexVec, index_vec};
 use indexmap::IndexMap;
 use rustc_hash::FxBuildHasher;
 use thiserror::Error;
@@ -565,7 +565,7 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
                         return Err(TypeError::ExpectIsSubtypeOf {
                             ty: Box::new(ty),
                             expected: Box::new(Type::any_function()),
-                        })
+                        });
                     }
                 };
                 if let Type::Union(union) = &mut right_type {
@@ -914,7 +914,7 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
                     return Err(TypeError::ExpectIsSubtypeOf {
                         ty: Box::new(ty),
                         expected: Box::new(Type::any_function()),
-                    })
+                    });
                 }
             },
         })

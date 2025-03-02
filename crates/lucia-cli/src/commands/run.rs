@@ -2,7 +2,7 @@ use std::fs;
 
 use lucia_lang::Lucia;
 
-use crate::{args::RunCommand, Context};
+use crate::{Context, args::RunCommand};
 
 impl Context {
     pub async fn execute_run(&mut self, cmd: RunCommand) -> Result<(), anyhow::Error> {

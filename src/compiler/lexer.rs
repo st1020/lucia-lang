@@ -216,11 +216,7 @@ impl Cursor<'_> {
             // Assign, Eq, Identical or FatArrow.
             '=' => {
                 if self.eat('=') {
-                    if self.eat('=') {
-                        Identical
-                    } else {
-                        Eq
-                    }
+                    if self.eat('=') { Identical } else { Eq }
                 } else if self.eat('>') {
                     FatArrow
                 } else {

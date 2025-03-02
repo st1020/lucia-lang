@@ -4,7 +4,7 @@ use std::{
     mem,
 };
 
-use gc_arena::{arena::Root, barrier, lock, Collect, Gc, Mutation, Rootable};
+use gc_arena::{Collect, Gc, Mutation, Rootable, arena::Root, barrier, lock};
 use thiserror::Error;
 
 use crate::objects::{Any, AnyInner, Table};

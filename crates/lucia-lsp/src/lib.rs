@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use dashmap::DashMap;
 use lucia_lang::utils::Locatable;
 
-use tower_lsp::{jsonrpc::Result, lsp_types::*, Client, ClientSocket, LanguageServer, LspService};
+use tower_lsp::{Client, ClientSocket, LanguageServer, LspService, jsonrpc::Result, lsp_types::*};
 
 use crate::{
     document::Document,
@@ -41,7 +41,7 @@ impl Backend {
         }
     }
 
-    async fn on_change<'a>(&self, params: TextDocumentItem<'a>) {
+    async fn on_change(&self, params: TextDocumentItem<'_>) {
         let interner = ThreadSafeInterner::default();
         let (document, errors) = Document::build(params.text, interner);
 

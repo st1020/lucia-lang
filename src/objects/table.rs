@@ -1,9 +1,9 @@
-use gc_arena::{lock::RefLock, Collect, Gc, Mutation};
+use gc_arena::{Collect, Gc, Mutation, lock::RefLock};
 use indexmap::IndexMap;
 
 use crate::{
-    objects::{define_object, IntoValue, Value},
     Context,
+    objects::{IntoValue, Value, define_object},
 };
 
 pub type TableInner<'gc> = RefLock<TableState<'gc>>;

@@ -4,7 +4,7 @@ use std::{iter::Peekable, sync::OnceLock};
 
 use text_size::{TextRange, TextSize};
 
-use crate::utils::{unescape_str, Float, Join};
+use crate::utils::{Float, Join, unescape_str};
 
 use super::{
     ast::*,

@@ -1,9 +1,9 @@
-use gc_arena::{lock::RefLock, Gc};
+use gc_arena::{Gc, lock::RefLock};
 
 use crate::{
+    Context,
     meta_ops::raw_iter,
     objects::{Callback, CallbackReturn, Table, Value},
-    Context,
 };
 
 pub fn table_lib<'gc>(ctx: Context<'gc>) -> Table<'gc> {
