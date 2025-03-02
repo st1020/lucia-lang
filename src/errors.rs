@@ -8,9 +8,8 @@ use gc_arena::Collect;
 use thiserror::Error;
 
 use crate::{
-    compiler::opcode::OpCode,
+    compiler::{opcode::OpCode, value::MetaName},
     frame::Frame,
-    meta_ops::MetaMethod,
     objects::{ArgumentRange, ExternValue, Value, ValueType},
     thread::ThreadMode,
     utils::{Indent, Join},
@@ -133,24 +132,24 @@ pub enum RuntimeError {
         required: ArgumentRange,
         given: usize,
     },
-    #[error("operator error (unsupported operand type(s) for {operator}: {operand})")]
+    #[error("operator error (unsupported operand type for {operator}: {operand})")]
     UnOperator {
         operator: OpCode,
         operand: ValueType,
     },
-    #[error("operator error (unsupported operand type(s) for {operator}: {} and {})", .operand.0, .operand.1)]
+    #[error("operator error (unsupported operand types for {operator}: {} and {})", .operand.0, .operand.1)]
     BinOperator {
         operator: OpCode,
         operand: (ValueType, ValueType),
     },
-    #[error("operator error (unsupported operand type(s) for {operator}: {operand})")]
+    #[error("operator error (unsupported operand type for {operator}: {operand})")]
     MetaUnOperator {
-        operator: MetaMethod,
+        operator: MetaName,
         operand: ValueType,
     },
-    #[error("operator error (unsupported operand type(s) for {operator}: {} and {})", .operand.0, .operand.1)]
+    #[error("operator error (unsupported operand types for {operator}: {} and {})", .operand.0, .operand.1)]
     MetaBinOperator {
-        operator: MetaMethod,
+        operator: MetaName,
         operand: (ValueType, ValueType),
     },
     #[error("divide by zero")]

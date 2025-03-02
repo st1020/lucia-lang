@@ -17,7 +17,7 @@ macro_rules! define_index {
 
             #[allow(clippy::missing_safety_doc)]
             pub const unsafe fn new_unchecked(idx: u32) -> Self {
-                Self(NonZeroU32::new_unchecked(idx ^ u32::MAX))
+                Self(unsafe {NonZeroU32::new_unchecked(idx ^ u32::MAX)})
             }
 
             pub const fn get(&self) -> u32 {

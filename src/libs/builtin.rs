@@ -2,8 +2,8 @@ use gc_arena::{Collect, Gc, lock::RefLock};
 
 use crate::{
     Context,
+    compiler::value::MetaMethod,
     errors::{Error, LuciaError},
-    meta_ops,
     objects::{Callback, CallbackReturn, Value},
 };
 
@@ -34,12 +34,36 @@ pub fn load_builtin<'gc>(ctx: Context<'gc>) {
             }
         }),
     );
-    builtins.set(ctx, "len", Callback::from(&ctx, meta_ops::len));
-    builtins.set(ctx, "bool", Callback::from(&ctx, meta_ops::bool));
-    builtins.set(ctx, "int", Callback::from(&ctx, meta_ops::int));
-    builtins.set(ctx, "float", Callback::from(&ctx, meta_ops::float));
-    builtins.set(ctx, "str", Callback::from(&ctx, meta_ops::str));
-    builtins.set(ctx, "repr", Callback::from(&ctx, meta_ops::repr));
+    builtins.set(
+        ctx,
+        "len",
+        Callback::from(&ctx, |ctx: Context<'gc>, value| ctx.len(value)),
+    );
+    builtins.set(
+        ctx,
+        "bool",
+        Callback::from(&ctx, |ctx: Context<'gc>, value| ctx.bool(value)),
+    );
+    builtins.set(
+        ctx,
+        "int",
+        Callback::from(&ctx, |ctx: Context<'gc>, value| ctx.int(value)),
+    );
+    builtins.set(
+        ctx,
+        "float",
+        Callback::from(&ctx, |ctx: Context<'gc>, value| ctx.float(value)),
+    );
+    builtins.set(
+        ctx,
+        "str",
+        Callback::from(&ctx, |ctx: Context<'gc>, value| ctx.str(value)),
+    );
+    builtins.set(
+        ctx,
+        "repr",
+        Callback::from(&ctx, |ctx: Context<'gc>, value| ctx.repr(value)),
+    );
     builtins.set(
         ctx,
         "range",

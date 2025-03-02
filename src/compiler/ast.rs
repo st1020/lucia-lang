@@ -462,7 +462,7 @@ impl<S: AsRef<str>> fmt::Display for Lit<S> {
 }
 
 /// Kind of literal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum LitKind<S> {
     /// "null"
     Null,

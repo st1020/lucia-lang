@@ -2,7 +2,6 @@ use gc_arena::{Gc, lock::RefLock};
 
 use crate::{
     Context,
-    meta_ops::raw_iter,
     objects::{Callback, CallbackReturn, Table, Value},
 };
 
@@ -63,6 +62,6 @@ pub fn table_lib<'gc>(ctx: Context<'gc>) -> Table<'gc> {
             },
         ),
     );
-    t.set(ctx, "raw_iter", Callback::from(&ctx, raw_iter));
+    t.set(ctx, "raw_iter", t.iter_callback(ctx));
     t
 }

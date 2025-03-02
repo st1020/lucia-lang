@@ -3,7 +3,7 @@ use indexmap::IndexMap;
 
 use crate::{
     Context,
-    objects::{IntoValue, Value, define_object},
+    objects::{Callback, CallbackReturn, IntoValue, Value, define_object},
 };
 
 pub type TableInner<'gc> = RefLock<TableState<'gc>>;
@@ -86,6 +86,24 @@ impl<'gc> Table<'gc> {
 
     pub fn iter(self) -> TableIter<'gc> {
         TableIter { table: self, i: 0 }
+    }
+
+    pub fn iter_callback(self, ctx: Context<'gc>) -> Callback<'gc> {
+        Callback::from_fn_with(
+            &ctx,
+            Gc::new(&ctx, RefLock::new(self.iter())),
+            |iter, ctx, _args| {
+                Ok(CallbackReturn::Return(iter.borrow_mut(&ctx).next().map_or(
+                    Value::Null,
+                    |(k, v)| {
+                        let t = Table::new(&ctx);
+                        t.set(ctx, 0, k);
+                        t.set(ctx, 1, v);
+                        t.into()
+                    },
+                )))
+            },
+        )
     }
 }
 

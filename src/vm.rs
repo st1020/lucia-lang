@@ -1,6 +1,9 @@
 use crate::{
     Context,
-    compiler::opcode::{JumpTarget, OpCode},
+    compiler::{
+        opcode::{JumpTarget, OpCode},
+        value::MetaMethod,
+    },
     errors::{Error, LuciaError, RuntimeError},
     frame::{CallStatusKind, Frame},
     meta_ops,
@@ -58,14 +61,14 @@ impl<'gc> ThreadState<'gc> {
             ($name:ident) => {{
                 let rhs = frame.stack.pop().unwrap();
                 let lhs = frame.stack.pop().unwrap();
-                call_meta_method!(meta_ops::$name(ctx, lhs, rhs));
+                call_meta_method!(ctx.$name(lhs, rhs));
             }};
         }
         macro_rules! get_table {
             ($name:ident) => {{
                 let key = frame.stack.pop().unwrap();
                 let table = frame.stack.pop().unwrap();
-                call_meta_method!(meta_ops::$name(ctx, table, key));
+                call_meta_method!(ctx.$name(table, key));
             }};
         }
         macro_rules! set_table {
@@ -73,7 +76,7 @@ impl<'gc> ThreadState<'gc> {
                 let key = frame.stack.pop().unwrap();
                 let table = frame.stack.pop().unwrap();
                 let value = frame.stack.pop().unwrap();
-                match meta_ops::$name(ctx, table, key, value)? {
+                match ctx.$name(table, key, value)? {
                     meta_ops::MetaResult::Value(_) => (),
                     meta_ops::MetaResult::Call(callee, args) => {
                         self.call_function(
@@ -91,7 +94,7 @@ impl<'gc> ThreadState<'gc> {
             ($i:expr, $call_status:expr) => {{
                 let args = frame.stack.split_off(frame.stack.len() - $i);
                 let callee = frame.stack.pop().unwrap();
-                self.call_function(ctx, meta_ops::call(ctx, callee)?, args, $call_status)?;
+                self.call_function(ctx, ctx.call(callee)?, args, $call_status)?;
                 break;
             }};
         }
@@ -214,7 +217,7 @@ impl<'gc> ThreadState<'gc> {
                 }
                 OpCode::Neg => {
                     let value = frame.stack.pop().unwrap();
-                    call_meta_method!(meta_ops::neg(ctx, value));
+                    call_meta_method!(ctx.neg(value));
                 }
                 OpCode::Not => {
                     let value = frame.stack.pop().unwrap();
@@ -251,11 +254,11 @@ impl<'gc> ThreadState<'gc> {
                 }
                 OpCode::GetLen => {
                     let value = frame.stack.pop().unwrap();
-                    call_meta_method!(meta_ops::len(ctx, value));
+                    call_meta_method!(ctx.len(value));
                 }
                 OpCode::Iter => {
                     let value = frame.stack.pop().unwrap();
-                    frame.stack.push(meta_ops::iter(ctx, value)?.into());
+                    frame.stack.push(ctx.iter(value)?.into());
                 }
                 OpCode::Jump(JumpTarget(i)) => {
                     frame.pc = i;
@@ -335,7 +338,7 @@ impl<'gc> ThreadState<'gc> {
                 OpCode::ReturnCall(i) => {
                     let args = frame.stack.split_off(frame.stack.len() - i);
                     let callee = frame.stack.pop().unwrap();
-                    self.tail_call(ctx, meta_ops::call(ctx, callee)?, args)?;
+                    self.tail_call(ctx, ctx.call(callee)?, args)?;
                     break;
                 }
                 OpCode::LoadLocals => {
