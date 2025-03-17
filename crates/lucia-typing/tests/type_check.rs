@@ -1,4 +1,5 @@
-use lucia_lang::compiler::{check_type, compile, interning::BasicInterner};
+use lucia_lang::compiler::interning::BasicInterner;
+use lucia_typing::check_type_source;
 
 #[test]
 fn test_type_hint() {
@@ -15,7 +16,7 @@ t9: {[int]: str} = ['test', 'test']
 t10: {a: int, b: str, [int]: str} = {'a': 1, 'b': '1', 0: 'test'}
 "#;
     let interner = BasicInterner::default();
-    let (parse_error, type_error) = check_type(interner, input);
+    let (parse_error, type_error) = check_type_source(interner, input);
     assert_eq!(parse_error.len(), 0);
     assert_eq!(type_error.len(), 0);
 }
@@ -26,7 +27,7 @@ fn test_type_hint_error() {
 t1: int = ""
 "#;
     let interner = BasicInterner::default();
-    let (parse_error, type_error) = check_type(interner, input);
+    let (parse_error, type_error) = check_type_source(interner, input);
     assert_eq!(parse_error.len(), 0);
     assert_eq!(type_error.len(), 1);
 }
@@ -39,21 +40,7 @@ t2: int = 1 // ok
 t3: int = 0.1 // error
 "#;
     let interner = BasicInterner::default();
-    let (parse_error, type_error) = check_type(interner, input);
+    let (parse_error, type_error) = check_type_source(interner, input);
     assert_eq!(parse_error.len(), 0);
     assert_eq!(type_error.len(), 2);
-}
-
-#[test]
-fn test_parse_error() {
-    let input = r#"
-1 +
-
-println(1 + 1)
-
-1 -
-"#;
-    let interner = BasicInterner::default();
-    let parse_error = compile(interner, input).unwrap_err();
-    assert_eq!(parse_error.len(), 2);
 }

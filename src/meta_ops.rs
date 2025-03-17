@@ -45,7 +45,7 @@ macro_rules! meta_operator_error {
 macro_rules! call_metamethod {
     ($ctx:ident, $meta_name:expr, $v1:ident $(,)? $($arg:ident),*) => {
         if let Some(metatable) = $v1.metatable() {
-            let metamethod = metatable.get($ctx, $meta_name);
+            let metamethod = metatable.get(*$ctx, $meta_name);
             if !metamethod.is_null() {
                 return Ok(MetaResult::Call($ctx.call(metamethod)?, [$v1, $($arg),*]));
             }
@@ -60,77 +60,77 @@ impl<'gc> MetaMethod<Value<'gc>> for Context<'gc> {
     type Result2 = Result<MetaResult<'gc, 2>, Error<'gc>>;
     type Result3 = Result<MetaResult<'gc, 3>, Error<'gc>>;
 
-    fn call(self, value: Value<'gc>) -> Self::ResultCall {
+    fn call(&self, value: Value<'gc>) -> Self::ResultCall {
         if let Value::Function(f) = value {
             return Ok(f);
         }
         let metatable = value
             .metatable()
             .ok_or_else(|| meta_operator_error!(MetaName::Call, value))?;
-        match metatable.get(self, MetaName::Call) {
+        match metatable.get(*self, MetaName::Call) {
             Value::Function(f) => Ok(f),
             v @ Value::Table(_) => self.call(v),
             v => Err(meta_operator_error!(MetaName::Call, v)),
         }
     }
 
-    fn iter(self, value: Value<'gc>) -> Self::ResultIter {
+    fn iter(&self, value: Value<'gc>) -> Self::ResultIter {
         if let Some(metatable) = value.metatable() {
-            let t = metatable.get(self, MetaName::Iter);
+            let t = metatable.get(*self, MetaName::Iter);
             if !t.is_null() {
                 return Ok(Function::Callback(Callback::from_fn_with(
-                    &self,
+                    self,
                     (self.call(t)?, value),
                     |(f, v), _ctx, _args| Ok(CallbackReturn::TailCall(*f, vec![*v])),
                 )));
             }
         }
         match value {
-            Value::Table(v) => Ok(Function::Callback(v.iter_callback(self))),
+            Value::Table(v) => Ok(Function::Callback(v.iter_callback(*self))),
             Value::Function(v) => Ok(v),
             _ => Err(meta_operator_error!(MetaName::Iter, value)),
         }
     }
 
-    fn get_attr(self, table: Value<'gc>, key: Value<'gc>) -> Self::Result2 {
+    fn get_attr(&self, table: Value<'gc>, key: Value<'gc>) -> Self::Result2 {
         call_metamethod!(self, MetaName::GetAttr, table, key);
         match table {
-            Value::Table(v) => Ok(MetaResult::Value(v.get(self, key))),
+            Value::Table(v) => Ok(MetaResult::Value(v.get(*self, key))),
             _ => Err(meta_operator_error!(MetaName::GetAttr, table, key)),
         }
     }
 
-    fn get_item(self, table: Value<'gc>, key: Value<'gc>) -> Self::Result2 {
+    fn get_item(&self, table: Value<'gc>, key: Value<'gc>) -> Self::Result2 {
         call_metamethod!(self, MetaName::GetItem, table, key);
         match table {
-            Value::Table(v) => Ok(MetaResult::Value(v.get(self, key))),
+            Value::Table(v) => Ok(MetaResult::Value(v.get(*self, key))),
             _ => Err(meta_operator_error!(MetaName::GetItem, table, key)),
         }
     }
 
-    fn set_attr(self, table: Value<'gc>, key: Value<'gc>, value: Value<'gc>) -> Self::Result3 {
+    fn set_attr(&self, table: Value<'gc>, key: Value<'gc>, value: Value<'gc>) -> Self::Result3 {
         call_metamethod!(self, MetaName::SetAttr, table, key, value);
         match table {
             Value::Table(v) => {
-                v.set(self, key, value);
+                v.set(*self, key, value);
                 Ok(MetaResult::Value(Value::Null))
             }
             _ => Err(meta_operator_error!(MetaName::SetAttr, table, key)),
         }
     }
 
-    fn set_item(self, table: Value<'gc>, key: Value<'gc>, value: Value<'gc>) -> Self::Result3 {
+    fn set_item(&self, table: Value<'gc>, key: Value<'gc>, value: Value<'gc>) -> Self::Result3 {
         call_metamethod!(self, MetaName::SetItem, table, key, value);
         match table {
             Value::Table(v) => {
-                v.set(self, key, value);
+                v.set(*self, key, value);
                 Ok(MetaResult::Value(Value::Null))
             }
             _ => Err(meta_operator_error!(MetaName::SetItem, table, key)),
         }
     }
 
-    fn neg(self, value: Value<'gc>) -> Self::Result1 {
+    fn neg(&self, value: Value<'gc>) -> Self::Result1 {
         call_metamethod!(self, MetaName::Neg, value);
         match value {
             Value::Int(v) => Ok(MetaResult::Value((-v).into())),
@@ -139,7 +139,7 @@ impl<'gc> MetaMethod<Value<'gc>> for Context<'gc> {
         }
     }
 
-    fn add(self, lhs: Value<'gc>, rhs: Value<'gc>) -> Self::Result2 {
+    fn add(&self, lhs: Value<'gc>, rhs: Value<'gc>) -> Self::Result2 {
         call_metamethod!(self, MetaName::Add, lhs, rhs);
         match (lhs, rhs) {
             (Value::Int(lhs), Value::Int(rhs)) => {
@@ -147,14 +147,14 @@ impl<'gc> MetaMethod<Value<'gc>> for Context<'gc> {
             }
             (Value::Float(lhs), Value::Float(rhs)) => Ok(MetaResult::Value(lhs.add(rhs).into())),
             (Value::Str(lhs), Value::Str(rhs)) => Ok(MetaResult::Value(Value::Str(Str::new(
-                &self,
+                self,
                 lhs.to_compact_string() + rhs.as_ref(),
             )))),
             _ => Err(meta_operator_error!(MetaName::Add, lhs, rhs)),
         }
     }
 
-    fn sub(self, lhs: Value<'gc>, rhs: Value<'gc>) -> Self::Result2 {
+    fn sub(&self, lhs: Value<'gc>, rhs: Value<'gc>) -> Self::Result2 {
         call_metamethod!(self, MetaName::Sub, lhs, rhs);
         match (lhs, rhs) {
             (Value::Int(lhs), Value::Int(rhs)) => {
@@ -165,7 +165,7 @@ impl<'gc> MetaMethod<Value<'gc>> for Context<'gc> {
         }
     }
 
-    fn mul(self, lhs: Value<'gc>, rhs: Value<'gc>) -> Self::Result2 {
+    fn mul(&self, lhs: Value<'gc>, rhs: Value<'gc>) -> Self::Result2 {
         call_metamethod!(self, MetaName::Mul, lhs, rhs);
         match (lhs, rhs) {
             (Value::Int(lhs), Value::Int(rhs)) => {
@@ -176,7 +176,7 @@ impl<'gc> MetaMethod<Value<'gc>> for Context<'gc> {
         }
     }
 
-    fn div(self, lhs: Value<'gc>, rhs: Value<'gc>) -> Self::Result2 {
+    fn div(&self, lhs: Value<'gc>, rhs: Value<'gc>) -> Self::Result2 {
         call_metamethod!(self, MetaName::Div, lhs, rhs);
         match (lhs, rhs) {
             (Value::Int(lhs), Value::Int(rhs)) => {
@@ -191,7 +191,7 @@ impl<'gc> MetaMethod<Value<'gc>> for Context<'gc> {
         }
     }
 
-    fn rem(self, lhs: Value<'gc>, rhs: Value<'gc>) -> Self::Result2 {
+    fn rem(&self, lhs: Value<'gc>, rhs: Value<'gc>) -> Self::Result2 {
         call_metamethod!(self, MetaName::Rem, lhs, rhs);
         match (lhs, rhs) {
             (Value::Int(lhs), Value::Int(rhs)) => {
@@ -206,17 +206,17 @@ impl<'gc> MetaMethod<Value<'gc>> for Context<'gc> {
         }
     }
 
-    fn eq(self, lhs: Value<'gc>, rhs: Value<'gc>) -> Self::Result2 {
+    fn eq(&self, lhs: Value<'gc>, rhs: Value<'gc>) -> Self::Result2 {
         call_metamethod!(self, MetaName::Eq, lhs, rhs);
         Ok(MetaResult::Value(lhs.equal(&rhs).into()))
     }
 
-    fn ne(self, lhs: Value<'gc>, rhs: Value<'gc>) -> Self::Result2 {
+    fn ne(&self, lhs: Value<'gc>, rhs: Value<'gc>) -> Self::Result2 {
         call_metamethod!(self, MetaName::Ne, lhs, rhs);
         Ok(MetaResult::Value(lhs.not_equal(&rhs).into()))
     }
 
-    fn gt(self, lhs: Value<'gc>, rhs: Value<'gc>) -> Self::Result2 {
+    fn gt(&self, lhs: Value<'gc>, rhs: Value<'gc>) -> Self::Result2 {
         call_metamethod!(self, MetaName::Gt, lhs, rhs);
         match (lhs, rhs) {
             (Value::Int(lhs), Value::Int(rhs)) => Ok(MetaResult::Value((lhs > rhs).into())),
@@ -225,7 +225,7 @@ impl<'gc> MetaMethod<Value<'gc>> for Context<'gc> {
         }
     }
 
-    fn ge(self, lhs: Value<'gc>, rhs: Value<'gc>) -> Self::Result2 {
+    fn ge(&self, lhs: Value<'gc>, rhs: Value<'gc>) -> Self::Result2 {
         call_metamethod!(self, MetaName::Ge, lhs, rhs);
         match (lhs, rhs) {
             (Value::Int(lhs), Value::Int(rhs)) => Ok(MetaResult::Value((lhs >= rhs).into())),
@@ -234,7 +234,7 @@ impl<'gc> MetaMethod<Value<'gc>> for Context<'gc> {
         }
     }
 
-    fn lt(self, lhs: Value<'gc>, rhs: Value<'gc>) -> Self::Result2 {
+    fn lt(&self, lhs: Value<'gc>, rhs: Value<'gc>) -> Self::Result2 {
         call_metamethod!(self, MetaName::Lt, lhs, rhs);
         match (lhs, rhs) {
             (Value::Int(lhs), Value::Int(rhs)) => Ok(MetaResult::Value((lhs < rhs).into())),
@@ -243,7 +243,7 @@ impl<'gc> MetaMethod<Value<'gc>> for Context<'gc> {
         }
     }
 
-    fn le(self, lhs: Value<'gc>, rhs: Value<'gc>) -> Self::Result2 {
+    fn le(&self, lhs: Value<'gc>, rhs: Value<'gc>) -> Self::Result2 {
         call_metamethod!(self, MetaName::Le, lhs, rhs);
         match (lhs, rhs) {
             (Value::Int(lhs), Value::Int(rhs)) => Ok(MetaResult::Value((lhs <= rhs).into())),
@@ -252,7 +252,7 @@ impl<'gc> MetaMethod<Value<'gc>> for Context<'gc> {
         }
     }
 
-    fn len(self, value: Value<'gc>) -> Self::Result1 {
+    fn len(&self, value: Value<'gc>) -> Self::Result1 {
         call_metamethod!(self, MetaName::Len, value);
         match value {
             Value::Str(s) => Ok(MetaResult::Value(Value::Int(s.len().try_into().unwrap()))),
@@ -261,7 +261,7 @@ impl<'gc> MetaMethod<Value<'gc>> for Context<'gc> {
         }
     }
 
-    fn bool(self, value: Value<'gc>) -> Self::Result1 {
+    fn bool(&self, value: Value<'gc>) -> Self::Result1 {
         call_metamethod!(self, MetaName::Bool, value);
         match value {
             Value::Null => Ok(MetaResult::Value(false.into())),
@@ -274,7 +274,7 @@ impl<'gc> MetaMethod<Value<'gc>> for Context<'gc> {
         }
     }
 
-    fn int(self, value: Value<'gc>) -> Self::Result1 {
+    fn int(&self, value: Value<'gc>) -> Self::Result1 {
         call_metamethod!(self, MetaName::Int, value);
         match value {
             Value::Null => Ok(MetaResult::Value(0.into())),
@@ -290,7 +290,7 @@ impl<'gc> MetaMethod<Value<'gc>> for Context<'gc> {
         }
     }
 
-    fn float(self, value: Value<'gc>) -> Self::Result1 {
+    fn float(&self, value: Value<'gc>) -> Self::Result1 {
         call_metamethod!(self, MetaName::Float, value);
         match value {
             Value::Null => Ok(MetaResult::Value((0.0).into())),
@@ -306,15 +306,15 @@ impl<'gc> MetaMethod<Value<'gc>> for Context<'gc> {
         }
     }
 
-    fn str(self, value: Value<'gc>) -> Self::Result1 {
+    fn str(&self, value: Value<'gc>) -> Self::Result1 {
         call_metamethod!(self, MetaName::Str, value);
         Ok(MetaResult::Value(
-            value.to_compact_string().into_value(self),
+            value.to_compact_string().into_value(*self),
         ))
     }
 
-    fn repr(self, value: Value<'gc>) -> Self::Result1 {
+    fn repr(&self, value: Value<'gc>) -> Self::Result1 {
         call_metamethod!(self, MetaName::Repr, value);
-        Ok(MetaResult::Value(value.repr().into_value(self)))
+        Ok(MetaResult::Value(value.repr().into_value(*self)))
     }
 }

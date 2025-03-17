@@ -1,4 +1,7 @@
-use lucia_lang::Lucia;
+use lucia_lang::{
+    Lucia,
+    compiler::{compile, interning::BasicInterner},
+};
 
 #[test]
 #[should_panic]
@@ -12,4 +15,18 @@ res = try! b()
     let mut lucia = Lucia::new();
     let code = lucia.compile(input).unwrap();
     lucia.execute(&code).unwrap();
+}
+
+#[test]
+fn test_parse_error() {
+    let input = r#"
+1 +
+
+println(1 + 1)
+
+1 -
+"#;
+    let interner = BasicInterner::default();
+    let parse_error = compile(interner, input).unwrap_err();
+    assert_eq!(parse_error.len(), 2);
 }

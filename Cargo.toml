@@ -10,14 +10,16 @@ repository = "https://github.com/st1020/lucia-lang"
 
 [workspace.dependencies]
 lucia-lang = { path = "./" }
-# Compiler and Runtime
+# String
 text-size = "1"
 compact_str = "0.9"
 unicode-ident = "1"
+# Data Structure
 index_vec = "0.1"
 sorted-vec = "0.8"
 indexmap = "2"
 rustc-hash = "2"
+# Runtime
 gc-arena = "0.5"
 # Error
 thiserror = "2"

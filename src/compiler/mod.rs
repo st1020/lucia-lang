@@ -12,7 +12,6 @@ pub mod opcode;
 pub mod parser;
 pub mod semantic;
 pub mod token;
-pub mod typing;
 pub mod value;
 
 /// Compile the input source code into Lucia code.
@@ -29,14 +28,4 @@ pub fn compile<S: interning::StringInterner>(
     } else {
         Err(errors)
     }
-}
-
-/// Check the type of the input source code.
-pub fn check_type<S: interning::StringInterner<String: Eq + Ord>>(
-    interner: S,
-    input: &str,
-) -> (Vec<error::CompilerError>, Vec<typing::TypeError<S::String>>) {
-    let (ast, errors) = parser::parse(interner, input);
-    let semantic = analyzer::analyze(&ast);
-    (errors, typing::check_type(&ast, &semantic))
 }

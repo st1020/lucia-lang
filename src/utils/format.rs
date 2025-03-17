@@ -1,6 +1,6 @@
 use std::fmt::{Display, Write};
 
-pub(crate) trait Join<Item: Display>: Iterator<Item = Item> {
+pub trait Join<Item: Display>: Iterator<Item = Item> {
     fn join(&mut self, sep: &str) -> String {
         if let Some(first) = self.next() {
             let (lb, _) = self.size_hint();
@@ -19,7 +19,7 @@ pub(crate) trait Join<Item: Display>: Iterator<Item = Item> {
 
 impl<T: ?Sized, Item: Display> Join<Item> for T where T: Iterator<Item = Item> {}
 
-pub(crate) trait Indent: Display {
+pub trait Indent: Display {
     fn indent(&self, indent: usize) -> String {
         format!("{}", self)
             .split('\n')
