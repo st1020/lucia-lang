@@ -194,7 +194,6 @@ impl<S: AsRef<str> + Clone + Eq + Ord> From<TyKind<S>> for Type<S> {
                 throws: throws.map(|x| x.kind.into()).unwrap_or(Type::NULL),
             }
             .into(),
-            TyKind::Option(t) => Type::from(t.kind) | Type::NULL,
             TyKind::Union(t) => Type::Union(SortedSet::from_unsorted(
                 t.into_iter().map(|x| x.kind.into()).collect(),
             )),

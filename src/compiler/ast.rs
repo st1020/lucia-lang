@@ -897,7 +897,6 @@ pub enum TyKind<S> {
         returns: Option<Box<Ty<S>>>,
         throws: Option<Box<Ty<S>>>,
     },
-    Option(Box<Ty<S>>),
     Union(Vec<Ty<S>>),
 }
 
@@ -934,7 +933,6 @@ impl<S: AsRef<str>> fmt::Display for TyKind<S> {
                     .unwrap_or_default();
                 write!(f, "fn({}){}{}", params_str, returns_str, throws_str)
             }
-            TyKind::Option(ty) => write!(f, "{}?", ty),
             TyKind::Union(union) => write!(f, "{}", union.iter().join(" | ")),
         }
     }

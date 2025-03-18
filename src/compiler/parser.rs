@@ -1074,13 +1074,6 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
             TyKind::Lit(Box::new(self.parse_lit()?))
         };
         let range = self.end_range(start);
-        let ty = Ty { kind, range };
-        if self.eat(TokenKind::Question) {
-            let range = self.end_range(start);
-            let kind = TyKind::Option(Box::new(ty));
-            Ok(Ty { kind, range })
-        } else {
-            Ok(ty)
-        }
+        Ok(Ty { kind, range })
     }
 }
