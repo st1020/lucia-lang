@@ -46,7 +46,7 @@ impl MetaMethodType {
         rhs: Type<S>,
     ) -> Result<Type<S>, TypeError<S>> {
         call_metamethod!(self, meta_name, lhs, rhs);
-        if lhs == Type::Any || rhs == Type::Any {
+        if lhs == Type::Any && rhs == Type::Any {
             Ok(Type::Any)
         } else if lhs.is_subtype_of(&Type::Int) && rhs.is_subtype_of(&Type::Int) {
             Ok(Type::Int)
@@ -66,6 +66,9 @@ impl<S: AsRef<str> + Clone + Eq + Ord> MetaMethod<Type<S>> for MetaMethodType {
     type Result3 = Self::Result1;
 
     fn call(&self, value: Type<S>) -> Self::ResultCall {
+        if value == Type::Any {
+            return Ok(Box::new(FunctionType::any_function()));
+        }
         if let Type::Function(function) = value {
             return Ok(function);
         }
@@ -82,6 +85,7 @@ impl<S: AsRef<str> + Clone + Eq + Ord> MetaMethod<Type<S>> for MetaMethodType {
     fn iter(&self, value: Type<S>) -> Self::ResultIter {
         call_metamethod!(self, MetaName::Iter, value);
         match value {
+            Type::Any => Ok(Type::Any),
             Type::Table(table) => {
                 let mut key: Type<S> = table
                     .pairs
@@ -117,6 +121,7 @@ impl<S: AsRef<str> + Clone + Eq + Ord> MetaMethod<Type<S>> for MetaMethodType {
     fn get_attr(&self, table: Type<S>, key: Type<S>) -> Self::Result2 {
         call_metamethod!(self, MetaName::GetAttr, table, key);
         match table {
+            Type::Any => Ok(Type::Any),
             Type::Table(v) => Ok(v.get(key)),
             _ => Err(meta_operator_error!(MetaName::GetAttr, table, key)),
         }
@@ -125,6 +130,7 @@ impl<S: AsRef<str> + Clone + Eq + Ord> MetaMethod<Type<S>> for MetaMethodType {
     fn get_item(&self, table: Type<S>, key: Type<S>) -> Self::Result2 {
         call_metamethod!(self, MetaName::GetItem, table, key);
         match table {
+            Type::Any => Ok(Type::Any),
             Type::Table(v) => Ok(v.get(key)),
             _ => Err(meta_operator_error!(MetaName::GetItem, table, key)),
         }
@@ -133,6 +139,7 @@ impl<S: AsRef<str> + Clone + Eq + Ord> MetaMethod<Type<S>> for MetaMethodType {
     fn set_attr(&self, table: Type<S>, key: Type<S>, value: Type<S>) -> Self::Result3 {
         call_metamethod!(self, MetaName::GetAttr, table, key, value);
         match table {
+            Type::Any => Ok(Type::NULL),
             Type::Table(v) => {
                 v.set(key, value)?;
                 Ok(Type::NULL)
@@ -144,6 +151,7 @@ impl<S: AsRef<str> + Clone + Eq + Ord> MetaMethod<Type<S>> for MetaMethodType {
     fn set_item(&self, table: Type<S>, key: Type<S>, value: Type<S>) -> Self::Result3 {
         call_metamethod!(self, MetaName::SetItem, table, key, value);
         match table {
+            Type::Any => Ok(Type::NULL),
             Type::Table(v) => {
                 v.set(key, value)?;
                 Ok(Type::NULL)
@@ -161,7 +169,7 @@ impl<S: AsRef<str> + Clone + Eq + Ord> MetaMethod<Type<S>> for MetaMethodType {
 
     fn add(&self, lhs: Type<S>, rhs: Type<S>) -> Self::Result2 {
         call_metamethod!(self, MetaName::Add, lhs, rhs);
-        if lhs == Type::Any || rhs == Type::Any {
+        if lhs == Type::Any && rhs == Type::Any {
             Ok(Type::Any)
         } else if lhs.is_subtype_of(&Type::Int) && rhs.is_subtype_of(&Type::Int) {
             Ok(Type::Int)

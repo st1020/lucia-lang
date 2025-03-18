@@ -208,7 +208,11 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
             }
             StmtKind::For { left, right, body } => {
                 let right_type = MetaMethodType.iter(self.check_expr(right)?)?;
-                if left.len() == 1 {
+                if right_type == Type::Any {
+                    for l in left {
+                        self.set_symbol_type(l, Type::Any)?;
+                    }
+                } else if left.len() == 1 {
                     self.set_symbol_type(&left[0], right_type)?;
                 } else if let Type::Table(table) = right_type {
                     for (i, l) in left.iter().enumerate() {
