@@ -11,6 +11,26 @@ use super::{
     value::ValueType,
 };
 
+/// Traverse the syntax tree.
+pub trait Visit<S> {
+    type Return;
+
+    fn visit_program(&mut self, program: &Program<S>) -> Self::Return;
+    fn visit_function(&mut self, function: &Function<S>) -> Self::Return;
+    fn visit_block(&mut self, block: &Block<S>) -> Self::Return;
+    fn visit_stmts(&mut self, stmts: &[Stmt<S>]) -> Self::Return;
+    fn visit_stmt(&mut self, stmt: &Stmt<S>) -> Self::Return;
+    fn visit_assign_left(&mut self, assign_left: &AssignLeft<S>) -> Self::Return;
+    fn visit_pattern(&mut self, pattern: &Pattern<S>) -> Self::Return;
+    fn visit_expr(&mut self, expr: &Expr<S>) -> Self::Return;
+    fn visit_lit(&mut self, lit: &Lit<S>) -> Self::Return;
+    fn visit_ident(&mut self, ident: &Ident<S>) -> Self::Return;
+    fn visit_member_property(&mut self, property: &MemberKind<S>) -> Self::Return;
+    fn visit_meta_member_property(&mut self, property: &MetaMemberKind) -> Self::Return;
+    fn visit_typed_ident(&mut self, ident: &TypedIdent<S>) -> Self::Return;
+    fn visit_ty(&mut self, ty: &Ty<S>) -> Self::Return;
+}
+
 macro_rules! impl_locatable {
     ($name:ident) => {
         impl<S> Locatable for $name<S> {
