@@ -75,7 +75,7 @@ impl<S: AsRef<str>> fmt::Display for Function<S> {
             .chain(
                 self.variadic
                     .iter()
-                    .map(|variadic| format!("...{}", variadic)),
+                    .map(|variadic| format!("...{variadic}")),
             )
             .join(", ");
         let returns_str = self
@@ -313,8 +313,8 @@ impl<S: AsRef<str>> fmt::Display for StmtKind<S> {
                     right.iter().join(", ")
                 )
             }
-            StmtKind::Block(block) => write!(f, "{}", block),
-            StmtKind::Expr(expr) => write!(f, "{}", expr),
+            StmtKind::Block(block) => write!(f, "{block}"),
+            StmtKind::Expr(expr) => write!(f, "{expr}"),
         }
     }
 }
@@ -636,9 +636,9 @@ pub enum MemberKind<S> {
 impl<S: AsRef<str>> fmt::Display for MemberKind<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            MemberKind::Bracket(expr) => write!(f, "[{}]", expr),
-            MemberKind::Dot(ident) => write!(f, ".{}", ident),
-            MemberKind::DoubleColon(ident) => write!(f, "::{}", ident),
+            MemberKind::Bracket(expr) => write!(f, "[{expr}]"),
+            MemberKind::Dot(ident) => write!(f, ".{ident}"),
+            MemberKind::DoubleColon(ident) => write!(f, "::{ident}"),
         }
     }
 }
@@ -852,8 +852,8 @@ pub enum PatternKind<S> {
 impl<S: AsRef<str>> fmt::Display for PatternKind<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PatternKind::Lit(lit) => write!(f, "{}", lit),
-            PatternKind::Ident(ident) => write!(f, "{}", ident),
+            PatternKind::Lit(lit) => write!(f, "{lit}"),
+            PatternKind::Ident(ident) => write!(f, "{ident}"),
             PatternKind::Table { pairs, others } => write!(
                 f,
                 "{{{}{}}}",
@@ -928,7 +928,7 @@ impl<S: AsRef<str>> fmt::Display for TyKind<S> {
             TyKind::Paren(ty) => write!(f, "({ty})"),
             TyKind::Table { pairs, others } => match (pairs.len(), others) {
                 (0, None) => write!(f, "{{}}"),
-                (0, Some(others)) => write!(f, "{{{}}}", others),
+                (0, Some(others)) => write!(f, "{{{others}}}"),
                 (_, None) => write!(f, "{{{}}}", pairs.iter().join(", ")),
                 (_, Some(others)) => write!(f, "{{{}, {}}}", pairs.iter().join(", "), others),
             },
@@ -941,7 +941,7 @@ impl<S: AsRef<str>> fmt::Display for TyKind<S> {
                 let params_str = params
                     .iter()
                     .map(|param| param.to_string())
-                    .chain(variadic.iter().map(|variadic| format!("...{}", variadic)))
+                    .chain(variadic.iter().map(|variadic| format!("...{variadic}")))
                     .join(", ");
                 let returns_str = returns
                     .as_ref()
@@ -951,7 +951,7 @@ impl<S: AsRef<str>> fmt::Display for TyKind<S> {
                     .as_ref()
                     .map(|throws| format!(" throw {throws}"))
                     .unwrap_or_default();
-                write!(f, "fn({}){}{}", params_str, returns_str, throws_str)
+                write!(f, "fn({params_str}){returns_str}{throws_str}")
             }
             TyKind::Union(union) => write!(f, "{}", union.iter().join(" | ")),
         }

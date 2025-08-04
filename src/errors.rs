@@ -39,12 +39,12 @@ impl fmt::Display for Error<'_> {
             for (i, frame) in traceback.iter().rev().enumerate() {
                 match frame {
                     Frame::Lucia(frame) => {
-                        writeln!(f, "[{}] lucia frame", i)?;
+                        writeln!(f, "[{i}] lucia frame")?;
                         writeln!(f, "{}", frame.indent(4))?;
                     }
                     Frame::Callback(callback, args) => {
-                        writeln!(f, "[{}] callback frame", i)?;
-                        writeln!(f, "    callback: {:?}", callback)?;
+                        writeln!(f, "[{i}] callback frame")?;
+                        writeln!(f, "    callback: {callback:?}")?;
                         writeln!(f, "    args: {}", args.iter().join(", "))?;
                     }
                 }

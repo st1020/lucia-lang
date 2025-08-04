@@ -6,6 +6,6 @@ fn main() {
     let mut lucia = Lucia::new();
     let code = lucia.compile(&input).unwrap();
     if let Err(err) = lucia.execute(&code) {
-        println!("{}", err);
+        println!("{err}");
     }
 }

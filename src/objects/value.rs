@@ -103,13 +103,13 @@ impl fmt::Display for Value<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Null => write!(f, "null"),
-            Self::Bool(v) => write!(f, "{}", v),
-            Self::Int(v) => write!(f, "{}", v),
-            Self::Float(v) => write!(f, "{}", v),
-            Self::Str(v) => write!(f, "{}", v),
-            Self::Table(v) => write!(f, "{}", v),
-            Self::Function(v) => write!(f, "{}", v),
-            Self::UserData(v) => write!(f, "{}", v),
+            Self::Bool(v) => write!(f, "{v}"),
+            Self::Int(v) => write!(f, "{v}"),
+            Self::Float(v) => write!(f, "{v}"),
+            Self::Str(v) => write!(f, "{v}"),
+            Self::Table(v) => write!(f, "{v}"),
+            Self::Function(v) => write!(f, "{v}"),
+            Self::UserData(v) => write!(f, "{v}"),
         }
     }
 }
@@ -147,13 +147,13 @@ impl fmt::Display for ExternValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ExternValue::Null => write!(f, "null"),
-            ExternValue::Bool(v) => write!(f, "{}", v),
-            ExternValue::Int(v) => write!(f, "{}", v),
-            ExternValue::Float(v) => write!(f, "{}", v),
-            ExternValue::Str(v) => write!(f, "{}", v),
-            ExternValue::Table(v) => write!(f, "<table {:p}>", v),
-            ExternValue::Function(v) => write!(f, "<function {:p}>", v),
-            ExternValue::UserData(v) => write!(f, "<userdata {:p}>", v),
+            ExternValue::Bool(v) => write!(f, "{v}"),
+            ExternValue::Int(v) => write!(f, "{v}"),
+            ExternValue::Float(v) => write!(f, "{v}"),
+            ExternValue::Str(v) => write!(f, "{v}"),
+            ExternValue::Table(v) => write!(f, "<table {v:p}>"),
+            ExternValue::Function(v) => write!(f, "<function {v:p}>"),
+            ExternValue::UserData(v) => write!(f, "<userdata {v:p}>"),
         }
     }
 }

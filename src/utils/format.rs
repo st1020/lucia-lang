@@ -5,10 +5,10 @@ pub trait Join<Item: Display>: Iterator<Item = Item> {
         if let Some(first) = self.next() {
             let (lb, _) = self.size_hint();
             let mut result = String::with_capacity(sep.len() * lb);
-            write!(&mut result, "{}", first).unwrap();
+            write!(&mut result, "{first}").unwrap();
             self.for_each(|i| {
                 result.push_str(sep);
-                write!(&mut result, "{}", i).unwrap();
+                write!(&mut result, "{i}").unwrap();
             });
             result
         } else {
@@ -21,7 +21,7 @@ impl<T: ?Sized, Item: Display> Join<Item> for T where T: Iterator<Item = Item> {
 
 pub trait Indent: Display {
     fn indent(&self, indent: usize) -> String {
-        format!("{}", self)
+        format!("{self}")
             .split('\n')
             .map(|x| format!("{}{}", " ".repeat(indent), x))
             .join("\n")

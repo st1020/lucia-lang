@@ -99,7 +99,7 @@ impl<S: AsRef<str>> fmt::Display for Code<S> {
                 )
             })
             .join("\n");
-        write!(f, "code:\n{}", code_str)
+        write!(f, "code:\n{code_str}")
     }
 }
 
@@ -124,9 +124,9 @@ impl<S: AsRef<str>> fmt::Display for ConstValue<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Null => write!(f, "null"),
-            Self::Bool(v) => write!(f, "{}", v),
-            Self::Int(v) => write!(f, "{}", v),
-            Self::Float(v) => write!(f, "{}", v),
+            Self::Bool(v) => write!(f, "{v}"),
+            Self::Int(v) => write!(f, "{v}"),
+            Self::Float(v) => write!(f, "{v}"),
             Self::Str(v) => write!(f, "{}", v.as_ref()),
             Self::Code(_) => write!(f, "<code>"),
         }

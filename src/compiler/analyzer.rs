@@ -64,7 +64,7 @@ impl<S: AsRef<str> + Clone> SemanticAnalyzer<S> {
             kind,
             references: Vec::new(),
         };
-        let symbol_id = if matches!(kind, SymbolKind::Global { .. }) {
+        let symbol_id = if matches!(kind, SymbolKind::Global) {
             if let Some(symbol_id) = self.globals.get(ident.name.as_ref()).copied() {
                 symbol_id
             } else {

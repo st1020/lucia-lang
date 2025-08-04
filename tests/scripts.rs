@@ -8,7 +8,7 @@ use lucia_lang::Lucia;
 #[test]
 fn test_scripts() {
     const DIR: &str = "./tests/scripts";
-    let _ = writeln!(stdout(), "running all test scripts in {:?}", DIR);
+    let _ = writeln!(stdout(), "running all test scripts in {DIR:?}");
     for dir in fs::read_dir(DIR).expect("could not list dir") {
         let path = dir.expect("could not read dir entry").path();
         if path.extension().is_some_and(|ext| ext == "lucia") {
@@ -17,10 +17,10 @@ fn test_scripts() {
             let mut lucia = Lucia::new();
             let code = lucia.compile(&input).unwrap();
             if let Err(err) = lucia.execute(&code) {
-                panic!("error encountered running: {}", err);
+                panic!("error encountered running: {err}");
             }
         } else {
-            let _ = writeln!(stdout(), "skipping file {:?}", path);
+            let _ = writeln!(stdout(), "skipping file {path:?}");
         }
     }
 }

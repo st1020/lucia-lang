@@ -107,7 +107,7 @@ impl fmt::Display for ArgumentRange {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(end) = self.end {
             if self.start == end {
-                write!(f, "{}", end)
+                write!(f, "{end}")
             } else {
                 write!(f, "[{}, {}]", self.start, end)
             }
