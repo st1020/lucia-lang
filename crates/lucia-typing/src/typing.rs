@@ -256,10 +256,10 @@ impl<S: AsRef<str> + Eq + Ord + Clone> TableType<S> {
         self.pairs
             .iter()
             .find_map(|(k, v)| {
-                if let LitKind::Str(k) = k {
-                    if k.as_ref() == key.as_ref() {
-                        return Some(v);
-                    }
+                if let LitKind::Str(k) = k
+                    && k.as_ref() == key.as_ref()
+                {
+                    return Some(v);
                 }
                 None
             })
@@ -279,24 +279,24 @@ impl<S: AsRef<str> + Eq + Ord + Clone> TableType<S> {
     }
 
     pub fn get(&self, key: Type<S>) -> Type<S> {
-        if let Type::Literal(key) = &key {
-            if let Some(value) = self.get_literal_option(key) {
-                return value;
-            }
+        if let Type::Literal(key) = &key
+            && let Some(value) = self.get_literal_option(key)
+        {
+            return value;
         }
-        if let Some((k, v)) = &self.others {
-            if key.is_subtype_of(k) {
-                return v.clone();
-            }
+        if let Some((k, v)) = &self.others
+            && key.is_subtype_of(k)
+        {
+            return v.clone();
         }
         Type::NULL
     }
 
     pub fn set(&self, key: Type<S>, value: Type<S>) -> Result<(), TypeError<S>> {
-        if let Type::Literal(key) = &key {
-            if let Some(v) = self.get_literal_option(key) {
-                value.expect_is_subtype_of(&v)?;
-            }
+        if let Type::Literal(key) = &key
+            && let Some(v) = self.get_literal_option(key)
+        {
+            value.expect_is_subtype_of(&v)?;
         }
         if let Some((k, v)) = &self.others {
             key.expect_is_subtype_of(k)?;

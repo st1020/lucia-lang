@@ -351,10 +351,10 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
             if offset >= code.len() {
                 continue;
             }
-            if let Some(prev_depth) = stack_depths[offset] {
-                if current_depth <= prev_depth {
-                    continue;
-                }
+            if let Some(prev_depth) = stack_depths[offset]
+                && current_depth <= prev_depth
+            {
+                continue;
             }
             stack_depths[offset] = Some(current_depth);
             max_stack_depth = max_stack_depth.max(current_depth);

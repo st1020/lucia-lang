@@ -22,12 +22,11 @@ impl<'gc> Table<'gc> {
     pub fn get<K: IntoValue<'gc>>(self, ctx: Context<'gc>, key: K) -> Value<'gc> {
         let key = key.into_value(ctx);
         let entries = &self.0.borrow().entries;
-        if let Value::Int(key) = key {
-            if let Ok(key) = usize::try_from(key) {
-                if key < entries.array.len() {
-                    return entries.array[key];
-                }
-            }
+        if let Value::Int(key) = key
+            && let Ok(key) = usize::try_from(key)
+            && key < entries.array.len()
+        {
+            return entries.array[key];
         }
         entries.map.get(&key).cloned().unwrap_or(Value::Null)
     }
@@ -51,13 +50,13 @@ impl<'gc> Table<'gc> {
         let key = key.into_value(ctx);
         let value = value.into_value(ctx);
         let entries = &mut self.0.borrow_mut(&ctx).entries;
-        if let Value::Int(k) = key {
-            if let Ok(k) = usize::try_from(k) {
-                match k.cmp(&entries.array.len()) {
-                    std::cmp::Ordering::Less => return entries.array[k] = value,
-                    std::cmp::Ordering::Equal => return entries.array.push(value),
-                    std::cmp::Ordering::Greater => (),
-                }
+        if let Value::Int(k) = key
+            && let Ok(k) = usize::try_from(k)
+        {
+            match k.cmp(&entries.array.len()) {
+                std::cmp::Ordering::Less => return entries.array[k] = value,
+                std::cmp::Ordering::Equal => return entries.array.push(value),
+                std::cmp::Ordering::Greater => (),
             }
         }
         if value.is_null() {

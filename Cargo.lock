@@ -834,15 +834,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lucia-fmt"
-version = "0.2.0"
-dependencies = [
- "lucia-lang",
- "text-size",
- "thiserror",
-]
-
-[[package]]
 name = "lucia-lang"
 version = "0.2.0"
 dependencies = [

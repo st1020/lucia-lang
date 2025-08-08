@@ -71,8 +71,8 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
             if ty.is_subtype_of(old_ty) {
                 Ok(())
             } else {
-                if let (Type::Table(ty), Type::Table(old_ty)) = (&ty, &old_ty) {
-                    if ty.pairs.iter().all(|(k1, v1)| {
+                if let (Type::Table(ty), Type::Table(old_ty)) = (&ty, &old_ty)
+                    && ty.pairs.iter().all(|(k1, v1)| {
                         old_ty
                             .pairs
                             .iter()
@@ -80,15 +80,16 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
                             .map(|(_, v2)| v2)
                             .or_else(|| old_ty.others.as_ref().map(|(_, v)| v))
                             .is_some_and(|v2| v1.is_subtype_of(v2))
-                    }) && match (&ty.others, &old_ty.others) {
+                    })
+                    && match (&ty.others, &old_ty.others) {
                         (None, _) => true,
                         (Some((key1, value1)), Some((key2, value2))) => {
                             key1.is_subtype_of(key2) && value1.is_subtype_of(value2)
                         }
                         _ => false,
-                    } {
-                        return Ok(());
                     }
+                {
+                    return Ok(());
                 }
                 Err(TypeError::ExpectIsSubtypeOf {
                     ty: Box::new(ty.clone()),
