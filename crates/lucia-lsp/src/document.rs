@@ -26,8 +26,8 @@ impl<S: AsRef<str> + Clone> Document<S> {
     ) -> (Self, Vec<CompilerError>) {
         let rope = Rope::from_str(text);
         let tokens = tokenize(text).collect();
-        let (ast, parse_errors) = parse(interner, text);
-        let semantic = analyze(&ast);
+        let (ast, parser_errors) = parse(interner, text);
+        let (semantic, analyzer_errors) = analyze(&ast);
         let (_code, codegen_errors) = gen_code(&ast, &semantic);
         (
             Self {
@@ -36,7 +36,11 @@ impl<S: AsRef<str> + Clone> Document<S> {
                 ast,
                 semantic,
             },
-            parse_errors.into_iter().chain(codegen_errors).collect(),
+            parser_errors
+                .into_iter()
+                .chain(analyzer_errors)
+                .chain(codegen_errors)
+                .collect(),
         )
     }
 

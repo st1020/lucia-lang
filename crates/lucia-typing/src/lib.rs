@@ -27,9 +27,12 @@ pub fn check_type_source<S: StringInterner<String: Eq + Ord>>(
     interner: S,
     input: &str,
 ) -> (Vec<CompilerError>, Vec<TypeError<S::String>>) {
-    let (ast, errors) = parse(interner, input);
-    let semantic = analyze(&ast);
-    (errors, check_type(&ast, &semantic))
+    let (ast, parser_errors) = parse(interner, input);
+    let (semantic, analyzer_errors) = analyze(&ast);
+    (
+        parser_errors.into_iter().chain(analyzer_errors).collect(),
+        check_type(&ast, &semantic),
+    )
 }
 
 /// Check type.

@@ -16,8 +16,8 @@ t9: {[int]: str} = ['test', 'test']
 t10: {a: int, b: str, [int]: str} = {'a': 1, 'b': '1', 0: 'test'}
 "#;
     let interner = BasicInterner::default();
-    let (parse_error, type_error) = check_type_source(interner, input);
-    assert_eq!(parse_error.len(), 0);
+    let (compile_error, type_error) = check_type_source(interner, input);
+    assert_eq!(compile_error.len(), 0);
     assert_eq!(type_error.len(), 0);
 }
 
@@ -27,8 +27,8 @@ fn test_type_hint_error() {
 t1: int = ""
 "#;
     let interner = BasicInterner::default();
-    let (parse_error, type_error) = check_type_source(interner, input);
-    assert_eq!(parse_error.len(), 0);
+    let (compile_error, type_error) = check_type_source(interner, input);
+    assert_eq!(compile_error.len(), 0);
     assert_eq!(type_error.len(), 1);
 }
 
@@ -40,7 +40,7 @@ t2: int = 1 // ok
 t3: int = 0.1 // error
 "#;
     let interner = BasicInterner::default();
-    let (parse_error, type_error) = check_type_source(interner, input);
-    assert_eq!(parse_error.len(), 0);
+    let (compile_error, type_error) = check_type_source(interner, input);
+    assert_eq!(compile_error.len(), 0);
     assert_eq!(type_error.len(), 2);
 }

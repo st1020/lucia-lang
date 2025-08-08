@@ -11,13 +11,14 @@ use rustc_hash::FxBuildHasher;
 
 use super::{
     ast::*,
+    error::CompilerError,
     index::{FunctionId, ReferenceId, ScopeId, SymbolId},
     interning::InternedString,
     semantic::*,
 };
 
 /// Semantic Analyze.
-pub fn analyze<S: AsRef<str> + Clone>(program: &Program<S>) -> Semantic<S> {
+pub fn analyze<S: AsRef<str> + Clone>(program: &Program<S>) -> (Semantic<S>, Vec<CompilerError>) {
     SemanticAnalyzer::new().analyze(program)
 }
 
@@ -46,14 +47,18 @@ impl<S: AsRef<str> + Clone> SemanticAnalyzer<S> {
         }
     }
 
-    fn analyze(mut self, program: &Program<S>) -> Semantic<S> {
+    fn analyze(mut self, program: &Program<S>) -> (Semantic<S>, Vec<CompilerError>) {
         self.visit_program(program);
-        Semantic {
-            functions: self.functions,
-            scopes: self.scopes,
-            symbols: self.symbols,
-            references: self.references,
-        }
+        (
+            Semantic {
+                functions: self.functions,
+                scopes: self.scopes,
+                symbols: self.symbols,
+                references: self.references,
+            },
+            // SemanticAnalyzer does not produce errors now, but can be extended to do in the future.
+            Vec::new(),
+        )
     }
 
     fn declare_symbol(&mut self, ident: &Ident<S>, kind: SymbolKind) -> SymbolId {
