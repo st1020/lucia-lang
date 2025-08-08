@@ -513,11 +513,6 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
                 property,
                 safe,
             } if safe.is_none() => AssignLeftKind::Member { table, property },
-            ExprKind::MetaMember {
-                table,
-                property,
-                safe,
-            } if safe.is_none() => AssignLeftKind::MetaMember { table, property },
             _ => return None,
         };
         Some(AssignLeft {
@@ -637,12 +632,12 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
         let start = self.start_range();
         let mut ast_node = self.parse_expr_atom()?;
         macro_rules! member_expr {
-            (Bracket, $safe:expr) => {
+            (Bracket, BracketMeta, $safe:expr) => {
                 if self.eat(TokenKind::Pound) {
                     self.expect(TokenKind::CloseBracket)?;
-                    ExprKind::MetaMember {
+                    ExprKind::Member {
                         table: Box::new(ast_node),
-                        property: MetaMemberKind::Bracket,
+                        property: MemberKind::BracketMeta,
                         safe: $safe,
                     }
                 } else {
@@ -656,15 +651,15 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
                 }
             };
 
-            ($kind:ident, $safe:expr) => {
+            ($kind:ident, $kind_meta:ident, $safe:expr) => {
                 if self.eat(TokenKind::Pound) {
-                    ExprKind::MetaMember {
+                    ExprKind::Member {
                         table: Box::new(ast_node),
-                        property: MetaMemberKind::$kind,
+                        property: MemberKind::$kind_meta,
                         safe: $safe,
                     }
                 } else {
-                    let ident = self.parse_ident()?.into();
+                    let ident = self.parse_ident()?;
                     ExprKind::Member {
                         table: Box::new(ast_node),
                         property: MemberKind::$kind(Box::new(ident)),
@@ -686,18 +681,18 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token>> Parser<'input, S, I> 
                     kind: CallKind::None,
                 }
             } else if self.eat(TokenKind::OpenBracket) {
-                member_expr!(Bracket, None)
+                member_expr!(Bracket, BracketMeta, None)
             } else if self.eat(TokenKind::Dot) {
-                member_expr!(Dot, None)
+                member_expr!(Dot, DotMeta, None)
             } else if self.eat(TokenKind::DoubleColon) {
-                member_expr!(DoubleColon, None)
+                member_expr!(DoubleColon, DoubleColonMeta, None)
             } else if let Some(range) = self.eat_range(TokenKind::Question) {
                 if self.eat(TokenKind::OpenBracket) {
-                    member_expr!(Bracket, Some(range))
+                    member_expr!(Bracket, BracketMeta, Some(range))
                 } else if self.eat(TokenKind::Dot) {
-                    member_expr!(Dot, Some(range))
+                    member_expr!(Dot, DotMeta, Some(range))
                 } else if self.eat(TokenKind::DoubleColon) {
-                    member_expr!(DoubleColon, Some(range))
+                    member_expr!(DoubleColon, DoubleColonMeta, Some(range))
                 } else {
                     return Err(self.unexpected());
                 }

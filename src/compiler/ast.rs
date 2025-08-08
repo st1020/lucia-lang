@@ -26,7 +26,6 @@ pub trait Visit<S> {
     fn visit_lit(&mut self, lit: &Lit<S>) -> Self::Return;
     fn visit_ident(&mut self, ident: &Ident<S>) -> Self::Return;
     fn visit_member_property(&mut self, property: &MemberKind<S>) -> Self::Return;
-    fn visit_meta_member_property(&mut self, property: &MetaMemberKind) -> Self::Return;
     fn visit_typed_ident(&mut self, ident: &TypedIdent<S>) -> Self::Return;
     fn visit_ty(&mut self, ty: &Ty<S>) -> Self::Return;
 }
@@ -383,11 +382,6 @@ pub enum ExprKind<S> {
         property: MemberKind<S>,
         safe: Option<TextRange>,
     },
-    MetaMember {
-        table: Box<Expr<S>>,
-        property: MetaMemberKind,
-        safe: Option<TextRange>,
-    },
     Call {
         callee: Box<Expr<S>>,
         arguments: Vec<Expr<S>>,
@@ -438,17 +432,6 @@ impl<S: AsRef<str>> fmt::Display for ExprKind<S> {
                 "{table}{}{property}",
                 if safe.is_some() { "?" } else { "" }
             ),
-            ExprKind::MetaMember {
-                table,
-                property,
-                safe,
-            } => {
-                write!(
-                    f,
-                    "{table}{}{property}",
-                    if safe.is_some() { "?" } else { "" }
-                )
-            }
             ExprKind::Call {
                 callee,
                 arguments,
@@ -631,6 +614,12 @@ pub enum MemberKind<S> {
     Dot(Box<Ident<S>>),
     /// `::`
     DoubleColon(Box<Ident<S>>),
+    /// `[#]`
+    BracketMeta,
+    /// `.#`
+    DotMeta,
+    /// `::#`
+    DoubleColonMeta,
 }
 
 impl<S: AsRef<str>> fmt::Display for MemberKind<S> {
@@ -639,27 +628,9 @@ impl<S: AsRef<str>> fmt::Display for MemberKind<S> {
             MemberKind::Bracket(expr) => write!(f, "[{expr}]"),
             MemberKind::Dot(ident) => write!(f, ".{ident}"),
             MemberKind::DoubleColon(ident) => write!(f, "::{ident}"),
-        }
-    }
-}
-
-/// Kind of meta member expression.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MetaMemberKind {
-    /// `[]`
-    Bracket,
-    /// `.`
-    Dot,
-    /// `::`
-    DoubleColon,
-}
-
-impl fmt::Display for MetaMemberKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            MetaMemberKind::Bracket => write!(f, "[#]"),
-            MetaMemberKind::Dot => write!(f, ".#"),
-            MetaMemberKind::DoubleColon => write!(f, "::#"),
+            MemberKind::BracketMeta => write!(f, "[#]"),
+            MemberKind::DotMeta => write!(f, ".#"),
+            MemberKind::DoubleColonMeta => write!(f, "::#"),
         }
     }
 }
@@ -757,10 +728,6 @@ pub enum AssignLeftKind<S> {
         table: Box<Expr<S>>,
         property: MemberKind<S>,
     },
-    MetaMember {
-        table: Box<Expr<S>>,
-        property: MetaMemberKind,
-    },
 }
 
 impl<S: AsRef<str>> fmt::Display for AssignLeftKind<S> {
@@ -768,7 +735,6 @@ impl<S: AsRef<str>> fmt::Display for AssignLeftKind<S> {
         match self {
             AssignLeftKind::Ident(ident) => write!(f, "{ident}"),
             AssignLeftKind::Member { table, property } => write!(f, "{table}{property}"),
-            AssignLeftKind::MetaMember { table, property } => write!(f, "{table}{property}"),
         }
     }
 }

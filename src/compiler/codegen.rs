@@ -51,6 +51,9 @@ impl<S> MemberKind<S> {
         match self {
             MemberKind::Bracket(_) => OpCode::GetItem,
             MemberKind::Dot(_) | MemberKind::DoubleColon(_) => OpCode::GetAttr,
+            MemberKind::BracketMeta | MemberKind::DotMeta | MemberKind::DoubleColonMeta => {
+                OpCode::GetMeta
+            }
         }
     }
 
@@ -58,6 +61,9 @@ impl<S> MemberKind<S> {
         match self {
             MemberKind::Bracket(_) => OpCode::SetItem,
             MemberKind::Dot(_) | MemberKind::DoubleColon(_) => OpCode::SetAttr,
+            MemberKind::BracketMeta | MemberKind::DotMeta | MemberKind::DoubleColonMeta => {
+                OpCode::SetMeta
+            }
         }
     }
 }
@@ -86,7 +92,6 @@ struct Context<S> {
     need_clear_stack_count: usize,
     continue_stack: Vec<JumpTarget>,
     break_stack: Vec<JumpTarget>,
-    pattern_labels_stack: Vec<Vec<JumpTarget>>,
 }
 
 impl<S: AsRef<str>> Context<S> {
@@ -103,7 +108,6 @@ impl<S: AsRef<str>> Context<S> {
             need_clear_stack_count: 0,
             continue_stack: Vec::new(),
             break_stack: Vec::new(),
-            pattern_labels_stack: Vec::new(),
         }
     }
 }
@@ -148,10 +152,6 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
 
     fn break_stack(&mut self) -> &mut Vec<JumpTarget> {
         &mut self.context().break_stack
-    }
-
-    fn pattern_labels_stack(&mut self) -> &mut Vec<Vec<JumpTarget>> {
-        &mut self.context().pattern_labels_stack
     }
 
     fn code(&mut self) -> &mut Vec<OpCode> {
@@ -432,33 +432,24 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
         max_stack_depth
     }
 
-    fn get_or_push_pattern_clean_stack_label(&mut self, index: usize) -> JumpTarget {
-        if let Some(clean_stack_label) = self
-            .pattern_labels_stack()
-            .last()
-            .unwrap()
-            .get(index)
-            .copied()
-        {
-            clean_stack_label
-        } else {
-            let clean_stack_label = self.get_jump_target();
-            self.pattern_labels_stack()
-                .last_mut()
-                .unwrap()
-                .push(clean_stack_label);
-            clean_stack_label
-        }
-    }
-
     fn visit_pattern_depth(
         &mut self,
         pattern: &Pattern<S>,
         pattern_depth: usize,
+        clean_stack_label_stack: &mut Vec<JumpTarget>,
     ) -> Result<(), CompilerError> {
+        let mut get_or_push_pattern_clean_stack_label = |index: usize| {
+            if let Some(clean_stack_label) = clean_stack_label_stack.get(index).copied() {
+                clean_stack_label
+            } else {
+                let clean_stack_label = self.get_jump_target();
+                clean_stack_label_stack.push(clean_stack_label);
+                clean_stack_label
+            }
+        };
         match &pattern.kind {
             PatternKind::Lit(lit) => {
-                let next_pattern_label = self.get_or_push_pattern_clean_stack_label(pattern_depth);
+                let next_pattern_label = get_or_push_pattern_clean_stack_label(pattern_depth);
                 let const_id = self.add_const(lit.kind.clone().into());
                 self.push_code(OpCode::LoadConst(const_id));
                 self.push_code(match lit.kind {
@@ -470,13 +461,12 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
                 self.push_code(OpCode::PopJumpIfFalse(next_pattern_label));
             }
             PatternKind::Ident(ident) => {
-                let next_pattern_label = self.get_or_push_pattern_clean_stack_label(pattern_depth);
+                let next_pattern_label = get_or_push_pattern_clean_stack_label(pattern_depth);
                 self.push_code(OpCode::JumpPopIfNull(next_pattern_label));
                 self.store(ident);
             }
             PatternKind::Table { pairs, others } => {
-                let clean_stack_label =
-                    self.get_or_push_pattern_clean_stack_label(pattern_depth + 1);
+                let clean_stack_label = get_or_push_pattern_clean_stack_label(pattern_depth + 1);
                 self.push_code(OpCode::Copy(1));
                 self.push_code(OpCode::TypeCheck(ValueType::Table));
                 self.push_code(OpCode::PopJumpIfFalse(clean_stack_label));
@@ -493,13 +483,16 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
                     let const_id = self.add_const(pair.key.kind.clone().into());
                     self.push_code(OpCode::LoadConst(const_id));
                     self.push_code(OpCode::GetItem);
-                    self.visit_pattern_depth(&pair.value, pattern_depth + 1)?;
+                    self.visit_pattern_depth(
+                        &pair.value,
+                        pattern_depth + 1,
+                        clean_stack_label_stack,
+                    )?;
                 }
                 self.push_code(OpCode::Pop);
             }
             PatternKind::List { items, others } => {
-                let clean_stack_label =
-                    self.get_or_push_pattern_clean_stack_label(pattern_depth + 1);
+                let clean_stack_label = get_or_push_pattern_clean_stack_label(pattern_depth + 1);
                 self.push_code(OpCode::Copy(1));
                 self.push_code(OpCode::TypeCheck(ValueType::Table));
                 self.push_code(OpCode::PopJumpIfFalse(clean_stack_label));
@@ -516,7 +509,7 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
                     let const_id = self.add_const(ConstValue::Int(i.try_into().unwrap()));
                     self.push_code(OpCode::LoadConst(const_id));
                     self.push_code(OpCode::GetItem);
-                    self.visit_pattern_depth(item, pattern_depth + 1)?;
+                    self.visit_pattern_depth(item, pattern_depth + 1, clean_stack_label_stack)?;
                 }
                 self.push_code(OpCode::Pop);
             }
@@ -589,20 +582,15 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
                     let block_label = block_labels[i];
                     for pattern in &case.patterns {
                         let clean_stack_label = self.get_jump_target();
-                        self.pattern_labels_stack().push(vec![clean_stack_label]);
+                        let mut clean_stack_label_stack = vec![clean_stack_label];
 
                         self.push_code(OpCode::Copy(1));
-                        self.visit_pattern(pattern)?;
+                        self.visit_pattern_depth(pattern, 0, &mut clean_stack_label_stack)?;
                         self.push_code(OpCode::Pop);
                         self.push_code(OpCode::Jump(block_label));
 
-                        for (i, clean_stack_label) in self
-                            .pattern_labels_stack()
-                            .pop()
-                            .unwrap()
-                            .into_iter()
-                            .rev()
-                            .enumerate()
+                        for (i, clean_stack_label) in
+                            clean_stack_label_stack.into_iter().rev().enumerate()
                         {
                             if i != 0 {
                                 self.push_code(OpCode::Pop);
@@ -783,24 +771,29 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
                     self.push_code(OpCode::from(*operator));
                     self.store(&ident.ident);
                 }
-                AssignLeftKind::Member { table, property } => {
-                    self.visit_expr(table)?;
-                    self.visit_member_property(property)?;
-                    self.push_code(OpCode::Copy(2));
-                    self.push_code(OpCode::Copy(2));
-                    self.push_code(property.get_opcode());
-                    self.visit_expr(right)?;
-                    self.push_code(OpCode::from(*operator));
-                    self.push_code(OpCode::Swap(3));
-                    self.push_code(OpCode::Swap(2));
-                    self.push_code(property.set_opcode());
-                }
-                AssignLeftKind::MetaMember { table, property: _ } => {
-                    self.visit_expr(table)?;
-                    self.push_code(OpCode::Copy(1));
-                    self.push_code(OpCode::GetMeta);
-                    self.push_code(OpCode::SetMeta);
-                }
+                AssignLeftKind::Member { table, property } => match property {
+                    MemberKind::Bracket(_) | MemberKind::Dot(_) | MemberKind::DoubleColon(_) => {
+                        self.visit_expr(table)?;
+                        self.visit_member_property(property)?;
+                        self.push_code(OpCode::Copy(2));
+                        self.push_code(OpCode::Copy(2));
+                        self.push_code(property.get_opcode());
+                        self.visit_expr(right)?;
+                        self.push_code(OpCode::from(*operator));
+                        self.push_code(OpCode::Swap(3));
+                        self.push_code(OpCode::Swap(2));
+                        self.push_code(property.set_opcode());
+                    }
+                    MemberKind::BracketMeta | MemberKind::DotMeta | MemberKind::DoubleColonMeta => {
+                        self.visit_expr(table)?;
+                        self.push_code(OpCode::Copy(1));
+                        self.push_code(property.get_opcode());
+                        self.visit_expr(right)?;
+                        self.push_code(OpCode::from(*operator));
+                        self.push_code(OpCode::Swap(2));
+                        self.push_code(property.set_opcode());
+                    }
+                },
             },
             StmtKind::AssignUnpack { left, right } => {
                 self.visit_expr(right)?;
@@ -840,16 +833,13 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
                 self.visit_member_property(property)?;
                 self.push_code(property.set_opcode());
             }
-            AssignLeftKind::MetaMember { table, property: _ } => {
-                self.visit_expr(table)?;
-                self.push_code(OpCode::SetMeta);
-            }
         }
         Ok(())
     }
 
-    fn visit_pattern(&mut self, pattern: &Pattern<S>) -> Self::Return {
-        self.visit_pattern_depth(pattern, 0)
+    /// See [CodeGenerator::visit_pattern_depth].
+    fn visit_pattern(&mut self, _pattern: &Pattern<S>) -> Self::Return {
+        unimplemented!()
     }
 
     fn visit_expr(&mut self, expr: &Expr<S>) -> Self::Return {
@@ -915,24 +905,7 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
                     self.push_code(OpCode::JumpPopIfNull(safe_label));
                 }
                 self.visit_member_property(property)?;
-                self.push_code(match property {
-                    MemberKind::Bracket(_) => OpCode::GetItem,
-                    MemberKind::Dot(_) | MemberKind::DoubleColon(_) => OpCode::GetAttr,
-                });
-                self.push_code(OpCode::JumpTarget(safe_label));
-            }
-            ExprKind::MetaMember {
-                table,
-                property,
-                safe,
-            } => {
-                self.visit_expr(table)?;
-                let safe_label = self.get_jump_target();
-                if safe.is_some() {
-                    self.push_code(OpCode::JumpPopIfNull(safe_label));
-                }
-                self.visit_meta_member_property(property)?;
-                self.push_code(OpCode::GetMeta);
+                self.push_code(property.get_opcode());
                 self.push_code(OpCode::JumpTarget(safe_label));
             }
             ExprKind::Call {
@@ -953,28 +926,23 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
                             self.push_code(OpCode::JumpPopIfNull(safe_label));
                         }
                         match property {
-                            MemberKind::Bracket(property) => {
-                                self.visit_expr(property)?;
-                                self.push_code(OpCode::GetItem);
-                            }
-                            MemberKind::Dot(ident) => {
+                            MemberKind::Dot(_) | MemberKind::DotMeta => {
                                 self.push_code(OpCode::Copy(1));
-                                let const_id = self.add_const(ConstValue::Str(ident.name.clone()));
-                                self.push_code(OpCode::LoadConst(const_id));
-                                self.push_code(OpCode::GetAttr);
+                                self.visit_member_property(property)?;
+                                self.push_code(property.get_opcode());
                                 self.push_code(OpCode::Swap(2));
                                 argument_count += 1;
                             }
-                            MemberKind::DoubleColon(ident) => {
-                                let const_id = self.add_const(ConstValue::Str(ident.name.clone()));
-                                self.push_code(OpCode::LoadConst(const_id));
-                                self.push_code(OpCode::GetAttr);
+                            MemberKind::Bracket(_)
+                            | MemberKind::DoubleColon(_)
+                            | MemberKind::BracketMeta
+                            | MemberKind::DoubleColonMeta => {
+                                self.visit_member_property(property)?;
+                                self.push_code(property.get_opcode());
                             }
                         }
                     }
-                    _ => {
-                        self.visit_expr(callee)?;
-                    }
+                    _ => self.visit_expr(callee)?,
                 }
                 for arg in arguments {
                     self.visit_expr(arg)?;
@@ -1009,19 +977,16 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
                 let const_id = self.add_const(ConstValue::Str(ident.name.clone()));
                 self.push_code(OpCode::LoadConst(const_id));
             }
+            MemberKind::BracketMeta | MemberKind::DotMeta | MemberKind::DoubleColonMeta => (),
         }
         Ok(())
     }
 
-    fn visit_meta_member_property(&mut self, _property: &MetaMemberKind) -> Self::Return {
-        Ok(())
-    }
-
     fn visit_typed_ident(&mut self, _ident: &TypedIdent<S>) -> Self::Return {
-        Ok(())
+        unimplemented!()
     }
 
     fn visit_ty(&mut self, _ty: &Ty<S>) -> Self::Return {
-        Ok(())
+        unimplemented!()
     }
 }

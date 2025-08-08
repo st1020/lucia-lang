@@ -349,7 +349,6 @@ impl<S: AsRef<str> + Clone> Visit<S> for SemanticAnalyzer<S> {
                 self.visit_expr(table);
                 self.visit_member_property(property);
             }
-            AssignLeftKind::MetaMember { table, property: _ } => self.visit_expr(table),
         }
     }
 
@@ -412,14 +411,6 @@ impl<S: AsRef<str> + Clone> Visit<S> for SemanticAnalyzer<S> {
                 self.visit_expr(table);
                 self.visit_member_property(property);
             }
-            ExprKind::MetaMember {
-                table,
-                property,
-                safe: _,
-            } => {
-                self.visit_expr(table);
-                self.visit_meta_member_property(property)
-            }
             ExprKind::Call {
                 callee,
                 arguments,
@@ -442,11 +433,13 @@ impl<S: AsRef<str> + Clone> Visit<S> for SemanticAnalyzer<S> {
     fn visit_member_property(&mut self, property: &MemberKind<S>) -> Self::Return {
         match property {
             MemberKind::Bracket(expr) => self.visit_expr(expr),
-            MemberKind::Dot(_) | MemberKind::DoubleColon(_) => (),
+            MemberKind::Dot(_)
+            | MemberKind::DoubleColon(_)
+            | MemberKind::BracketMeta
+            | MemberKind::DotMeta
+            | MemberKind::DoubleColonMeta => (),
         }
     }
-
-    fn visit_meta_member_property(&mut self, _property: &MetaMemberKind) -> Self::Return {}
 
     fn visit_typed_ident(&mut self, _ident: &TypedIdent<S>) -> Self::Return {}
 

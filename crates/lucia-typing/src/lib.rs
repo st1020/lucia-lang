@@ -280,28 +280,31 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
                             MemberKind::Dot(_) | MemberKind::DoubleColon(_) => {
                                 MetaMethodType::get_attr
                             }
+                            MemberKind::BracketMeta
+                            | MemberKind::DotMeta
+                            | MemberKind::DoubleColonMeta => {
+                                let table_type = self.check_expr(table)?;
+                                match table_type {
+                                    Type::Table(table) => table
+                                        .metatable
+                                        .clone()
+                                        .map(Type::Table)
+                                        .unwrap_or(Type::NULL),
+                                    ty => {
+                                        return Err(TypeError::ExpectIsSubtypeOf {
+                                            ty: Box::new(ty),
+                                            expected: Box::new(TableType::any_table().into()),
+                                        });
+                                    }
+                                };
+                                return Ok(());
+                            }
                         };
                         meta_method(
                             &MetaMethodType,
                             self.check_expr(table)?,
                             self.check_member_property(property)?,
                         )?
-                    }
-                    AssignLeftKind::MetaMember { table, property: _ } => {
-                        let table_type = self.check_expr(table)?;
-                        match table_type {
-                            Type::Table(table) => table
-                                .metatable
-                                .clone()
-                                .map(Type::Table)
-                                .unwrap_or(Type::NULL),
-                            ty => {
-                                return Err(TypeError::ExpectIsSubtypeOf {
-                                    ty: Box::new(ty),
-                                    expected: Box::new(TableType::any_table().into()),
-                                });
-                            }
-                        }
                     }
                 };
                 let right_type = self.check_bin_op(*operator, left_type, right_type)?;
@@ -353,6 +356,25 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
                 let meta_method = match property {
                     MemberKind::Bracket(_) => MetaMethodType::get_item,
                     MemberKind::Dot(_) | MemberKind::DoubleColon(_) => MetaMethodType::get_attr,
+                    MemberKind::BracketMeta | MemberKind::DotMeta | MemberKind::DoubleColonMeta => {
+                        match self.check_expr(table)? {
+                            Type::Table(table) => {
+                                if let Some(metatable) = &table.metatable {
+                                    right_type
+                                        .expect_is_subtype_of(&Type::Table(metatable.clone()))?;
+                                } else {
+                                    right_type.expect_is_subtype_of(&Type::NULL)?;
+                                }
+                            }
+                            ty => {
+                                return Err(TypeError::ExpectIsSubtypeOf {
+                                    ty: Box::new(ty),
+                                    expected: Box::new(TableType::any_table().into()),
+                                });
+                            }
+                        };
+                        return Ok(());
+                    }
                 };
                 right_type.expect_is_subtype_of(&meta_method(
                     &MetaMethodType,
@@ -360,21 +382,6 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
                     self.check_member_property(property)?,
                 )?)?;
             }
-            AssignLeftKind::MetaMember { table, property: _ } => match self.check_expr(table)? {
-                Type::Table(table) => {
-                    if let Some(metatable) = &table.metatable {
-                        right_type.expect_is_subtype_of(&Type::Table(metatable.clone()))?;
-                    } else {
-                        right_type.expect_is_subtype_of(&Type::NULL)?;
-                    }
-                }
-                ty => {
-                    return Err(TypeError::ExpectIsSubtypeOf {
-                        ty: Box::new(ty),
-                        expected: Box::new(TableType::any_table().into()),
-                    });
-                }
-            },
         }
         Ok(())
     }
@@ -471,6 +478,25 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
                 let meta_method = match property {
                     MemberKind::Bracket(_) => MetaMethodType::get_item,
                     MemberKind::Dot(_) | MemberKind::DoubleColon(_) => MetaMethodType::get_attr,
+                    MemberKind::BracketMeta | MemberKind::DotMeta | MemberKind::DoubleColonMeta => {
+                        let table_type = self.check_expr(table)?;
+                        return Ok(match table_type {
+                            Type::Table(table) => {
+                                let ty = table
+                                    .metatable
+                                    .clone()
+                                    .map(Type::Table)
+                                    .unwrap_or(Type::NULL);
+                                if safe.is_some() { ty | Type::NULL } else { ty }
+                            }
+                            ty => {
+                                return Err(TypeError::ExpectIsSubtypeOf {
+                                    ty: Box::new(ty),
+                                    expected: Box::new(TableType::any_table().into()),
+                                });
+                            }
+                        });
+                    }
                 };
                 let ty = meta_method(
                     &MetaMethodType,
@@ -478,29 +504,6 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
                     self.check_member_property(property)?,
                 )?;
                 if safe.is_some() { ty | Type::NULL } else { ty }
-            }
-            ExprKind::MetaMember {
-                table,
-                property: _,
-                safe,
-            } => {
-                let table_type = self.check_expr(table)?;
-                match table_type {
-                    Type::Table(table) => {
-                        let ty = table
-                            .metatable
-                            .clone()
-                            .map(Type::Table)
-                            .unwrap_or(Type::NULL);
-                        if safe.is_some() { ty | Type::NULL } else { ty }
-                    }
-                    ty => {
-                        return Err(TypeError::ExpectIsSubtypeOf {
-                            ty: Box::new(ty),
-                            expected: Box::new(TableType::any_table().into()),
-                        });
-                    }
-                }
             }
             ExprKind::Call {
                 callee,
@@ -544,6 +547,9 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
             MemberKind::Bracket(expr) => self.check_expr(expr),
             MemberKind::Dot(ident) | MemberKind::DoubleColon(ident) => {
                 Ok(Type::Literal(LitKind::Str(ident.name.clone())))
+            }
+            MemberKind::BracketMeta | MemberKind::DotMeta | MemberKind::DoubleColonMeta => {
+                Ok(Type::Never)
             }
         }
     }
