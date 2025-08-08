@@ -68,6 +68,12 @@ impl<S> MemberKind<S> {
     }
 }
 
+impl<S> From<usize> for ConstValue<S> {
+    fn from(value: usize) -> Self {
+        ConstValue::Int(value as i64)
+    }
+}
+
 impl<S: AsRef<str>> From<LitKind<S>> for ConstValue<S> {
     fn from(value: LitKind<S>) -> Self {
         match value {
@@ -160,6 +166,11 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
 
     fn push_code(&mut self, opcode: OpCode) {
         self.code().push(opcode);
+    }
+
+    fn push_load_const<T: Into<ConstValue<S>>>(&mut self, value: T) {
+        let const_id = self.add_const(value.into());
+        self.push_code(OpCode::LoadConst(const_id));
     }
 
     fn get_jump_target(&mut self) -> JumpTarget {
@@ -287,8 +298,7 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
             .last()
             .is_some_and(|&opcode| opcode == OpCode::Return)
         {
-            let const_id = self.add_const(ConstValue::Null);
-            self.push_code(OpCode::LoadConst(const_id));
+            self.push_load_const(ConstValue::Null);
             self.push_code(OpCode::Return);
         }
 
@@ -450,8 +460,7 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
         match &pattern.kind {
             PatternKind::Lit(lit) => {
                 let next_pattern_label = get_or_push_pattern_clean_stack_label(pattern_depth);
-                let const_id = self.add_const(lit.kind.clone().into());
-                self.push_code(OpCode::LoadConst(const_id));
+                self.push_load_const(lit.kind.clone());
                 self.push_code(match lit.kind {
                     LitKind::Null | LitKind::Bool(_) | LitKind::Int(_) | LitKind::Float(_) => {
                         OpCode::Identical
@@ -473,15 +482,13 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
                 if others.is_none() {
                     self.push_code(OpCode::Copy(1));
                     self.push_code(OpCode::GetLen);
-                    let const_id = self.add_const(ConstValue::Int(pairs.len().try_into().unwrap()));
-                    self.push_code(OpCode::LoadConst(const_id));
+                    self.push_load_const(pairs.len());
                     self.push_code(OpCode::Eq);
                     self.push_code(OpCode::PopJumpIfFalse(clean_stack_label));
                 }
                 for pair in pairs {
                     self.push_code(OpCode::Copy(1));
-                    let const_id = self.add_const(pair.key.kind.clone().into());
-                    self.push_code(OpCode::LoadConst(const_id));
+                    self.push_load_const(pair.key.kind.clone());
                     self.push_code(OpCode::GetItem);
                     self.visit_pattern_depth(
                         &pair.value,
@@ -499,15 +506,13 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
                 if others.is_none() {
                     self.push_code(OpCode::Copy(1));
                     self.push_code(OpCode::GetLen);
-                    let const_id = self.add_const(ConstValue::Int(items.len().try_into().unwrap()));
-                    self.push_code(OpCode::LoadConst(const_id));
+                    self.push_load_const(items.len());
                     self.push_code(OpCode::Eq);
                     self.push_code(OpCode::PopJumpIfFalse(clean_stack_label));
                 }
                 for (i, item) in items.iter().enumerate() {
                     self.push_code(OpCode::Copy(1));
-                    let const_id = self.add_const(ConstValue::Int(i.try_into().unwrap()));
-                    self.push_code(OpCode::LoadConst(const_id));
+                    self.push_load_const(i);
                     self.push_code(OpCode::GetItem);
                     self.visit_pattern_depth(item, pattern_depth + 1, clean_stack_label_stack)?;
                 }
@@ -527,8 +532,7 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
 
     fn visit_function(&mut self, function: &Function<S>) -> Self::Return {
         let code = self.gen_function_code(function);
-        let const_id = self.add_const(ConstValue::Code(Box::new(code)));
-        self.push_code(OpCode::LoadConst(const_id));
+        self.push_load_const(ConstValue::Code(Box::new(code)));
         if function.kind == FunctionKind::Do {
             self.push_code(OpCode::Call(0));
         }
@@ -656,8 +660,7 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
                 } else {
                     for (i, l) in left.iter().enumerate() {
                         self.push_code(OpCode::Copy(1));
-                        let const_id = self.add_const(ConstValue::Int(i.try_into().unwrap()));
-                        self.push_code(OpCode::LoadConst(const_id));
+                        self.push_load_const(i);
                         self.push_code(OpCode::GetItem);
                         self.store(l);
                     }
@@ -801,8 +804,7 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
                     self.push_code(OpCode::Copy(1));
                 }
                 for (i, l) in left.iter().enumerate() {
-                    let const_id = self.add_const(ConstValue::Int(i.try_into().unwrap()));
-                    self.push_code(OpCode::LoadConst(const_id));
+                    self.push_load_const(i);
                     self.push_code(OpCode::GetItem);
                     self.visit_assign_left(l)?;
                 }
@@ -960,8 +962,7 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
     }
 
     fn visit_lit(&mut self, lit: &Lit<S>) -> Self::Return {
-        let const_id = self.add_const(lit.kind.clone().into());
-        self.push_code(OpCode::LoadConst(const_id));
+        self.push_load_const(lit.kind.clone());
         Ok(())
     }
 
@@ -974,8 +975,7 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
         match property {
             MemberKind::Bracket(property) => self.visit_expr(property)?,
             MemberKind::Dot(ident) | MemberKind::DoubleColon(ident) => {
-                let const_id = self.add_const(ConstValue::Str(ident.name.clone()));
-                self.push_code(OpCode::LoadConst(const_id));
+                self.push_load_const(ConstValue::Str(ident.name.clone()));
             }
             MemberKind::BracketMeta | MemberKind::DotMeta | MemberKind::DoubleColonMeta => (),
         }
