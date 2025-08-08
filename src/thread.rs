@@ -1,5 +1,4 @@
-use core::fmt;
-use std::cell::RefMut;
+use std::{cell::RefMut, fmt};
 
 use compact_str::ToCompactString;
 use gc_arena::{Collect, Gc, Mutation, lock::RefLock};
@@ -25,7 +24,7 @@ pub enum ThreadMode {
 }
 
 impl fmt::Display for ThreadMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&self, f)
     }
 }

@@ -67,7 +67,7 @@ pub struct Function<S> {
 }
 
 impl<S: AsRef<str>> fmt::Display for Function<S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let params_str = self
             .params
             .iter()
@@ -116,7 +116,7 @@ pub enum FunctionKind {
 }
 
 impl fmt::Display for FunctionKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             FunctionKind::Function => write!(f, "Function"),
             FunctionKind::Closure => write!(f, "Closure"),
@@ -136,7 +136,7 @@ pub struct Block<S> {
 impl_locatable!(Block);
 
 impl<S: AsRef<str>> fmt::Display for Block<S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "{{")?;
         for stmt in &self.body {
             writeln!(f, "{}", stmt.indent(4))?;
@@ -155,7 +155,7 @@ pub struct Stmt<S> {
 impl_locatable!(Stmt);
 
 impl<S: AsRef<str>> fmt::Display for Stmt<S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.kind)
     }
 }
@@ -246,7 +246,7 @@ pub enum StmtKind<S> {
 }
 
 impl<S: AsRef<str>> fmt::Display for StmtKind<S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             StmtKind::If {
                 test,
@@ -329,7 +329,7 @@ pub struct Expr<S> {
 impl_locatable!(Expr);
 
 impl<S: AsRef<str>> fmt::Display for Expr<S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.kind)
     }
 }
@@ -396,7 +396,7 @@ pub enum ExprKind<S> {
 }
 
 impl<S: AsRef<str>> fmt::Display for ExprKind<S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ExprKind::Lit(lit) => write!(f, "{lit}"),
             ExprKind::Ident(ident) => write!(f, "{ident}"),
@@ -476,7 +476,7 @@ pub struct Lit<S> {
 impl_locatable!(Lit);
 
 impl<S: AsRef<str>> fmt::Display for Lit<S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.kind)
     }
 }
@@ -497,7 +497,7 @@ pub enum LitKind<S> {
 }
 
 impl<S: AsRef<str>> fmt::Display for LitKind<S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             LitKind::Null => write!(f, "null"),
             LitKind::Bool(v) => write!(f, "{v}"),
@@ -519,7 +519,7 @@ pub struct Ident<S> {
 impl_locatable!(Ident);
 
 impl<S: AsRef<str>> fmt::Display for Ident<S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.name.as_ref())
     }
 }
@@ -534,7 +534,7 @@ pub enum UnOp {
 }
 
 impl fmt::Display for UnOp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             UnOp::Not => write!(f, "not"),
             UnOp::Neg => write!(f, "-"),
@@ -580,7 +580,7 @@ pub enum BinOp {
 }
 
 impl fmt::Display for BinOp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             BinOp::Add => write!(f, "+"),
             BinOp::Sub => write!(f, "-"),
@@ -730,7 +730,7 @@ pub struct TableProperty<S> {
 impl_locatable!(TableProperty);
 
 impl<S: AsRef<str>> fmt::Display for TableProperty<S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}: {}", self.key, self.value)
     }
 }
@@ -814,7 +814,7 @@ pub struct MatchCase<S> {
 impl_locatable!(MatchCase);
 
 impl<S: AsRef<str>> fmt::Display for MatchCase<S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} => {}", self.patterns.iter().join(" | "), self.body)
     }
 }
@@ -829,7 +829,7 @@ pub struct Pattern<S> {
 impl_locatable!(Pattern);
 
 impl<S: AsRef<str>> fmt::Display for Pattern<S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.kind)
     }
 }
@@ -850,7 +850,7 @@ pub enum PatternKind<S> {
 }
 
 impl<S: AsRef<str>> fmt::Display for PatternKind<S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             PatternKind::Lit(lit) => write!(f, "{lit}"),
             PatternKind::Ident(ident) => write!(f, "{ident}"),
@@ -881,7 +881,7 @@ pub struct TablePatternPair<S> {
 impl_locatable!(TablePatternPair);
 
 impl<S: AsRef<str>> fmt::Display for TablePatternPair<S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}: {}", self.key, self.value)
     }
 }
@@ -896,7 +896,7 @@ pub struct Ty<S> {
 impl_locatable!(Ty);
 
 impl<S: AsRef<str>> fmt::Display for Ty<S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.kind)
     }
 }
@@ -969,7 +969,7 @@ pub struct TableTyPair<S> {
 impl_locatable!(TableTyPair);
 
 impl<S: AsRef<str>> fmt::Display for TableTyPair<S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}: {}", self.key, self.value)
     }
 }
@@ -985,7 +985,7 @@ pub struct TableTyOther<S> {
 impl_locatable!(TableTyOther);
 
 impl<S: AsRef<str>> fmt::Display for TableTyOther<S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[{}]: {}", self.key, self.value)
     }
 }

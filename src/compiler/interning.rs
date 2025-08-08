@@ -1,7 +1,6 @@
 //! The string interner.
 
-use core::fmt;
-use std::{borrow::Borrow, collections::HashSet, hash, rc::Rc};
+use std::{borrow::Borrow, collections::HashSet, fmt, hash, rc::Rc};
 
 use rustc_hash::FxBuildHasher;
 
@@ -71,7 +70,7 @@ impl<S: AsRef<str>> Borrow<str> for InternedString<S> {
 }
 
 impl<S: AsRef<str>> fmt::Display for InternedString<S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.0.as_ref())
     }
 }

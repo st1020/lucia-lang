@@ -35,7 +35,7 @@ pub struct Code<S> {
 }
 
 impl<S: AsRef<str>> fmt::Display for Code<S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(name) = &self.name {
             writeln!(f, "name: {}", name.as_ref())?;
         }
@@ -121,7 +121,7 @@ pub enum ConstValue<S> {
 }
 
 impl<S: AsRef<str>> fmt::Display for ConstValue<S> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Null => write!(f, "null"),
             Self::Bool(v) => write!(f, "{v}"),
