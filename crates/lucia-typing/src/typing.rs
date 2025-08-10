@@ -234,18 +234,16 @@ pub struct TableType<S: Eq + Ord> {
 }
 
 impl<S: Eq + Ord> TableType<S> {
+    pub const ANY: Self = TableType {
+        pairs: Vec::new(),
+        others: Some((Type::Any, Type::Any)),
+        metatable: None,
+    };
+
     pub fn list(item: Type<S>) -> Self {
         Self {
             pairs: Vec::new(),
             others: Some((Type::Int, item)),
-            metatable: None,
-        }
-    }
-
-    pub fn any_table() -> Self {
-        Self {
-            pairs: Vec::new(),
-            others: Some((Type::Any, Type::Any)),
             metatable: None,
         }
     }
@@ -332,14 +330,15 @@ pub struct FunctionType<S: Eq + Ord> {
 }
 
 impl<S: Clone + Eq + Ord> FunctionType<S> {
-    pub fn any_function() -> Self {
-        Self {
-            params: Vec::new(),
-            variadic: Type::Any.into(),
-            returns: Type::Any,
-            throws: Type::Any,
-        }
-    }
+    pub const ANY: Self = Self {
+        params: Vec::new(),
+        variadic: ParmaType {
+            name: None,
+            ty: Type::Any,
+        },
+        returns: Type::Any,
+        throws: Type::Any,
+    };
 
     pub fn check_args(&self, args: &[Type<S>]) -> Result<(), TypeError<S>> {
         for (i, arg) in args.iter().enumerate() {

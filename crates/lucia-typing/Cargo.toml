@@ -13,4 +13,6 @@ index_vec.workspace = true
 sorted-vec.workspace = true
 indexmap.workspace = true
 rustc-hash.workspace = true
+archery.workspace = true
+rpds.workspace = true
 thiserror.workspace = true

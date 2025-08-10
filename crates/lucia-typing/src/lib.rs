@@ -1,3 +1,4 @@
+pub mod env;
 pub mod error;
 pub mod meta_ops;
 pub mod typing;
@@ -8,7 +9,7 @@ use lucia_lang::compiler::{
     analyzer::analyze,
     ast::*,
     error::CompilerError,
-    index::{FunctionId, SymbolId},
+    index::{FunctionId, ScopeId},
     interning::StringInterner,
     parser::parse,
     semantic::Semantic,
@@ -17,6 +18,7 @@ use lucia_lang::compiler::{
 use rustc_hash::FxBuildHasher;
 
 use crate::{
+    env::Env,
     error::TypeError,
     meta_ops::MetaMethodType,
     typing::{FunctionType, ParmaType, TableType, Type},
@@ -47,8 +49,11 @@ struct TypeChecker<'a, S: Clone + Eq + Ord> {
     semantic: &'a Semantic<S>,
 
     current_function_id: FunctionId,
-    function_type: IndexVec<FunctionId, Option<FunctionType<S>>>,
-    symbol_type: IndexMap<SymbolId, Type<S>, FxBuildHasher>,
+    current_scope_id: ScopeId,
+
+    function_types: IndexVec<FunctionId, Option<FunctionType<S>>>,
+    envs: IndexMap<ScopeId, Env<S>, FxBuildHasher>,
+
     errors: Vec<TypeError<S>>,
 }
 
@@ -57,16 +62,25 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
         Self {
             semantic,
             current_function_id: FunctionId::new(0),
-            function_type: index_vec![None; semantic.functions.len()],
-            symbol_type: IndexMap::with_hasher(FxBuildHasher),
+            current_scope_id: ScopeId::new(0),
+            function_types: index_vec![None; semantic.functions.len()],
+            envs: IndexMap::with_hasher(FxBuildHasher),
             errors: Vec::new(),
         }
+    }
+
+    fn current_env(&self) -> &Env<S> {
+        self.envs.get(&self.current_scope_id).unwrap()
+    }
+
+    fn current_env_mut(&mut self) -> &mut Env<S> {
+        self.envs.get_mut(&self.current_scope_id).unwrap()
     }
 
     fn get_symbol_type(&self, ident: &Ident<S>) -> Option<&Type<S>> {
         let symbol_id =
             self.semantic.references[ident.reference_id.get().copied().unwrap()].symbol_id;
-        self.symbol_type.get(&symbol_id)
+        self.current_env().get(&symbol_id)
     }
 
     fn set_symbol_type(&mut self, ident: &Ident<S>, ty: Type<S>) -> Result<(), TypeError<S>> {
@@ -102,8 +116,29 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
         } else {
             let symbol_id =
                 self.semantic.references[ident.reference_id.get().copied().unwrap()].symbol_id;
-            self.symbol_type.insert(symbol_id, ty);
+            self.current_env_mut().insert_mut(symbol_id, ty);
             Ok(())
+        }
+    }
+
+    fn enter_function(&mut self, function_id: FunctionId) {
+        self.current_function_id = function_id;
+    }
+
+    fn leave_function(&mut self) {
+        if let Some(parent_id) = self.semantic.functions[self.current_function_id].parent_id {
+            self.current_function_id = parent_id;
+        }
+    }
+
+    fn enter_scope(&mut self, scope_id: ScopeId) {
+        self.current_scope_id = scope_id;
+        self.envs.insert(scope_id, self.current_env().clone());
+    }
+
+    fn leave_scope(&mut self) {
+        if let Some(parent_id) = self.semantic.scopes[self.current_scope_id].parent_id {
+            self.current_scope_id = parent_id;
         }
     }
 
@@ -115,7 +150,8 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
     }
 
     fn check_function(&mut self, function: &Function<S>) -> Result<Type<S>, TypeError<S>> {
-        self.current_function_id = function.function_id.get().copied().unwrap();
+        self.enter_function(function.function_id.get().copied().unwrap());
+        self.enter_scope(function.body.scope_id.get().copied().unwrap());
 
         let param_types = function
             .params
@@ -168,179 +204,32 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
             returns: returns_type,
             throws: throws_type,
         };
-        self.function_type[self.current_function_id] = Some(function_type.clone());
+        self.function_types[self.current_function_id] = Some(function_type.clone());
 
-        self.check_block(&function.body);
+        self.check_exprs(&function.body)?;
+
+        self.leave_scope();
+        self.leave_function();
 
         Ok(function_type.into())
     }
 
-    fn check_block(&mut self, block: &Block<S>) {
+    fn check_exprs(&mut self, block: &Block<S>) -> Result<Type<S>, TypeError<S>> {
+        let mut last_type = Type::NULL;
         for stmt in &block.body {
-            if let Err(e) = self.check_stmt(stmt) {
-                self.errors.push(e)
+            match self.check_expr(stmt) {
+                Ok(ty) => last_type = ty,
+                Err(e) => self.errors.push(e),
             }
         }
+        Ok(last_type)
     }
 
-    fn check_stmt(&mut self, stmt: &Stmt<S>) -> Result<(), TypeError<S>> {
-        match &stmt.kind {
-            StmtKind::If {
-                test,
-                consequent,
-                alternate,
-            } => {
-                self.check_expr(test)?.expect_is_subtype_of(&Type::Bool)?;
-                self.check_block(consequent);
-                if let Some(alternate) = alternate {
-                    self.check_stmt(alternate)?;
-                }
-            }
-            StmtKind::Match { expr, cases } => {
-                self.check_expr(expr)?;
-                for case in cases {
-                    // TODO: check pattern
-                    self.check_block(&case.body);
-                }
-            }
-            StmtKind::Loop { body } => {
-                self.check_block(body);
-            }
-            StmtKind::While { test, body } => {
-                self.check_expr(test)?.expect_is_subtype_of(&Type::Bool)?;
-                self.check_block(body);
-            }
-            StmtKind::For { left, right, body } => {
-                let right_type = MetaMethodType.iter(self.check_expr(right)?)?;
-                if right_type == Type::Any {
-                    for l in left {
-                        self.set_symbol_type(l, Type::Any)?;
-                    }
-                } else if left.len() == 1 {
-                    self.set_symbol_type(&left[0], right_type)?;
-                } else if let Type::Table(table) = right_type {
-                    for (i, l) in left.iter().enumerate() {
-                        self.set_symbol_type(l, table.get_literal(&LitKind::Int(i as i64)))?;
-                    }
-                } else {
-                    return Err(TypeError::ExpectIsSubtypeOf {
-                        ty: Box::new(right_type),
-                        expected: Box::new(TableType::any_table().into()),
-                    });
-                }
-                self.check_block(body);
-            }
-            StmtKind::Break => (),
-            StmtKind::Continue => (),
-            StmtKind::Return { argument } => self.check_expr(argument)?.expect_is_subtype_of(
-                &self.function_type[self.current_function_id]
-                    .as_ref()
-                    .unwrap()
-                    .returns,
-            )?,
-            StmtKind::Throw { argument } => self.check_expr(argument)?.expect_is_subtype_of(
-                &self.function_type[self.current_function_id]
-                    .as_ref()
-                    .unwrap()
-                    .throws,
-            )?,
-            StmtKind::Import { .. } => {
-                // TODO: support import module
-            }
-            StmtKind::Fn {
-                glo: _,
-                name,
-                function,
-            } => {
-                let ty = self.check_function(function)?;
-                self.set_symbol_type(name, ty)?;
-            }
-            StmtKind::GloAssign { left, right } => {
-                let right_type = self.check_expr(right)?;
-                if let Some(t) = &left.ty {
-                    self.set_symbol_type(&left.ident, t.kind.clone().into())?;
-                }
-                self.set_symbol_type(&left.ident, right_type)?;
-            }
-            StmtKind::Assign { left, right } => {
-                let right_type = self.check_expr(right)?;
-                self.check_assign(left, right_type)?;
-            }
-            StmtKind::AssignOp {
-                operator,
-                left,
-                right,
-            } => {
-                let right_type = self.check_expr(right)?;
-                let left_type = match &left.kind {
-                    AssignLeftKind::Ident(ident) => self
-                        .get_symbol_type(&ident.ident)
-                        .cloned()
-                        .unwrap_or(Type::Unknown),
-                    AssignLeftKind::Member { table, property } => {
-                        let meta_method = match property {
-                            MemberKind::Bracket(_) => MetaMethodType::get_item,
-                            MemberKind::Dot(_) | MemberKind::DoubleColon(_) => {
-                                MetaMethodType::get_attr
-                            }
-                            MemberKind::BracketMeta
-                            | MemberKind::DotMeta
-                            | MemberKind::DoubleColonMeta => {
-                                let table_type = self.check_expr(table)?;
-                                match table_type {
-                                    Type::Table(table) => table
-                                        .metatable
-                                        .clone()
-                                        .map(Type::Table)
-                                        .unwrap_or(Type::NULL),
-                                    ty => {
-                                        return Err(TypeError::ExpectIsSubtypeOf {
-                                            ty: Box::new(ty),
-                                            expected: Box::new(TableType::any_table().into()),
-                                        });
-                                    }
-                                };
-                                return Ok(());
-                            }
-                        };
-                        meta_method(
-                            &MetaMethodType,
-                            self.check_expr(table)?,
-                            self.check_member_property(property)?,
-                        )?
-                    }
-                };
-                let right_type = self.check_bin_op(*operator, left_type, right_type)?;
-                self.check_assign(left, right_type)?;
-            }
-            StmtKind::AssignUnpack { left, right } => {
-                let right_type = self.check_expr(right)?;
-                if let Type::Table(table) = right_type {
-                    for (i, l) in left.iter().enumerate() {
-                        self.check_assign(l, table.get_literal(&LitKind::Int(i as i64)))?;
-                    }
-                } else {
-                    return Err(TypeError::ExpectIsSubtypeOf {
-                        ty: Box::new(right_type),
-                        expected: Box::new(TableType::any_table().into()),
-                    });
-                }
-            }
-            StmtKind::AssignMulti { left, right } => {
-                assert!(left.len() != right.len());
-                for (left, right) in left.iter().zip(right) {
-                    let right_type = self.check_expr(right)?;
-                    self.check_assign(left, right_type)?;
-                }
-            }
-            StmtKind::Block(block) => {
-                self.check_block(block);
-            }
-            StmtKind::Expr(expr) => {
-                self.check_expr(expr)?;
-            }
-        }
-        Ok(())
+    fn check_block(&mut self, block: &Block<S>) -> Result<Type<S>, TypeError<S>> {
+        self.enter_scope(block.scope_id.get().copied().unwrap());
+        let ty = self.check_exprs(block);
+        self.leave_scope();
+        ty
     }
 
     fn check_assign(
@@ -372,7 +261,7 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
                             ty => {
                                 return Err(TypeError::ExpectIsSubtypeOf {
                                     ty: Box::new(ty),
-                                    expected: Box::new(TableType::any_table().into()),
+                                    expected: Box::new(TableType::ANY.into()),
                                 });
                             }
                         };
@@ -397,7 +286,19 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
                 .cloned()
                 .unwrap_or(Type::Unknown),
             ExprKind::Paren(expr) => self.check_expr(expr)?,
-            ExprKind::Function(function) => self.check_function(function)?,
+            ExprKind::Fn {
+                glo: _,
+                name,
+                function,
+            } => {
+                let ty = self.check_function(function)?;
+                if let Some(name) = name {
+                    self.set_symbol_type(name, ty.clone())?;
+                    Type::NULL
+                } else {
+                    ty
+                }
+            }
             ExprKind::Table { properties } => {
                 let mut pairs = Vec::new();
                 for property in properties {
@@ -495,7 +396,7 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
                             ty => {
                                 return Err(TypeError::ExpectIsSubtypeOf {
                                     ty: Box::new(ty),
-                                    expected: Box::new(TableType::any_table().into()),
+                                    expected: Box::new(TableType::ANY.into()),
                                 });
                             }
                         });
@@ -542,6 +443,164 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
                     CallKind::TryOption => function_type.returns.clone() | Type::NULL,
                 }
             }
+            ExprKind::If {
+                test,
+                consequent,
+                alternate,
+            } => {
+                self.check_expr(test)?.expect_is_subtype_of(&Type::Bool)?;
+                self.check_block(consequent)?;
+                if let Some(alternate) = alternate {
+                    self.check_expr(alternate)?;
+                }
+                Type::NULL // TODO: return type
+            }
+            ExprKind::Match { expr, cases } => {
+                self.check_expr(expr)?;
+                for case in cases {
+                    // TODO: check pattern
+                    self.check_block(&case.body)?;
+                }
+                Type::NULL // TODO: return type
+            }
+            ExprKind::Loop { body } => {
+                self.check_block(body)?;
+                Type::NULL
+            }
+            ExprKind::While { test, body } => {
+                self.check_expr(test)?.expect_is_subtype_of(&Type::Bool)?;
+                self.check_block(body)?;
+                Type::NULL
+            }
+            ExprKind::For { left, right, body } => {
+                let right_type = MetaMethodType.iter(self.check_expr(right)?)?;
+                if right_type == Type::Any {
+                    for l in left {
+                        self.set_symbol_type(l, Type::Any)?;
+                    }
+                } else if left.len() == 1 {
+                    self.set_symbol_type(&left[0], right_type)?;
+                } else if let Type::Table(table) = right_type {
+                    for (i, l) in left.iter().enumerate() {
+                        self.set_symbol_type(l, table.get_literal(&LitKind::Int(i as i64)))?;
+                    }
+                } else {
+                    return Err(TypeError::ExpectIsSubtypeOf {
+                        ty: Box::new(right_type),
+                        expected: Box::new(TableType::ANY.into()),
+                    });
+                }
+                self.check_block(body)?;
+                Type::NULL
+            }
+            ExprKind::Break => Type::NULL,
+            ExprKind::Continue => Type::NULL,
+            ExprKind::Return { argument } => {
+                self.check_expr(argument)?.expect_is_subtype_of(
+                    &self.function_types[self.current_function_id]
+                        .as_ref()
+                        .unwrap()
+                        .returns,
+                )?;
+                Type::NULL
+            }
+            ExprKind::Throw { argument } => {
+                self.check_expr(argument)?.expect_is_subtype_of(
+                    &self.function_types[self.current_function_id]
+                        .as_ref()
+                        .unwrap()
+                        .throws,
+                )?;
+                Type::NULL
+            }
+            ExprKind::Import { .. } => {
+                // TODO: support import module
+                Type::NULL
+            }
+            ExprKind::GloAssign { left, right } => {
+                let right_type = self.check_expr(right)?;
+                if let Some(t) = &left.ty {
+                    self.set_symbol_type(&left.ident, t.kind.clone().into())?;
+                }
+                self.set_symbol_type(&left.ident, right_type)?;
+                Type::NULL
+            }
+            ExprKind::Assign { left, right } => {
+                let right_type = self.check_expr(right)?;
+                self.check_assign(left, right_type)?;
+                Type::NULL
+            }
+            ExprKind::AssignOp {
+                operator,
+                left,
+                right,
+            } => {
+                let right_type = self.check_expr(right)?;
+                let left_type = match &left.kind {
+                    AssignLeftKind::Ident(ident) => self
+                        .get_symbol_type(&ident.ident)
+                        .cloned()
+                        .unwrap_or(Type::Unknown),
+                    AssignLeftKind::Member { table, property } => {
+                        let meta_method = match property {
+                            MemberKind::Bracket(_) => MetaMethodType::get_item,
+                            MemberKind::Dot(_) | MemberKind::DoubleColon(_) => {
+                                MetaMethodType::get_attr
+                            }
+                            MemberKind::BracketMeta
+                            | MemberKind::DotMeta
+                            | MemberKind::DoubleColonMeta => {
+                                let table_type = self.check_expr(table)?;
+                                match table_type {
+                                    Type::Table(table) => table
+                                        .metatable
+                                        .clone()
+                                        .map(Type::Table)
+                                        .unwrap_or(Type::NULL),
+                                    ty => {
+                                        return Err(TypeError::ExpectIsSubtypeOf {
+                                            ty: Box::new(ty),
+                                            expected: Box::new(TableType::ANY.into()),
+                                        });
+                                    }
+                                };
+                                return Ok(Type::NULL);
+                            }
+                        };
+                        meta_method(
+                            &MetaMethodType,
+                            self.check_expr(table)?,
+                            self.check_member_property(property)?,
+                        )?
+                    }
+                };
+                let right_type = self.check_bin_op(*operator, left_type, right_type)?;
+                self.check_assign(left, right_type)?;
+                Type::NULL
+            }
+            ExprKind::AssignUnpack { left, right } => {
+                let right_type = self.check_expr(right)?;
+                if let Type::Table(table) = right_type {
+                    for (i, l) in left.iter().enumerate() {
+                        self.check_assign(l, table.get_literal(&LitKind::Int(i as i64)))?;
+                    }
+                } else {
+                    return Err(TypeError::ExpectIsSubtypeOf {
+                        ty: Box::new(right_type),
+                        expected: Box::new(TableType::ANY.into()),
+                    });
+                }
+                Type::NULL
+            }
+            ExprKind::AssignMulti { left, right } => {
+                assert!(left.len() != right.len());
+                for (left, right) in left.iter().zip(right) {
+                    let right_type = self.check_expr(right)?;
+                    self.check_assign(left, right_type)?;
+                }
+                Type::NULL
+            }
+            ExprKind::Block(block) => self.check_block(block)?,
         })
     }
 

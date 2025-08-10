@@ -59,7 +59,6 @@ pub enum OpCode {
     GetItem,
     /// Implements:
     /// ```lucia
-    /// key = STACK.pop()
     /// table = STACK.pop()
     /// STACK.push(table[#])
     /// ```
@@ -165,6 +164,34 @@ pub enum OpCode {
 
     /// A jump target, only used during code generation.
     JumpTarget(JumpTarget),
+}
+
+impl OpCode {
+    pub fn is_load(self) -> bool {
+        matches!(
+            self,
+            Self::LoadLocal(_) | Self::LoadGlobal(_) | Self::LoadUpvalue(_) | Self::LoadConst(_)
+        )
+    }
+
+    pub fn is_store(self) -> bool {
+        matches!(
+            self,
+            Self::StoreLocal(_) | Self::StoreGlobal(_) | Self::StoreUpvalue(_)
+        )
+    }
+
+    pub fn is_jump(self) -> bool {
+        matches!(
+            self,
+            Self::Jump(_)
+                | Self::JumpPopIfNull(_)
+                | Self::PopJumpIfTrue(_)
+                | Self::PopJumpIfFalse(_)
+                | Self::JumpIfTrueOrPop(_)
+                | Self::JumpIfFalseOrPop(_)
+        )
+    }
 }
 
 impl fmt::Display for OpCode {

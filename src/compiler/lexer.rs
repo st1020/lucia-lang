@@ -13,6 +13,7 @@ use super::token::{
 ///
 /// Next characters can be peeked via `first` method,
 /// and position can be shifted forward via `bump` method.
+#[derive(Debug, Clone)]
 struct Cursor<'a> {
     /// The input string.
     input: &'a str,
@@ -106,7 +107,7 @@ impl<'a> Cursor<'a> {
 }
 
 /// Creates an iterator that produces tokens from the input string.
-pub fn tokenize(input: &str) -> impl Iterator<Item = Token> + '_ {
+pub fn tokenize(input: &str) -> impl Iterator<Item = Token> + Clone + '_ {
     let mut cursor = Cursor::new(input);
     std::iter::from_fn(move || {
         let token = cursor.advance_token();

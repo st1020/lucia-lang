@@ -18,11 +18,9 @@ pub trait Visit<S> {
     fn visit_program(&mut self, program: &Program<S>) -> Self::Return;
     fn visit_function(&mut self, function: &Function<S>) -> Self::Return;
     fn visit_block(&mut self, block: &Block<S>) -> Self::Return;
-    fn visit_stmts(&mut self, stmts: &[Stmt<S>]) -> Self::Return;
-    fn visit_stmt(&mut self, stmt: &Stmt<S>) -> Self::Return;
+    fn visit_expr(&mut self, expr: &Expr<S>) -> Self::Return;
     fn visit_assign_left(&mut self, assign_left: &AssignLeft<S>) -> Self::Return;
     fn visit_pattern(&mut self, pattern: &Pattern<S>) -> Self::Return;
-    fn visit_expr(&mut self, expr: &Expr<S>) -> Self::Return;
     fn visit_lit(&mut self, lit: &Lit<S>) -> Self::Return;
     fn visit_ident(&mut self, ident: &Ident<S>) -> Self::Return;
     fn visit_member_property(&mut self, property: &MemberKind<S>) -> Self::Return;
@@ -127,7 +125,7 @@ impl fmt::Display for FunctionKind {
 /// A block.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Block<S> {
-    pub body: Vec<Stmt<S>>,
+    pub body: Vec<Expr<S>>,
     pub range: TextRange,
     pub scope_id: OnceLock<ScopeId>,
 }
@@ -144,46 +142,64 @@ impl<S: AsRef<str>> fmt::Display for Block<S> {
     }
 }
 
-/// A statement.
+/// An expression.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Stmt<S> {
-    pub kind: StmtKind<S>,
+pub struct Expr<S> {
+    pub kind: ExprKind<S>,
     pub range: TextRange,
 }
 
-impl_locatable!(Stmt);
+impl_locatable!(Expr);
 
-impl<S: AsRef<str>> fmt::Display for Stmt<S> {
+impl<S: AsRef<str>> fmt::Display for Expr<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.kind)
     }
 }
-
-impl<S> From<Box<Block<S>>> for Stmt<S> {
-    fn from(value: Box<Block<S>>) -> Self {
-        Stmt {
-            range: value.range,
-            kind: StmtKind::Block(value),
-        }
-    }
-}
-
-impl<S> From<Box<Expr<S>>> for Stmt<S> {
-    fn from(value: Box<Expr<S>>) -> Self {
-        Stmt {
-            range: value.range,
-            kind: StmtKind::Expr(value),
-        }
-    }
-}
-
-/// Kind of statement.
+/// Kind of expression.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum StmtKind<S> {
+pub enum ExprKind<S> {
+    Lit(Box<Lit<S>>),
+    Ident(Box<Ident<S>>),
+    Paren(Box<Expr<S>>),
+    Fn {
+        glo: Option<TextRange>,
+        name: Option<Box<Ident<S>>>,
+        function: Box<Function<S>>,
+    },
+    Table {
+        properties: Vec<TableProperty<S>>,
+    },
+    List {
+        items: Vec<Expr<S>>,
+    },
+    Unary {
+        operator: UnOp,
+        argument: Box<Expr<S>>,
+    },
+    Binary {
+        operator: BinOp,
+        left: Box<Expr<S>>,
+        right: Box<Expr<S>>,
+    },
+    TypeCheck {
+        left: Box<Expr<S>>,
+        right: ValueType,
+    },
+    Member {
+        table: Box<Expr<S>>,
+        property: MemberKind<S>,
+        safe: Option<TextRange>,
+    },
+    Call {
+        callee: Box<Expr<S>>,
+        arguments: Vec<Expr<S>>,
+        kind: CallKind,
+    },
     If {
         test: Box<Expr<S>>,
         consequent: Box<Block<S>>,
-        alternate: Option<Box<Stmt<S>>>,
+        alternate: Option<Box<Expr<S>>>,
     },
     Match {
         expr: Box<Expr<S>>,
@@ -214,11 +230,6 @@ pub enum StmtKind<S> {
         path_str: S,
         kind: ImportKind<S>,
     },
-    Fn {
-        glo: Option<TextRange>,
-        name: Box<Ident<S>>,
-        function: Box<Function<S>>,
-    },
     GloAssign {
         left: Box<TypedIdent<S>>,
         right: Box<Expr<S>>,
@@ -241,152 +252,6 @@ pub enum StmtKind<S> {
         right: Vec<Expr<S>>,
     },
     Block(Box<Block<S>>),
-    Expr(Box<Expr<S>>),
-}
-
-impl<S: AsRef<str>> fmt::Display for StmtKind<S> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            StmtKind::If {
-                test,
-                consequent,
-                alternate,
-            } => {
-                if let Some(alternate) = alternate {
-                    write!(f, "if {test} {consequent} else {alternate}")
-                } else {
-                    write!(f, "if {test} {consequent}")
-                }
-            }
-            StmtKind::Match { expr, cases } => write!(
-                f,
-                "match {expr} {{\n{}\n}}",
-                cases.iter().join("\n").indent(4)
-            ),
-            StmtKind::Loop { body } => write!(f, "loop {body}"),
-            StmtKind::While { test, body } => write!(f, "while {test} {body}"),
-            StmtKind::For { left, right, body } => {
-                write!(f, "for {} in {right} {body}", left.iter().join(", "))
-            }
-            StmtKind::Break => write!(f, "break"),
-            StmtKind::Continue => write!(f, "continue"),
-            StmtKind::Return { argument } => write!(f, "return {argument}"),
-            StmtKind::Throw { argument } => write!(f, "throw {argument}"),
-            StmtKind::Import {
-                path,
-                path_str: _,
-                kind,
-            } => {
-                write!(f, "import {}{}", path.iter().join("::"), kind)
-            }
-            StmtKind::Fn {
-                glo,
-                name,
-                function,
-            } => {
-                write!(
-                    f,
-                    "{}fn {}{}",
-                    if glo.is_some() { "glo " } else { "" },
-                    name,
-                    function
-                )
-            }
-            StmtKind::GloAssign { left, right } => {
-                write!(f, "glo {left} = {right}")
-            }
-            StmtKind::Assign { left, right } => write!(f, "{left} = {right}"),
-            StmtKind::AssignOp {
-                operator,
-                left,
-                right,
-            } => write!(f, "{left} {operator}= {right}"),
-            StmtKind::AssignUnpack { left, right } => {
-                write!(f, "{} = {right}", left.iter().join(", "))
-            }
-            StmtKind::AssignMulti { left, right } => {
-                write!(
-                    f,
-                    "{} = {}",
-                    left.iter().join(", "),
-                    right.iter().join(", ")
-                )
-            }
-            StmtKind::Block(block) => write!(f, "{block}"),
-            StmtKind::Expr(expr) => write!(f, "{expr}"),
-        }
-    }
-}
-
-/// An expression.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Expr<S> {
-    pub kind: ExprKind<S>,
-    pub range: TextRange,
-}
-
-impl_locatable!(Expr);
-
-impl<S: AsRef<str>> fmt::Display for Expr<S> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.kind)
-    }
-}
-
-impl<S> From<Box<Lit<S>>> for Expr<S> {
-    fn from(value: Box<Lit<S>>) -> Self {
-        Expr {
-            range: value.range,
-            kind: ExprKind::Lit(value),
-        }
-    }
-}
-
-impl<S> From<Box<Ident<S>>> for Expr<S> {
-    fn from(value: Box<Ident<S>>) -> Self {
-        Expr {
-            range: value.range,
-            kind: ExprKind::Ident(value),
-        }
-    }
-}
-
-/// Kind of expression.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ExprKind<S> {
-    Lit(Box<Lit<S>>),
-    Ident(Box<Ident<S>>),
-    Paren(Box<Expr<S>>),
-    Function(Box<Function<S>>),
-    Table {
-        properties: Vec<TableProperty<S>>,
-    },
-    List {
-        items: Vec<Expr<S>>,
-    },
-    Unary {
-        operator: UnOp,
-        argument: Box<Expr<S>>,
-    },
-    Binary {
-        operator: BinOp,
-        left: Box<Expr<S>>,
-        right: Box<Expr<S>>,
-    },
-    TypeCheck {
-        left: Box<Expr<S>>,
-        right: ValueType,
-    },
-    Member {
-        table: Box<Expr<S>>,
-        property: MemberKind<S>,
-        safe: Option<TextRange>,
-    },
-    Call {
-        callee: Box<Expr<S>>,
-        arguments: Vec<Expr<S>>,
-        kind: CallKind,
-    },
 }
 
 impl<S: AsRef<str>> fmt::Display for ExprKind<S> {
@@ -395,12 +260,27 @@ impl<S: AsRef<str>> fmt::Display for ExprKind<S> {
             ExprKind::Lit(lit) => write!(f, "{lit}"),
             ExprKind::Ident(ident) => write!(f, "{ident}"),
             ExprKind::Paren(expr) => write!(f, "({expr})"),
-            ExprKind::Function(function) => {
-                if function.kind == FunctionKind::Function {
-                    write!(f, "fn {function}")
-                } else {
-                    write!(f, "{function}")
-                }
+            ExprKind::Fn {
+                glo,
+                name,
+                function,
+            } => {
+                write!(
+                    f,
+                    "{}{}{}{}",
+                    if glo.is_some() { "glo " } else { "" },
+                    if function.kind == FunctionKind::Function {
+                        "fn "
+                    } else {
+                        ""
+                    },
+                    if let Some(name) = name {
+                        format!("{name} ")
+                    } else {
+                        String::new()
+                    },
+                    function
+                )
             }
             ExprKind::Table { properties } => {
                 if properties.is_empty() {
@@ -445,6 +325,53 @@ impl<S: AsRef<str>> fmt::Display for ExprKind<S> {
                     CallKind::TryPanic => write!(f, "try! {callee}({args})"),
                 }
             }
+            ExprKind::If {
+                test,
+                consequent,
+                alternate,
+            } => {
+                if let Some(alternate) = alternate {
+                    write!(f, "if {test} {consequent} else {alternate}")
+                } else {
+                    write!(f, "if {test} {consequent}")
+                }
+            }
+            ExprKind::Match { expr, cases } => write!(
+                f,
+                "match {expr} {{\n{}\n}}",
+                cases.iter().join("\n").indent(4)
+            ),
+            ExprKind::Loop { body } => write!(f, "loop {body}"),
+            ExprKind::While { test, body } => write!(f, "while {test} {body}"),
+            ExprKind::For { left, right, body } => {
+                write!(f, "for {} in {right} {body}", left.iter().join(", "))
+            }
+            ExprKind::Break => write!(f, "break"),
+            ExprKind::Continue => write!(f, "continue"),
+            ExprKind::Return { argument } => write!(f, "return {argument}"),
+            ExprKind::Throw { argument } => write!(f, "throw {argument}"),
+            ExprKind::Import {
+                path,
+                path_str: _,
+                kind,
+            } => write!(f, "import {}{}", path.iter().join("::"), kind),
+            ExprKind::GloAssign { left, right } => write!(f, "glo {left} = {right}"),
+            ExprKind::Assign { left, right } => write!(f, "{left} = {right}"),
+            ExprKind::AssignOp {
+                operator,
+                left,
+                right,
+            } => write!(f, "{left} {operator}= {right}"),
+            ExprKind::AssignUnpack { left, right } => {
+                write!(f, "{} = {right}", left.iter().join(", "))
+            }
+            ExprKind::AssignMulti { left, right } => write!(
+                f,
+                "{} = {}",
+                left.iter().join(", "),
+                right.iter().join(", ")
+            ),
+            ExprKind::Block(block) => write!(f, "{block}"),
         }
     }
 }
@@ -755,16 +682,6 @@ impl<S: AsRef<str>> fmt::Display for TypedIdent<S> {
             write!(f, "{}: {}", self.ident, t)
         } else {
             write!(f, "{}", self.ident)
-        }
-    }
-}
-
-impl<S> From<Box<Ident<S>>> for TypedIdent<S> {
-    fn from(value: Box<Ident<S>>) -> Self {
-        TypedIdent {
-            range: value.range,
-            ident: value,
-            ty: None,
         }
     }
 }

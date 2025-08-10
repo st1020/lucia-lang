@@ -192,6 +192,12 @@ impl<S: AsRef<str> + Clone> SemanticAnalyzer<S> {
             self.current_scope_id = parent_id;
         }
     }
+
+    fn visit_exprs(&mut self, exprs: &[Expr<S>]) {
+        for expr in exprs {
+            self.visit_expr(expr);
+        }
+    }
 }
 
 impl<S: AsRef<str> + Clone> Visit<S> for SemanticAnalyzer<S> {
@@ -205,7 +211,7 @@ impl<S: AsRef<str> + Clone> Visit<S> for SemanticAnalyzer<S> {
         let scope_id = self.scopes.push(scope);
         program.function.function_id.set(function_id).unwrap();
         program.function.body.scope_id.set(scope_id).unwrap();
-        self.visit_stmts(&program.function.body.body);
+        self.visit_exprs(&program.function.body.body);
     }
 
     fn visit_function(&mut self, function: &Function<S>) -> Self::Return {
@@ -223,7 +229,7 @@ impl<S: AsRef<str> + Clone> Visit<S> for SemanticAnalyzer<S> {
         if let Some(variadic) = &function.variadic {
             self.declare_symbol_and_write_reference(&variadic.ident, SymbolKind::Local);
         }
-        self.visit_stmts(&function.body.body);
+        self.visit_exprs(&function.body.body);
 
         self.leave_scope();
         self.leave_function();
@@ -231,19 +237,72 @@ impl<S: AsRef<str> + Clone> Visit<S> for SemanticAnalyzer<S> {
 
     fn visit_block(&mut self, block: &Block<S>) -> Self::Return {
         self.enter_scope(ScopeKind::Block, &block.scope_id);
-        self.visit_stmts(&block.body);
+        self.visit_exprs(&block.body);
         self.leave_scope();
     }
 
-    fn visit_stmts(&mut self, stmts: &[Stmt<S>]) -> Self::Return {
-        for stmt in stmts {
-            self.visit_stmt(stmt);
-        }
-    }
-
-    fn visit_stmt(&mut self, stmt: &Stmt<S>) -> Self::Return {
-        match &stmt.kind {
-            StmtKind::If {
+    fn visit_expr(&mut self, expr: &Expr<S>) -> Self::Return {
+        match &expr.kind {
+            ExprKind::Lit(lit) => self.visit_lit(lit),
+            ExprKind::Ident(ident) => self.visit_ident(ident),
+            ExprKind::Paren(expr) => self.visit_expr(expr),
+            ExprKind::Fn {
+                glo,
+                name,
+                function,
+            } => {
+                if let Some(name) = name {
+                    if glo.is_some() {
+                        self.declare_symbol_and_write_reference(name, SymbolKind::Global);
+                    } else {
+                        self.declare_write_reference(name);
+                    }
+                }
+                self.visit_function(function);
+            }
+            ExprKind::Table { properties } => {
+                for property in properties {
+                    self.visit_expr(&property.key);
+                    self.visit_expr(&property.value);
+                }
+            }
+            ExprKind::List { items } => {
+                for item in items {
+                    self.visit_expr(item);
+                }
+            }
+            ExprKind::Unary {
+                operator: _,
+                argument,
+            } => self.visit_expr(argument),
+            ExprKind::Binary {
+                operator: _,
+                left,
+                right,
+            } => {
+                self.visit_expr(left);
+                self.visit_expr(right);
+            }
+            ExprKind::TypeCheck { left, right: _ } => self.visit_expr(left),
+            ExprKind::Member {
+                table,
+                property,
+                safe: _,
+            } => {
+                self.visit_expr(table);
+                self.visit_member_property(property);
+            }
+            ExprKind::Call {
+                callee,
+                arguments,
+                kind: _,
+            } => {
+                self.visit_expr(callee);
+                for argument in arguments {
+                    self.visit_expr(argument);
+                }
+            }
+            ExprKind::If {
                 test,
                 consequent,
                 alternate,
@@ -251,39 +310,39 @@ impl<S: AsRef<str> + Clone> Visit<S> for SemanticAnalyzer<S> {
                 self.visit_expr(test);
                 self.visit_block(consequent);
                 if let Some(alternate) = alternate {
-                    self.visit_stmt(alternate);
+                    self.visit_expr(alternate);
                 }
             }
-            StmtKind::Match { expr, cases } => {
+            ExprKind::Match { expr, cases } => {
                 self.visit_expr(expr);
                 for case in cases {
                     self.enter_scope(ScopeKind::Block, &case.body.scope_id);
                     for pattern in &case.patterns {
                         self.visit_pattern(pattern);
                     }
-                    self.visit_stmts(&case.body.body);
+                    self.visit_exprs(&case.body.body);
                     self.leave_scope();
                 }
             }
-            StmtKind::Loop { body } => self.visit_block(body),
-            StmtKind::While { test, body } => {
+            ExprKind::Loop { body } => self.visit_block(body),
+            ExprKind::While { test, body } => {
                 self.visit_expr(test);
                 self.visit_block(body);
             }
-            StmtKind::For { left, right, body } => {
+            ExprKind::For { left, right, body } => {
                 self.visit_expr(right);
                 self.enter_scope(ScopeKind::Block, &body.scope_id);
                 for ident in left {
                     self.declare_symbol_and_write_reference(ident, SymbolKind::Local);
                 }
-                self.visit_stmts(&body.body);
+                self.visit_exprs(&body.body);
                 self.leave_scope();
             }
-            StmtKind::Break => (),
-            StmtKind::Continue => (),
-            StmtKind::Return { argument } => self.visit_expr(argument),
-            StmtKind::Throw { argument } => self.visit_expr(argument),
-            StmtKind::Import {
+            ExprKind::Break => (),
+            ExprKind::Continue => (),
+            ExprKind::Return { argument } => self.visit_expr(argument),
+            ExprKind::Throw { argument } => self.visit_expr(argument),
+            ExprKind::Import {
                 path,
                 path_str: _,
                 kind,
@@ -300,27 +359,15 @@ impl<S: AsRef<str> + Clone> Visit<S> for SemanticAnalyzer<S> {
                 }
                 ImportKind::Glob => (),
             },
-            StmtKind::Fn {
-                glo,
-                name,
-                function,
-            } => {
-                if glo.is_some() {
-                    self.declare_symbol_and_write_reference(name, SymbolKind::Global);
-                } else {
-                    self.declare_write_reference(name);
-                }
-                self.visit_function(function);
-            }
-            StmtKind::GloAssign { left, right } => {
+            ExprKind::GloAssign { left, right } => {
                 self.declare_symbol_and_write_reference(&left.ident, SymbolKind::Global);
                 self.visit_expr(right);
             }
-            StmtKind::Assign { left, right } => {
+            ExprKind::Assign { left, right } => {
                 self.visit_assign_left(left);
                 self.visit_expr(right);
             }
-            StmtKind::AssignOp {
+            ExprKind::AssignOp {
                 operator: _,
                 left,
                 right,
@@ -328,13 +375,13 @@ impl<S: AsRef<str> + Clone> Visit<S> for SemanticAnalyzer<S> {
                 self.visit_assign_left(left);
                 self.visit_expr(right);
             }
-            StmtKind::AssignUnpack { left, right } => {
+            ExprKind::AssignUnpack { left, right } => {
                 for left in left {
                     self.visit_assign_left(left);
                 }
                 self.visit_expr(right);
             }
-            StmtKind::AssignMulti { left, right } => {
+            ExprKind::AssignMulti { left, right } => {
                 for left in left {
                     self.visit_assign_left(left);
                 }
@@ -342,8 +389,7 @@ impl<S: AsRef<str> + Clone> Visit<S> for SemanticAnalyzer<S> {
                     self.visit_expr(right);
                 }
             }
-            StmtKind::Block(block) => self.visit_block(block),
-            StmtKind::Expr(expr) => self.visit_expr(expr),
+            ExprKind::Block(block) => self.visit_block(block),
         }
     }
 
@@ -371,59 +417,6 @@ impl<S: AsRef<str> + Clone> Visit<S> for SemanticAnalyzer<S> {
             PatternKind::List { items, others: _ } => {
                 for item in items {
                     self.visit_pattern(item);
-                }
-            }
-        }
-    }
-
-    fn visit_expr(&mut self, expr: &Expr<S>) -> Self::Return {
-        match &expr.kind {
-            ExprKind::Lit(lit) => self.visit_lit(lit),
-            ExprKind::Ident(ident) => self.visit_ident(ident),
-            ExprKind::Paren(expr) => self.visit_expr(expr),
-            ExprKind::Function(function) => self.visit_function(function),
-            ExprKind::Table { properties } => {
-                for property in properties {
-                    self.visit_expr(&property.key);
-                    self.visit_expr(&property.value);
-                }
-            }
-            ExprKind::List { items } => {
-                for item in items {
-                    self.visit_expr(item);
-                }
-            }
-            ExprKind::Unary {
-                operator: _,
-                argument,
-            } => self.visit_expr(argument),
-            ExprKind::Binary {
-                operator: _,
-                left,
-                right,
-            } => {
-                self.visit_expr(left);
-                self.visit_expr(right);
-            }
-            ExprKind::TypeCheck { left, right: _ } => {
-                self.visit_expr(left);
-            }
-            ExprKind::Member {
-                table,
-                property,
-                safe: _,
-            } => {
-                self.visit_expr(table);
-                self.visit_member_property(property);
-            }
-            ExprKind::Call {
-                callee,
-                arguments,
-                kind: _,
-            } => {
-                self.visit_expr(callee);
-                for argument in arguments {
-                    self.visit_expr(argument);
                 }
             }
         }

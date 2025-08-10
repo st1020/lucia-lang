@@ -19,6 +19,8 @@ index_vec = "0.1"
 sorted-vec = "0.8"
 indexmap = "2"
 rustc-hash = "2"
+archery = "1"
+rpds = "1"
 # Runtime
 gc-arena = "0.5"
 # Error

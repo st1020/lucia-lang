@@ -67,7 +67,7 @@ impl<S: AsRef<str> + Clone + Eq + Ord> MetaMethod<Type<S>> for MetaMethodType {
 
     fn call(&self, value: Type<S>) -> Self::ResultCall {
         if value == Type::Any {
-            return Ok(Box::new(FunctionType::any_function()));
+            return Ok(Box::new(FunctionType::ANY));
         }
         if let Type::Function(function) = value {
             return Ok(function);

@@ -165,7 +165,11 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
     }
 
     fn push_code(&mut self, opcode: OpCode) {
-        self.code().push(opcode);
+        if opcode == OpCode::Pop && self.code().last().copied().is_some_and(OpCode::is_load) {
+            self.code().pop();
+        } else {
+            self.code().push(opcode);
+        }
     }
 
     fn push_load_const<T: Into<ConstValue<S>>>(&mut self, value: T) {
@@ -290,6 +294,7 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
         }
         self.visit_block(&function.body).unwrap();
         if function.kind == FunctionKind::Do {
+            self.push_code(OpCode::Pop);
             self.push_code(OpCode::LoadLocals);
             self.push_code(OpCode::Return);
         } else if !self
@@ -298,7 +303,6 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
             .last()
             .is_some_and(|&opcode| opcode == OpCode::Return)
         {
-            self.push_load_const(ConstValue::Null);
             self.push_code(OpCode::Return);
         }
 
@@ -540,288 +544,15 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
     }
 
     fn visit_block(&mut self, block: &Block<S>) -> Self::Return {
-        self.visit_stmts(&block.body)
-    }
-
-    fn visit_stmts(&mut self, stmts: &[Stmt<S>]) -> Self::Return {
-        for stmt in stmts {
-            self.visit_stmt(stmt)
-                .unwrap_or_else(|err| self.errors.push(err));
-        }
-        Ok(())
-    }
-
-    fn visit_stmt(&mut self, stmt: &Stmt<S>) -> Self::Return {
-        match &stmt.kind {
-            StmtKind::If {
-                test,
-                consequent,
-                alternate,
-            } => {
-                if let Some(alternate) = alternate {
-                    let false_label = self.get_jump_target();
-                    let end_label = self.get_jump_target();
-                    self.visit_expr(test)?;
-                    self.push_code(OpCode::PopJumpIfFalse(false_label));
-                    self.visit_block(consequent)?;
-                    self.push_code(OpCode::Jump(end_label));
-                    self.push_code(OpCode::JumpTarget(false_label));
-                    self.visit_stmt(alternate)?;
-                    self.push_code(OpCode::JumpTarget(end_label));
-                } else {
-                    let end_label = self.get_jump_target();
-                    self.visit_expr(test)?;
-                    self.push_code(OpCode::PopJumpIfFalse(end_label));
-                    self.visit_block(consequent)?;
-                    self.push_code(OpCode::JumpTarget(end_label));
-                }
-            }
-            StmtKind::Match { expr, cases } => {
-                let end_label = self.get_jump_target();
-                self.visit_expr(expr)?;
-                let block_labels: Vec<_> = iter::repeat_with(|| self.get_jump_target())
-                    .take(cases.len())
-                    .collect();
-                for (i, case) in cases.iter().enumerate() {
-                    let block_label = block_labels[i];
-                    for pattern in &case.patterns {
-                        let clean_stack_label = self.get_jump_target();
-                        let mut clean_stack_label_stack = vec![clean_stack_label];
-
-                        self.push_code(OpCode::Copy(1));
-                        self.visit_pattern_depth(pattern, 0, &mut clean_stack_label_stack)?;
-                        self.push_code(OpCode::Pop);
-                        self.push_code(OpCode::Jump(block_label));
-
-                        for (i, clean_stack_label) in
-                            clean_stack_label_stack.into_iter().rev().enumerate()
-                        {
-                            if i != 0 {
-                                self.push_code(OpCode::Pop);
-                            }
-                            self.push_code(OpCode::JumpTarget(clean_stack_label));
-                        }
-                    }
-                }
-                self.push_code(OpCode::Jump(end_label));
-                for (i, case) in cases.iter().enumerate() {
-                    self.push_code(OpCode::JumpTarget(block_labels[i]));
-                    self.visit_block(&case.body)?;
-                    self.push_code(OpCode::Jump(end_label));
-                }
-                self.push_code(OpCode::JumpTarget(end_label));
-                self.push_code(OpCode::Pop);
-            }
-            StmtKind::Loop { body } => {
-                let continue_label = self.get_jump_target();
-                let break_label = self.get_jump_target();
-                self.continue_stack().push(continue_label);
-                self.break_stack().push(break_label);
-
-                self.push_code(OpCode::JumpTarget(continue_label));
-                self.visit_block(body)?;
-                self.push_code(OpCode::Jump(continue_label));
-                self.push_code(OpCode::JumpTarget(break_label));
-
-                self.continue_stack().pop();
-                self.break_stack().pop();
-            }
-            StmtKind::While { test, body } => {
-                let continue_label = self.get_jump_target();
-                let break_label = self.get_jump_target();
-                self.continue_stack().push(continue_label);
-                self.break_stack().push(break_label);
-
-                self.push_code(OpCode::JumpTarget(continue_label));
-                self.visit_expr(test)?;
-                self.push_code(OpCode::PopJumpIfFalse(break_label));
-                self.visit_block(body)?;
-                self.push_code(OpCode::Jump(continue_label));
-                self.push_code(OpCode::JumpTarget(break_label));
-
-                self.continue_stack().pop();
-                self.break_stack().pop();
-            }
-            StmtKind::For { left, right, body } => {
-                let continue_label = self.get_jump_target();
-                let break_label = self.get_jump_target();
-                self.continue_stack().push(continue_label);
-                self.break_stack().push(break_label);
-                self.context().need_clear_stack_count += 1;
-
-                self.visit_expr(right)?;
-                self.push_code(OpCode::Iter);
-                self.push_code(OpCode::JumpTarget(continue_label));
-                self.push_code(OpCode::Copy(1));
-                self.push_code(OpCode::Call(0));
-                self.push_code(OpCode::JumpPopIfNull(break_label));
-                if left.len() == 1 {
-                    self.store(&left[0]);
-                } else {
-                    for (i, l) in left.iter().enumerate() {
-                        self.push_code(OpCode::Copy(1));
-                        self.push_load_const(i);
-                        self.push_code(OpCode::GetItem);
-                        self.store(l);
-                    }
+        if block.body.is_empty() {
+            self.push_load_const(ConstValue::Null);
+        } else {
+            for (i, expr) in block.body.iter().enumerate() {
+                self.visit_expr(expr)
+                    .unwrap_or_else(|err| self.errors.push(err));
+                if i != block.body.len() - 1 {
                     self.push_code(OpCode::Pop);
                 }
-                self.visit_block(body)?;
-                self.push_code(OpCode::Jump(continue_label));
-                self.push_code(OpCode::JumpTarget(break_label));
-                self.push_code(OpCode::Pop);
-
-                self.continue_stack().pop();
-                self.break_stack().pop();
-                self.context().need_clear_stack_count -= 1;
-            }
-            StmtKind::Break => {
-                let opcode = OpCode::Jump(match self.break_stack().last().copied() {
-                    Some(v) => v,
-                    None => return Err(CompilerError::BreakOutsideLoop { range: stmt.range }),
-                });
-                self.push_code(opcode);
-            }
-            StmtKind::Continue => {
-                let opcode = OpCode::Jump(match self.continue_stack().last().copied() {
-                    Some(v) => v,
-                    None => return Err(CompilerError::ContinueOutsideLoop { range: stmt.range }),
-                });
-                self.push_code(opcode);
-            }
-            StmtKind::Return { argument } => {
-                if self.function_semantic().kind == FunctionKind::Do {
-                    return Err(CompilerError::ReturnOutsideFunction { range: stmt.range });
-                }
-                for _ in 0..self.context().need_clear_stack_count {
-                    self.push_code(OpCode::Pop);
-                }
-                if let ExprKind::Call { kind, .. } = argument.kind {
-                    self.visit_expr(argument)?;
-                    if kind != CallKind::None {
-                        self.push_code(OpCode::Return);
-                    } else {
-                        let code_len = self.code().len();
-                        if let OpCode::Call(i) = self.code()[code_len - 2] {
-                            self.code()[code_len - 2] = OpCode::ReturnCall(i);
-                        } else {
-                            self.push_code(OpCode::Return);
-                        }
-                    }
-                } else {
-                    self.visit_expr(argument)?;
-                    self.push_code(OpCode::Return);
-                }
-            }
-            StmtKind::Throw { argument } => {
-                if self.function_semantic().kind == FunctionKind::Do {
-                    return Err(CompilerError::ThrowOutsideFunction { range: stmt.range });
-                }
-                for _ in 0..self.context().need_clear_stack_count {
-                    self.push_code(OpCode::Pop);
-                }
-                self.visit_expr(argument)?;
-                self.push_code(OpCode::Throw);
-            }
-            StmtKind::Import {
-                path,
-                path_str,
-                kind,
-            } => {
-                let const_id = self.add_const(ConstValue::Str(path_str.clone()));
-                self.push_code(OpCode::Import(const_id));
-                match kind {
-                    ImportKind::Simple(alias) => {
-                        self.store(alias.as_ref().map_or(path.last().unwrap(), |v| v))
-                    }
-                    ImportKind::Nested(items) => {
-                        for item in items {
-                            let const_id = self.add_const(ConstValue::Str(item.name.name.clone()));
-                            self.push_code(OpCode::ImportFrom(const_id));
-                            self.store(item.alias.as_ref().unwrap_or(&item.name));
-                        }
-                        self.push_code(OpCode::Pop);
-                    }
-                    ImportKind::Glob => {
-                        self.push_code(OpCode::ImportGlob);
-                    }
-                }
-            }
-            StmtKind::Fn {
-                glo: _,
-                name,
-                function,
-            } => {
-                self.visit_function(function)?;
-                self.store(name);
-            }
-            StmtKind::GloAssign { left, right } => {
-                self.visit_expr(right)?;
-                self.store(&left.ident);
-            }
-            StmtKind::Assign { left, right } => {
-                self.visit_expr(right)?;
-                self.visit_assign_left(left)?;
-            }
-            StmtKind::AssignOp {
-                operator,
-                left,
-                right,
-            } => match &left.kind {
-                AssignLeftKind::Ident(ident) => {
-                    self.load(&ident.ident);
-                    self.visit_expr(right)?;
-                    self.push_code(OpCode::from(*operator));
-                    self.store(&ident.ident);
-                }
-                AssignLeftKind::Member { table, property } => match property {
-                    MemberKind::Bracket(_) | MemberKind::Dot(_) | MemberKind::DoubleColon(_) => {
-                        self.visit_expr(table)?;
-                        self.visit_member_property(property)?;
-                        self.push_code(OpCode::Copy(2));
-                        self.push_code(OpCode::Copy(2));
-                        self.push_code(property.get_opcode());
-                        self.visit_expr(right)?;
-                        self.push_code(OpCode::from(*operator));
-                        self.push_code(OpCode::Swap(3));
-                        self.push_code(OpCode::Swap(2));
-                        self.push_code(property.set_opcode());
-                    }
-                    MemberKind::BracketMeta | MemberKind::DotMeta | MemberKind::DoubleColonMeta => {
-                        self.visit_expr(table)?;
-                        self.push_code(OpCode::Copy(1));
-                        self.push_code(property.get_opcode());
-                        self.visit_expr(right)?;
-                        self.push_code(OpCode::from(*operator));
-                        self.push_code(OpCode::Swap(2));
-                        self.push_code(property.set_opcode());
-                    }
-                },
-            },
-            StmtKind::AssignUnpack { left, right } => {
-                self.visit_expr(right)?;
-                for _ in 1..left.len() {
-                    self.push_code(OpCode::Copy(1));
-                }
-                for (i, l) in left.iter().enumerate() {
-                    self.push_load_const(i);
-                    self.push_code(OpCode::GetItem);
-                    self.visit_assign_left(l)?;
-                }
-            }
-            StmtKind::AssignMulti { left, right } => {
-                assert!(left.len() == right.len());
-                for right in right {
-                    self.visit_expr(right)?;
-                }
-                for left in left.iter().rev() {
-                    self.visit_assign_left(left)?;
-                }
-            }
-            StmtKind::Block(block) => self.visit_block(block)?,
-            StmtKind::Expr(expr) => {
-                self.visit_expr(expr)?;
-                self.push_code(OpCode::Pop);
             }
         }
         Ok(())
@@ -849,7 +580,17 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
             ExprKind::Lit(lit) => self.visit_lit(lit)?,
             ExprKind::Ident(ident) => self.visit_ident(ident)?,
             ExprKind::Paren(expr) => self.visit_expr(expr)?,
-            ExprKind::Function(function) => self.visit_function(function)?,
+            ExprKind::Fn {
+                glo: _,
+                name,
+                function,
+            } => {
+                self.visit_function(function)?;
+                if let Some(name) = name {
+                    self.store(name);
+                    self.push_load_const(ConstValue::Null);
+                }
+            }
             ExprKind::Table { properties } => {
                 for TableProperty { key, value, .. } in properties {
                     self.visit_expr(key)?;
@@ -957,6 +698,284 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
                 });
                 self.push_code(OpCode::JumpTarget(safe_label));
             }
+            ExprKind::If {
+                test,
+                consequent,
+                alternate,
+            } => {
+                let false_label = self.get_jump_target();
+                let end_label = self.get_jump_target();
+                self.visit_expr(test)?;
+                self.push_code(OpCode::PopJumpIfFalse(false_label));
+                self.visit_block(consequent)?;
+                self.push_code(OpCode::Jump(end_label));
+                self.push_code(OpCode::JumpTarget(false_label));
+                if let Some(alternate) = alternate {
+                    self.visit_expr(alternate)?;
+                } else {
+                    self.push_load_const(ConstValue::Null);
+                }
+                self.push_code(OpCode::JumpTarget(end_label));
+            }
+            ExprKind::Match { expr, cases } => {
+                let end_label = self.get_jump_target();
+                self.visit_expr(expr)?;
+                let block_labels: Vec<_> = iter::repeat_with(|| self.get_jump_target())
+                    .take(cases.len())
+                    .collect();
+                for (i, case) in cases.iter().enumerate() {
+                    let block_label = block_labels[i];
+                    for pattern in &case.patterns {
+                        let clean_stack_label = self.get_jump_target();
+                        let mut clean_stack_label_stack = vec![clean_stack_label];
+
+                        self.push_code(OpCode::Copy(1));
+                        self.visit_pattern_depth(pattern, 0, &mut clean_stack_label_stack)?;
+                        self.push_code(OpCode::Pop);
+                        self.push_code(OpCode::Jump(block_label));
+
+                        for (i, clean_stack_label) in
+                            clean_stack_label_stack.into_iter().rev().enumerate()
+                        {
+                            if i != 0 {
+                                self.push_code(OpCode::Pop);
+                            }
+                            self.push_code(OpCode::JumpTarget(clean_stack_label));
+                        }
+                    }
+                }
+                self.push_load_const(ConstValue::Null);
+                self.push_code(OpCode::Jump(end_label));
+                for (i, case) in cases.iter().enumerate() {
+                    self.push_code(OpCode::JumpTarget(block_labels[i]));
+                    self.visit_block(&case.body)?;
+                    self.push_code(OpCode::Jump(end_label));
+                }
+                self.push_code(OpCode::JumpTarget(end_label));
+                self.push_code(OpCode::Swap(2));
+                self.push_code(OpCode::Pop);
+            }
+            ExprKind::Loop { body } => {
+                let continue_label = self.get_jump_target();
+                let break_label = self.get_jump_target();
+                self.continue_stack().push(continue_label);
+                self.break_stack().push(break_label);
+
+                self.push_code(OpCode::JumpTarget(continue_label));
+                self.visit_block(body)?;
+                self.push_code(OpCode::Pop);
+                self.push_code(OpCode::Jump(continue_label));
+                self.push_code(OpCode::JumpTarget(break_label));
+                self.push_load_const(ConstValue::Null);
+
+                self.continue_stack().pop();
+                self.break_stack().pop();
+            }
+            ExprKind::While { test, body } => {
+                let continue_label = self.get_jump_target();
+                let break_label = self.get_jump_target();
+                self.continue_stack().push(continue_label);
+                self.break_stack().push(break_label);
+
+                self.push_code(OpCode::JumpTarget(continue_label));
+                self.visit_expr(test)?;
+                self.push_code(OpCode::PopJumpIfFalse(break_label));
+                self.visit_block(body)?;
+                self.push_code(OpCode::Pop);
+                self.push_code(OpCode::Jump(continue_label));
+                self.push_code(OpCode::JumpTarget(break_label));
+                self.push_load_const(ConstValue::Null);
+
+                self.continue_stack().pop();
+                self.break_stack().pop();
+            }
+            ExprKind::For { left, right, body } => {
+                let continue_label = self.get_jump_target();
+                let break_label = self.get_jump_target();
+                self.continue_stack().push(continue_label);
+                self.break_stack().push(break_label);
+                self.context().need_clear_stack_count += 1;
+
+                self.visit_expr(right)?;
+                self.push_code(OpCode::Iter);
+                self.push_code(OpCode::JumpTarget(continue_label));
+                self.push_code(OpCode::Copy(1));
+                self.push_code(OpCode::Call(0));
+                self.push_code(OpCode::JumpPopIfNull(break_label));
+                if left.len() == 1 {
+                    self.store(&left[0]);
+                } else {
+                    for (i, l) in left.iter().enumerate() {
+                        self.push_code(OpCode::Copy(1));
+                        self.push_load_const(i);
+                        self.push_code(OpCode::GetItem);
+                        self.store(l);
+                    }
+                    self.push_code(OpCode::Pop);
+                }
+                self.visit_block(body)?;
+                self.push_code(OpCode::Pop);
+                self.push_code(OpCode::Jump(continue_label));
+                self.push_code(OpCode::JumpTarget(break_label));
+                self.push_code(OpCode::Pop);
+                self.push_load_const(ConstValue::Null);
+
+                self.continue_stack().pop();
+                self.break_stack().pop();
+                self.context().need_clear_stack_count -= 1;
+            }
+            ExprKind::Break => {
+                let opcode = OpCode::Jump(match self.break_stack().last().copied() {
+                    Some(v) => v,
+                    None => return Err(CompilerError::BreakOutsideLoop { range: expr.range }),
+                });
+                self.push_code(opcode);
+                self.push_load_const(ConstValue::Null);
+            }
+            ExprKind::Continue => {
+                let opcode = OpCode::Jump(match self.continue_stack().last().copied() {
+                    Some(v) => v,
+                    None => return Err(CompilerError::ContinueOutsideLoop { range: expr.range }),
+                });
+                self.push_code(opcode);
+                self.push_load_const(ConstValue::Null);
+            }
+            ExprKind::Return { argument } => {
+                if self.function_semantic().kind == FunctionKind::Do {
+                    return Err(CompilerError::ReturnOutsideFunction { range: expr.range });
+                }
+                for _ in 0..self.context().need_clear_stack_count {
+                    self.push_code(OpCode::Pop);
+                }
+                if let ExprKind::Call { kind, .. } = argument.kind {
+                    self.visit_expr(argument)?;
+                    if kind != CallKind::None {
+                        self.push_code(OpCode::Return);
+                    } else {
+                        let code_len = self.code().len();
+                        if let OpCode::Call(i) = self.code()[code_len - 2] {
+                            self.code()[code_len - 2] = OpCode::ReturnCall(i);
+                        } else {
+                            self.push_code(OpCode::Return);
+                        }
+                    }
+                } else {
+                    self.visit_expr(argument)?;
+                    self.push_code(OpCode::Return);
+                }
+                self.push_load_const(ConstValue::Null);
+            }
+            ExprKind::Throw { argument } => {
+                if self.function_semantic().kind == FunctionKind::Do {
+                    return Err(CompilerError::ThrowOutsideFunction { range: expr.range });
+                }
+                for _ in 0..self.context().need_clear_stack_count {
+                    self.push_code(OpCode::Pop);
+                }
+                self.visit_expr(argument)?;
+                self.push_code(OpCode::Throw);
+                self.push_load_const(ConstValue::Null);
+            }
+            ExprKind::Import {
+                path,
+                path_str,
+                kind,
+            } => {
+                let const_id = self.add_const(ConstValue::Str(path_str.clone()));
+                self.push_code(OpCode::Import(const_id));
+                match kind {
+                    ImportKind::Simple(alias) => {
+                        self.store(alias.as_ref().map_or(path.last().unwrap(), |v| v))
+                    }
+                    ImportKind::Nested(items) => {
+                        for item in items {
+                            let const_id = self.add_const(ConstValue::Str(item.name.name.clone()));
+                            self.push_code(OpCode::ImportFrom(const_id));
+                            self.store(item.alias.as_ref().unwrap_or(&item.name));
+                        }
+                        self.push_code(OpCode::Pop);
+                    }
+                    ImportKind::Glob => {
+                        self.push_code(OpCode::ImportGlob);
+                    }
+                }
+                self.push_load_const(ConstValue::Null);
+            }
+            ExprKind::GloAssign { left, right } => {
+                self.visit_expr(right)?;
+                self.store(&left.ident);
+                self.push_load_const(ConstValue::Null);
+            }
+            ExprKind::Assign { left, right } => {
+                self.visit_expr(right)?;
+                self.visit_assign_left(left)?;
+                self.push_load_const(ConstValue::Null);
+            }
+            ExprKind::AssignOp {
+                operator,
+                left,
+                right,
+            } => {
+                match &left.kind {
+                    AssignLeftKind::Ident(ident) => {
+                        self.load(&ident.ident);
+                        self.visit_expr(right)?;
+                        self.push_code(OpCode::from(*operator));
+                        self.store(&ident.ident);
+                    }
+                    AssignLeftKind::Member { table, property } => match property {
+                        MemberKind::Bracket(_)
+                        | MemberKind::Dot(_)
+                        | MemberKind::DoubleColon(_) => {
+                            self.visit_expr(table)?;
+                            self.visit_member_property(property)?;
+                            self.push_code(OpCode::Copy(2));
+                            self.push_code(OpCode::Copy(2));
+                            self.push_code(property.get_opcode());
+                            self.visit_expr(right)?;
+                            self.push_code(OpCode::from(*operator));
+                            self.push_code(OpCode::Swap(3));
+                            self.push_code(OpCode::Swap(2));
+                            self.push_code(property.set_opcode());
+                        }
+                        MemberKind::BracketMeta
+                        | MemberKind::DotMeta
+                        | MemberKind::DoubleColonMeta => {
+                            self.visit_expr(table)?;
+                            self.push_code(OpCode::Copy(1));
+                            self.push_code(property.get_opcode());
+                            self.visit_expr(right)?;
+                            self.push_code(OpCode::from(*operator));
+                            self.push_code(OpCode::Swap(2));
+                            self.push_code(property.set_opcode());
+                        }
+                    },
+                };
+                self.push_load_const(ConstValue::Null);
+            }
+            ExprKind::AssignUnpack { left, right } => {
+                self.visit_expr(right)?;
+                for _ in 1..left.len() {
+                    self.push_code(OpCode::Copy(1));
+                }
+                for (i, l) in left.iter().enumerate() {
+                    self.push_load_const(i);
+                    self.push_code(OpCode::GetItem);
+                    self.visit_assign_left(l)?;
+                }
+                self.push_load_const(ConstValue::Null);
+            }
+            ExprKind::AssignMulti { left, right } => {
+                assert!(left.len() == right.len());
+                for right in right {
+                    self.visit_expr(right)?;
+                }
+                for left in left.iter().rev() {
+                    self.visit_assign_left(left)?;
+                }
+                self.push_load_const(ConstValue::Null);
+            }
+            ExprKind::Block(block) => self.visit_block(block)?,
         }
         Ok(())
     }
