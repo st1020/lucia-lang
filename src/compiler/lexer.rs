@@ -1,4 +1,7 @@
 //! The lexer.
+//!
+//! This is basically a copy of the rustc_lexer.
+//! See: https://github.com/rust-lang/rust/tree/master/compiler/rustc_lexer
 
 use std::str::Chars;
 
@@ -190,51 +193,9 @@ impl Cursor<'_> {
             return Token::new(TokenKind::Eof, TextRange::empty(start));
         };
         let token_kind = match first_char {
-            // Div, DivAssign, comment or block comment.
-            '/' => match self.first() {
-                '/' => self.line_comment(),
-                '*' => self.block_comment(),
-                '=' => {
-                    self.bump();
-                    DivAssign
-                }
-                _ => Div,
-            },
-
-            // Sub, SubAssign or Arrow.
-            '-' => match self.first() {
-                '>' => {
-                    self.bump();
-                    Arrow
-                }
-                '=' => {
-                    self.bump();
-                    SubAssign
-                }
-                _ => Sub,
-            },
-
-            // Assign, Eq, Identical or FatArrow.
-            '=' => {
-                if self.eat('=') {
-                    if self.eat('=') { Identical } else { Eq }
-                } else if self.eat('>') {
-                    FatArrow
-                } else {
-                    Assign
-                }
-            }
-
-            // Dot or Ellipsis.
-            '.' => {
-                if self.first() == '.' && self.second() == '.' {
-                    self.bump();
-                    self.bump();
-                    Ellipsis
-                } else {
-                    Dot
-                }
-            }
+            // comment or block comment.
+            '/' if self.eat('/') => self.line_comment(),
+            '/' if self.eat('*') => self.block_comment(),
 
             // Whitespace sequence.
             c if is_whitespace(c) => self.whitespace(),
@@ -254,13 +215,27 @@ impl Cursor<'_> {
             // String literal.
             c @ ('"' | '\'') => self.string(c, false),
 
-            // NotIdentical or NotEq.
-            '!' if self.eat('=') => {
-                if self.eat('=') {
-                    NotIdentical
-                } else {
-                    NotEq
-                }
+            // Escaped newline are treated as whitespace.
+            '\\' if self.eat('\n') => Whitespace,
+
+            // Newline.
+            '\n' => self.eol(),
+
+            // Three-char tokens.
+            '.' if self.first() == '.' && self.second() == '.' => {
+                self.bump();
+                self.bump();
+                Ellipsis
+            }
+            '=' if self.first() == '=' && self.second() == '=' => {
+                self.bump();
+                self.bump();
+                Identical
+            }
+            '!' if self.first() == '=' && self.second() == '=' => {
+                self.bump();
+                self.bump();
+                NotIdentical
             }
 
             // Two-char tokens.
@@ -268,13 +243,18 @@ impl Cursor<'_> {
             '<' if self.eat('=') => LtEq,
             '>' if self.eat('=') => GtEq,
             '+' if self.eat('=') => AddAssign,
+            '-' if self.eat('=') => SubAssign,
             '*' if self.eat('=') => MulAssign,
+            '/' if self.eat('=') => DivAssign,
             '%' if self.eat('=') => RemAssign,
+            '=' if self.eat('=') => Eq,
+            '!' if self.eat('=') => NotEq,
+            '-' if self.eat('>') => Arrow,
+            '=' if self.eat('>') => FatArrow,
 
             // One-symbol tokens.
-            '\n' => self.eol(),
-            '\\' if self.eat('\n') => Whitespace,
             ',' => Comma,
+            '.' => Dot,
             '(' => OpenParen,
             ')' => CloseParen,
             '{' => OpenBrace,
@@ -289,8 +269,11 @@ impl Cursor<'_> {
             '>' => Gt,
             '|' => VBar,
             '+' => Add,
+            '-' => Sub,
             '*' => Mul,
+            '/' => Div,
             '%' => Rem,
+            '=' => Assign,
 
             // Unknown character.
             _ => Unknown,
@@ -306,16 +289,13 @@ impl Cursor<'_> {
     }
 
     fn line_comment(&mut self) -> TokenKind {
-        debug_assert!(self.prev() == '/' && self.first() == '/');
-        self.bump();
+        debug_assert!(self.prev() == '/');
         self.eat_while(|c| c != '\n');
         LineComment
     }
 
     fn block_comment(&mut self) -> TokenKind {
-        debug_assert!(self.prev() == '/' && self.first() == '*');
-        self.bump();
-
+        debug_assert!(self.prev() == '*');
         let mut depth = 1usize;
         while let Some(c) = self.bump() {
             match c {
@@ -334,7 +314,6 @@ impl Cursor<'_> {
                 _ => (),
             }
         }
-
         if depth == 0 {
             BlockComment
         } else {
@@ -419,14 +398,10 @@ impl Cursor<'_> {
                 '0'..='9' | '_' => {
                     self.eat_decimal_digits();
                 }
-
                 // Also not a base prefix; nothing more to do here.
                 '.' | 'e' | 'E' => {}
-
                 // Just a 0.
-                _ => {
-                    return Int;
-                }
+                _ => return Int,
             }
         } else {
             // No base prefix, parse number in the usual way.
