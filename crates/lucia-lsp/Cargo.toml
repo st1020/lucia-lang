@@ -17,4 +17,4 @@ dashmap.workspace = true
 ropey.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-tower-lsp.workspace = true
+tower-lsp-server.workspace = true

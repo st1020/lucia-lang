@@ -2,10 +2,11 @@
 
 use std::num::{ParseFloatError, ParseIntError};
 
+use itertools::Itertools;
 use text_size::TextRange;
 use thiserror::Error;
 
-use crate::utils::{EscapeError, Join, Locatable};
+use crate::utils::{EscapeError, Locatable};
 
 use super::token::TokenKind;
 

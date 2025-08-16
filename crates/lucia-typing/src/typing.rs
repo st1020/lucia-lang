@@ -1,6 +1,7 @@
 use std::{fmt, ops};
 
-use lucia_lang::{compiler::ast::*, utils::Join};
+use itertools::Itertools;
+use lucia_lang::compiler::ast::*;
 use sorted_vec::SortedSet;
 
 use crate::error::TypeError;

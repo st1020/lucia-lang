@@ -1,6 +1,6 @@
 use ropey::Rope;
 use text_size::TextRange;
-use tower_lsp::lsp_types::{Position, Range};
+use tower_lsp_server::lsp_types::{Position, Range};
 
 pub trait OffsetPosition {
     fn offset_to_position(&self, offset: usize) -> Option<Position>;

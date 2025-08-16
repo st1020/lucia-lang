@@ -2,9 +2,10 @@
 
 use std::{iter::Peekable, sync::OnceLock};
 
+use itertools::Itertools;
 use text_size::{TextRange, TextSize};
 
-use crate::utils::{Float, Join, unescape_str};
+use crate::utils::{Float, unescape_str};
 
 use super::{
     ast::*,

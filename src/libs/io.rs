@@ -1,11 +1,11 @@
 use std::io;
 
 use compact_str::ToCompactString;
+use itertools::Itertools;
 
 use crate::{
     Context,
     objects::{Callback, Table, Value},
-    utils::Join,
 };
 
 pub fn io_lib<'gc>(ctx: Context<'gc>) -> Table<'gc> {

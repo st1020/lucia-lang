@@ -2,7 +2,9 @@
 
 use std::{fmt, hash, mem};
 
-use crate::utils::{Float, Join};
+use itertools::Itertools;
+
+use crate::utils::Float;
 
 pub use super::ast::FunctionKind;
 use super::opcode::OpCode;

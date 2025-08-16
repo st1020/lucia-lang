@@ -3,7 +3,9 @@ use std::{collections::HashMap, sync::Arc};
 use dashmap::DashMap;
 use lucia_lang::utils::Locatable;
 
-use tower_lsp::{Client, ClientSocket, LanguageServer, LspService, jsonrpc::Result, lsp_types::*};
+use tower_lsp_server::{
+    Client, ClientSocket, LanguageServer, LspService, jsonrpc::Result, lsp_types::*,
+};
 
 use crate::{
     document::Document,
@@ -28,7 +30,7 @@ pub struct Backend {
 }
 
 struct TextDocumentItem<'a> {
-    uri: Url,
+    uri: Uri,
     text: &'a str,
     version: Option<i32>,
 }
@@ -61,7 +63,6 @@ impl Backend {
     }
 }
 
-#[tower_lsp::async_trait]
 impl LanguageServer for Backend {
     async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
         Ok(InitializeResult {
@@ -261,6 +262,7 @@ impl LanguageServer for Backend {
                 })
                 .collect();
 
+            #[allow(clippy::mutable_key_type)]
             let mut changes = HashMap::new();
             changes.insert(uri, text_edits);
             Some(WorkspaceEdit::new(changes))

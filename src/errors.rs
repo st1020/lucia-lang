@@ -5,6 +5,7 @@
 use std::fmt;
 
 use gc_arena::Collect;
+use itertools::Itertools;
 use thiserror::Error;
 
 use crate::{
@@ -12,7 +13,7 @@ use crate::{
     frame::Frame,
     objects::{ArgumentRange, ExternValue, Value, ValueType},
     thread::ThreadMode,
-    utils::{Indent, Join},
+    utils::Indent,
 };
 
 /// Lucia error.

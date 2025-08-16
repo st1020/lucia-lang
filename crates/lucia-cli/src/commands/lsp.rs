@@ -1,5 +1,5 @@
 use lucia_lsp::lsp_service;
-use tower_lsp::Server;
+use tower_lsp_server::Server;
 
 use crate::Context;
 

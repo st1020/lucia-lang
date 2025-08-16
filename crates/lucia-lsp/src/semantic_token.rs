@@ -1,5 +1,5 @@
 use lucia_lang::compiler::token::TokenKind;
-use tower_lsp::lsp_types::SemanticTokenType;
+use tower_lsp_server::lsp_types::SemanticTokenType;
 
 pub const TOKEN_TYPES: &[SemanticTokenType] = &[
     SemanticTokenType::PARAMETER,

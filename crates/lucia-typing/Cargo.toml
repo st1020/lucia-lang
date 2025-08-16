@@ -9,6 +9,7 @@ repository.workspace = true
 
 [dependencies]
 lucia-lang.workspace = true
+itertools.workspace = true
 index_vec.workspace = true
 sorted-vec.workspace = true
 indexmap.workspace = true

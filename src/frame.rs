@@ -1,12 +1,12 @@
 use std::{cmp::Ordering, fmt};
 
 use gc_arena::Collect;
+use itertools::Itertools;
 
 use crate::{
     Context,
     errors::{Error, RuntimeError},
     objects::{Callback, Closure, IntoValue, Table, UpValue, Value},
-    utils::Join,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Collect)]

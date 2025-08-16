@@ -2,9 +2,10 @@
 
 use std::{fmt, sync::OnceLock};
 
+use itertools::Itertools;
 use text_size::TextRange;
 
-use crate::utils::{Float, Indent, Join, Locatable, escape_str};
+use crate::utils::{Float, Indent, Locatable, escape_str};
 
 use super::{
     index::{FunctionId, ReferenceId, ScopeId},
@@ -156,6 +157,7 @@ impl<S: AsRef<str>> fmt::Display for Expr<S> {
         write!(f, "{}", self.kind)
     }
 }
+
 /// Kind of expression.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExprKind<S> {

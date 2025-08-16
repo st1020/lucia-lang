@@ -15,6 +15,7 @@ text-size = "1"
 compact_str = "0.9"
 unicode-ident = "1"
 # Data Structure
+itertools = "0.14"
 index_vec = "0.1"
 sorted-vec = "0.8"
 indexmap = "2"
@@ -36,9 +37,11 @@ dashmap = "6"
 ropey = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
-tower-lsp = { version = "0.20", features = ["proposed"] }
+tower-lsp-server = { version = "0.22", features = ["proposed"] }
 # CLI
 clap = { version = "4", features = ["derive"] }
+# Testing
+criterion = "0.7"
 
 [package]
 name = "lucia-lang"
@@ -56,6 +59,7 @@ repository.workspace = true
 text-size.workspace = true
 compact_str.workspace = true
 unicode-ident.workspace = true
+itertools.workspace = true
 index_vec.workspace = true
 sorted-vec.workspace = true
 indexmap.workspace = true
@@ -64,7 +68,7 @@ gc-arena.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-criterion = "0.5"
+criterion.workspace = true
 
 [[bench]]
 name = "scripts"
