@@ -243,9 +243,10 @@ impl<S: AsRef<str> + Clone> Visit<S> for SemanticAnalyzer<S> {
 
     fn visit_expr(&mut self, expr: &Expr<S>) -> Self::Return {
         match &expr.kind {
-            ExprKind::Lit(lit) => self.visit_lit(lit),
-            ExprKind::Ident(ident) => self.visit_ident(ident),
+            ExprKind::Lit(_lit) => (),
+            ExprKind::Ident(ident) => self.declare_read_reference(ident),
             ExprKind::Paren(expr) => self.visit_expr(expr),
+            ExprKind::Block(block) => self.visit_block(block),
             ExprKind::Fn {
                 glo,
                 name,
@@ -389,7 +390,6 @@ impl<S: AsRef<str> + Clone> Visit<S> for SemanticAnalyzer<S> {
                     self.visit_expr(right);
                 }
             }
-            ExprKind::Block(block) => self.visit_block(block),
         }
     }
 
@@ -422,12 +422,6 @@ impl<S: AsRef<str> + Clone> Visit<S> for SemanticAnalyzer<S> {
         }
     }
 
-    fn visit_lit(&mut self, _lit: &Lit<S>) -> Self::Return {}
-
-    fn visit_ident(&mut self, ident: &Ident<S>) -> Self::Return {
-        self.declare_read_reference(ident)
-    }
-
     fn visit_member_property(&mut self, property: &MemberKind<S>) -> Self::Return {
         match property {
             MemberKind::Bracket(expr) => self.visit_expr(expr),
@@ -439,7 +433,19 @@ impl<S: AsRef<str> + Clone> Visit<S> for SemanticAnalyzer<S> {
         }
     }
 
-    fn visit_typed_ident(&mut self, _ident: &TypedIdent<S>) -> Self::Return {}
+    fn visit_lit(&mut self, _lit: &Lit<S>) -> Self::Return {
+        unreachable!()
+    }
 
-    fn visit_ty(&mut self, _ty: &Ty<S>) -> Self::Return {}
+    fn visit_ident(&mut self, _ident: &Ident<S>) -> Self::Return {
+        unreachable!()
+    }
+
+    fn visit_typed_ident(&mut self, _ident: &TypedIdent<S>) -> Self::Return {
+        unreachable!()
+    }
+
+    fn visit_ty(&mut self, _ty: &Ty<S>) -> Self::Return {
+        unreachable!()
+    }
 }

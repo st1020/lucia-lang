@@ -221,6 +221,7 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
             returns: None,
             throws: None,
             body,
+            range,
             function_id: OnceLock::new(),
         });
         (Program { function }, self.errors)
@@ -356,7 +357,7 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
             && let Some(function) = self.try_parse(|p| {
                 p.expect(TokenKind::Fn)?;
                 let name = Box::new(p.parse_ident()?);
-                let function = Box::new(p.parse_function(Some(name.name.clone()))?);
+                let function = Box::new(p.parse_function(Some(name.name.clone()), start)?);
                 Ok(ExprKind::Fn {
                     glo: None,
                     name: Some(name),
@@ -367,7 +368,7 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
         } else if let Some(glo_range) = self.eat_range(TokenKind::Glo) {
             if self.eat(TokenKind::Fn) {
                 let name = Box::new(self.parse_ident()?);
-                let function = Box::new(self.parse_function(Some(name.name.clone()))?);
+                let function = Box::new(self.parse_function(Some(name.name.clone()), start)?);
                 ExprKind::Fn {
                     glo: Some(glo_range),
                     name: Some(name),
@@ -487,6 +488,7 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
     fn parse_function(
         &mut self,
         name: Option<S::String>,
+        start: TextSize,
     ) -> Result<Function<S::String>, CompilerError> {
         let (params, variadic) = self.parse_params()?;
         Ok(Function {
@@ -497,6 +499,7 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
             returns: self.parse_returns()?,
             throws: self.parse_throws()?,
             body: self.parse_block()?,
+            range: self.end_range(start),
             function_id: OnceLock::new(),
         })
     }
@@ -717,7 +720,7 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
             let items = self.parse_items_until(Parser::parse_expr, TokenKind::CloseBracket)?;
             ExprKind::List { items }
         } else if self.eat(TokenKind::Fn) {
-            let function = self.parse_function(None)?;
+            let function = self.parse_function(None, start)?;
             ExprKind::Fn {
                 glo: None,
                 name: None,
@@ -733,6 +736,7 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
                 returns: self.parse_returns()?,
                 throws: self.parse_throws()?,
                 body: self.parse_block()?,
+                range: self.end_range(start),
                 function_id: OnceLock::new(),
             };
             ExprKind::Fn {
@@ -749,6 +753,7 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
                 body: self.parse_block()?,
                 returns: None,
                 throws: None,
+                range: self.end_range(start),
                 function_id: OnceLock::new(),
             };
             ExprKind::Fn {

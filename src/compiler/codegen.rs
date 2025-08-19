@@ -531,7 +531,7 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
     type Return = Result<(), CompilerError>;
 
     fn visit_program(&mut self, _program: &Program<S>) -> Self::Return {
-        Ok(())
+        unreachable!()
     }
 
     fn visit_function(&mut self, function: &Function<S>) -> Self::Return {
@@ -558,28 +558,12 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
         Ok(())
     }
 
-    fn visit_assign_left(&mut self, assign_left: &AssignLeft<S>) -> Self::Return {
-        match &assign_left.kind {
-            AssignLeftKind::Ident(ident) => self.store(&ident.ident),
-            AssignLeftKind::Member { table, property } => {
-                self.visit_expr(table)?;
-                self.visit_member_property(property)?;
-                self.push_code(property.set_opcode());
-            }
-        }
-        Ok(())
-    }
-
-    /// See [CodeGenerator::visit_pattern_depth].
-    fn visit_pattern(&mut self, _pattern: &Pattern<S>) -> Self::Return {
-        unimplemented!()
-    }
-
     fn visit_expr(&mut self, expr: &Expr<S>) -> Self::Return {
         match &expr.kind {
             ExprKind::Lit(lit) => self.visit_lit(lit)?,
             ExprKind::Ident(ident) => self.visit_ident(ident)?,
             ExprKind::Paren(expr) => self.visit_expr(expr)?,
+            ExprKind::Block(block) => self.visit_block(block)?,
             ExprKind::Fn {
                 glo: _,
                 name,
@@ -975,7 +959,34 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
                 }
                 self.push_load_const(ConstValue::Null);
             }
-            ExprKind::Block(block) => self.visit_block(block)?,
+        }
+        Ok(())
+    }
+
+    fn visit_assign_left(&mut self, assign_left: &AssignLeft<S>) -> Self::Return {
+        match &assign_left.kind {
+            AssignLeftKind::Ident(ident) => self.store(&ident.ident),
+            AssignLeftKind::Member { table, property } => {
+                self.visit_expr(table)?;
+                self.visit_member_property(property)?;
+                self.push_code(property.set_opcode());
+            }
+        }
+        Ok(())
+    }
+
+    /// See [CodeGenerator::visit_pattern_depth].
+    fn visit_pattern(&mut self, _pattern: &Pattern<S>) -> Self::Return {
+        unreachable!()
+    }
+
+    fn visit_member_property(&mut self, property: &MemberKind<S>) -> Self::Return {
+        match property {
+            MemberKind::Bracket(property) => self.visit_expr(property)?,
+            MemberKind::Dot(ident) | MemberKind::DoubleColon(ident) => {
+                self.push_load_const(ConstValue::Str(ident.name.clone()));
+            }
+            MemberKind::BracketMeta | MemberKind::DotMeta | MemberKind::DoubleColonMeta => (),
         }
         Ok(())
     }
@@ -990,22 +1001,11 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
         Ok(())
     }
 
-    fn visit_member_property(&mut self, property: &MemberKind<S>) -> Self::Return {
-        match property {
-            MemberKind::Bracket(property) => self.visit_expr(property)?,
-            MemberKind::Dot(ident) | MemberKind::DoubleColon(ident) => {
-                self.push_load_const(ConstValue::Str(ident.name.clone()));
-            }
-            MemberKind::BracketMeta | MemberKind::DotMeta | MemberKind::DoubleColonMeta => (),
-        }
-        Ok(())
-    }
-
     fn visit_typed_ident(&mut self, _ident: &TypedIdent<S>) -> Self::Return {
-        unimplemented!()
+        unreachable!()
     }
 
     fn visit_ty(&mut self, _ty: &Ty<S>) -> Self::Return {
-        unimplemented!()
+        unreachable!()
     }
 }

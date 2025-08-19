@@ -286,6 +286,7 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
                 .cloned()
                 .unwrap_or(Type::Unknown),
             ExprKind::Paren(expr) => self.check_expr(expr)?,
+            ExprKind::Block(block) => self.check_block(block)?,
             ExprKind::Fn {
                 glo: _,
                 name,
@@ -600,7 +601,6 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
                 }
                 Type::NULL
             }
-            ExprKind::Block(block) => self.check_block(block)?,
         })
     }
 
