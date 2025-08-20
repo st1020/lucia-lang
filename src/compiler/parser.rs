@@ -190,6 +190,7 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
         self.errors.truncate(errors_pos);
     }
 
+    /// Attempts to parse something using the provided function.
     fn try_parse<T>(
         &mut self,
         func: impl FnOnce(&mut Self) -> Result<T, CompilerError>,
@@ -201,30 +202,6 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
             self.rewind(checkpoint);
         }
         node.ok()
-    }
-
-    /// Parse token iter into AST.
-    fn parse(mut self) -> (Program<S::String>, Vec<CompilerError>) {
-        let start = self.start_range();
-        let body = self.parse_exprs(TokenKind::Eof);
-        let range = self.end_range(start);
-        let body = Box::new(Block {
-            body,
-            range,
-            scope_id: OnceLock::new(),
-        });
-        let function = Box::new(Function {
-            name: None,
-            kind: FunctionKind::Function,
-            params: Vec::new(),
-            variadic: None,
-            returns: None,
-            throws: None,
-            body,
-            range,
-            function_id: OnceLock::new(),
-        });
-        (Program { function }, self.errors)
     }
 
     /// Parses one or more items separated by `sep`.
@@ -296,6 +273,32 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
         }
         Ok((items, None))
     }
+}
+
+impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input, S, I> {
+    /// Parse token iter into AST.
+    fn parse(mut self) -> (Program<S::String>, Vec<CompilerError>) {
+        let start = self.start_range();
+        let body = self.parse_exprs(TokenKind::Eof);
+        let range = self.end_range(start);
+        let body = Box::new(Block {
+            body,
+            range,
+            scope_id: OnceLock::new(),
+        });
+        let function = Box::new(Function {
+            name: None,
+            kind: FunctionKind::Function,
+            params: Vec::new(),
+            variadic: None,
+            returns: None,
+            throws: None,
+            body,
+            range,
+            function_id: OnceLock::new(),
+        });
+        (Program { function }, self.errors)
+    }
 
     fn parse_exprs(&mut self, end: TokenKind) -> Vec<Expr<S::String>> {
         let mut items = Vec::new();
@@ -349,22 +352,60 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
     // treated as an expression that returns null. So we should treated these as expressions that
     // only allowed to appear in block expression.
     fn parse_stmt(&mut self) -> Result<Expr<S::String>, CompilerError> {
-        let start = self.start_range();
         // The fn keyword can be a fn expression or a function statement (fn expression with name).
         // We try to parse it as a function statement first, and if it fails, we parse it as a
         // fn expression.
-        let kind = if self.check(TokenKind::Fn)
-            && let Some(function) = self.try_parse(|p| {
-                p.expect(TokenKind::Fn)?;
-                let name = Box::new(p.parse_ident()?);
-                let function = Box::new(p.parse_function(Some(name.name.clone()), start)?);
-                Ok(ExprKind::Fn {
-                    glo: None,
-                    name: Some(name),
-                    function,
-                })
-            }) {
-            function
+        if self.check(TokenKind::Fn)
+            && let Some(function) = self.try_parse(Self::parse_function_stmt)
+        {
+            return Ok(function);
+        }
+        let start = self.start_range();
+        let kind = if self.eat(TokenKind::Import) {
+            let mut path = Vec::new();
+            let kind = loop {
+                path.push(self.parse_ident()?);
+                if !self.eat(TokenKind::DoubleColon) {
+                    break if self.check(TokenKind::Eol) {
+                        ImportKind::Simple(None)
+                    } else if self.eat(TokenKind::As) {
+                        ImportKind::Simple(Some(Box::new(self.parse_ident()?)))
+                    } else {
+                        return Err(self.unexpected());
+                    };
+                }
+                if !self.check(TokenKind::Ident) {
+                    break if self.eat(TokenKind::OpenBrace) {
+                        let items = self.parse_items_until(
+                            |p| {
+                                let start = p.start_range();
+                                let name = p.parse_ident()?;
+                                let alias = if p.eat(TokenKind::As) {
+                                    Some(p.parse_ident()?)
+                                } else {
+                                    None
+                                };
+                                let range = p.end_range(start);
+                                Ok(ImportItem { name, alias, range })
+                            },
+                            TokenKind::CloseBrace,
+                        )?;
+                        ImportKind::Nested(items)
+                    } else if self.eat(TokenKind::Mul) {
+                        ImportKind::Glob
+                    } else {
+                        return Err(self.unexpected());
+                    };
+                }
+            };
+            let path_str = self
+                .interner
+                .intern(&path.iter().map(|ident| ident.name.as_ref()).join("::"));
+            ExprKind::Import {
+                path,
+                path_str,
+                kind,
+            }
         } else if let Some(glo_range) = self.eat_range(TokenKind::Glo) {
             if self.eat(TokenKind::Fn) {
                 let name = Box::new(self.parse_ident()?);
@@ -381,16 +422,16 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
                 ExprKind::GloAssign { left, right }
             }
         } else {
-            let ast_node = self.parse_expr()?;
+            let expr = self.parse_expr()?;
             if self.check(TokenKind::Comma) {
                 let mut left = Vec::new();
                 left.push(
-                    self.expr_to_assign_left(ast_node)
+                    self.expr_to_assign_left(expr)
                         .ok_or_else(|| self.unexpected())?,
                 );
                 while let Some(comma_range) = self.eat_range(TokenKind::Comma) {
-                    let ast_node = self.parse_expr()?;
-                    left.push(self.expr_to_assign_left(ast_node).ok_or_else(|| {
+                    let expr = self.parse_expr()?;
+                    left.push(self.expr_to_assign_left(expr).ok_or_else(|| {
                         CompilerError::UnexpectedToken {
                             expected: Vec::new(),
                             found: TokenKind::Comma,
@@ -413,7 +454,7 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
                     ExprKind::AssignUnpack { left, right }
                 }
             } else if self.check(TokenKind::Colon) {
-                let ExprKind::Ident(ident) = ast_node.kind else {
+                let ExprKind::Ident(ident) = expr.kind else {
                     return Err(self.unexpected());
                 };
                 self.bump();
@@ -428,7 +469,7 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
                 ExprKind::Assign { left, right }
             } else if self.check(TokenKind::Assign) {
                 let left = self
-                    .expr_to_assign_left(ast_node)
+                    .expr_to_assign_left(expr)
                     .ok_or_else(|| self.unexpected())?;
                 self.bump();
                 let right = Box::new(self.parse_expr()?);
@@ -440,7 +481,7 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
                 || self.check(TokenKind::RemAssign)
             {
                 let left = self
-                    .expr_to_assign_left(ast_node)
+                    .expr_to_assign_left(expr)
                     .ok_or_else(|| self.unexpected())?;
                 let operator = match self.current_kind().unwrap() {
                     TokenKind::AddAssign => BinOp::Add,
@@ -458,8 +499,22 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
                     right,
                 }
             } else {
-                return Ok(ast_node);
+                return Ok(expr);
             }
+        };
+        let range = self.end_range(start);
+        Ok(Expr { kind, range })
+    }
+
+    fn parse_function_stmt(&mut self) -> Result<Expr<S::String>, CompilerError> {
+        let start = self.start_range();
+        self.expect(TokenKind::Fn)?;
+        let name = Box::new(self.parse_ident()?);
+        let function = Box::new(self.parse_function(Some(name.name.clone()), start)?);
+        let kind = ExprKind::Fn {
+            glo: None,
+            name: Some(name),
+            function,
         };
         let range = self.end_range(start);
         Ok(Expr { kind, range })
@@ -576,16 +631,16 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
     fn parse_expr_unary(&mut self) -> Result<Expr<S::String>, CompilerError> {
         let start = self.start_range();
         let kind = if self.eat(TokenKind::Not) {
-            let argument = self.parse_expr_primary()?;
+            let argument = Box::new(self.parse_expr_primary()?);
             ExprKind::Unary {
                 operator: UnOp::Not,
-                argument: Box::new(argument),
+                argument,
             }
         } else if self.eat(TokenKind::Sub) {
-            let argument = self.parse_expr_primary()?;
+            let argument = Box::new(self.parse_expr_primary()?);
             ExprKind::Unary {
                 operator: UnOp::Neg,
-                argument: Box::new(argument),
+                argument,
             }
         } else {
             return self.parse_expr_primary();
@@ -596,22 +651,22 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
 
     fn parse_expr_primary(&mut self) -> Result<Expr<S::String>, CompilerError> {
         let start = self.start_range();
-        let mut ast_node = self.parse_expr_atom()?;
+        let mut expr = self.parse_expr_atom()?;
         macro_rules! member_expr {
             (Bracket, BracketMeta, $safe:expr) => {
                 if self.eat(TokenKind::Pound) {
                     self.expect(TokenKind::CloseBracket)?;
                     ExprKind::Member {
-                        table: Box::new(ast_node),
+                        table: Box::new(expr),
                         property: MemberKind::BracketMeta,
                         safe: $safe,
                     }
                 } else {
-                    let expr = self.parse_expr()?;
+                    let property = self.parse_expr()?;
                     self.expect(TokenKind::CloseBracket)?;
                     ExprKind::Member {
-                        table: Box::new(ast_node),
-                        property: MemberKind::Bracket(Box::new(expr)),
+                        table: Box::new(expr),
+                        property: MemberKind::Bracket(Box::new(property)),
                         safe: $safe,
                     }
                 }
@@ -620,14 +675,14 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
             ($kind:ident, $kind_meta:ident, $safe:expr) => {
                 if self.eat(TokenKind::Pound) {
                     ExprKind::Member {
-                        table: Box::new(ast_node),
+                        table: Box::new(expr),
                         property: MemberKind::$kind_meta,
                         safe: $safe,
                     }
                 } else {
                     let ident = self.parse_ident()?;
                     ExprKind::Member {
-                        table: Box::new(ast_node),
+                        table: Box::new(expr),
                         property: MemberKind::$kind(Box::new(ident)),
                         safe: $safe,
                     }
@@ -639,33 +694,28 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
                 let arguments =
                     self.parse_items_until(Parser::parse_expr, TokenKind::CloseParen)?;
                 ExprKind::Call {
-                    callee: Box::new(ast_node),
+                    callee: Box::new(expr),
                     arguments,
                     kind: CallKind::None,
                 }
-            } else if self.eat(TokenKind::OpenBracket) {
-                member_expr!(Bracket, BracketMeta, None)
-            } else if self.eat(TokenKind::Dot) {
-                member_expr!(Dot, DotMeta, None)
-            } else if self.eat(TokenKind::DoubleColon) {
-                member_expr!(DoubleColon, DoubleColonMeta, None)
-            } else if let Some(range) = self.eat_range(TokenKind::Question) {
-                if self.eat(TokenKind::OpenBracket) {
-                    member_expr!(Bracket, BracketMeta, Some(range))
-                } else if self.eat(TokenKind::Dot) {
-                    member_expr!(Dot, DotMeta, Some(range))
-                } else if self.eat(TokenKind::DoubleColon) {
-                    member_expr!(DoubleColon, DoubleColonMeta, Some(range))
-                } else {
-                    return Err(self.unexpected());
-                }
             } else {
-                break;
+                let safe = self.eat_range(TokenKind::Question);
+                if self.eat(TokenKind::OpenBracket) {
+                    member_expr!(Bracket, BracketMeta, safe)
+                } else if self.eat(TokenKind::Dot) {
+                    member_expr!(Dot, DotMeta, safe)
+                } else if self.eat(TokenKind::DoubleColon) {
+                    member_expr!(DoubleColon, DoubleColonMeta, safe)
+                } else if safe.is_some() {
+                    return Err(self.unexpected());
+                } else {
+                    break;
+                }
             };
             let range = self.end_range(start);
-            ast_node = Expr { kind, range }
+            expr = Expr { kind, range }
         }
-        Ok(ast_node)
+        Ok(expr)
     }
 
     fn parse_expr_atom(&mut self) -> Result<Expr<S::String>, CompilerError> {
@@ -683,7 +733,6 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
                     properties: Vec::new(),
                 }
             } else {
-                // Save the current state to allow rewinding if needed.
                 // The `{` can be a table expression or a block expression. We try to parse it as a
                 // table expression first, and if it fails, we parse it as a block expression.
                 let start = self.start_range();
@@ -720,15 +769,15 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
             let items = self.parse_items_until(Parser::parse_expr, TokenKind::CloseBracket)?;
             ExprKind::List { items }
         } else if self.eat(TokenKind::Fn) {
-            let function = self.parse_function(None, start)?;
+            let function = Box::new(self.parse_function(None, start)?);
             ExprKind::Fn {
                 glo: None,
                 name: None,
-                function: Box::new(function),
+                function,
             }
         } else if self.check(TokenKind::VBar) {
             let (params, variadic) = self.parse_closure_params()?;
-            let function = Function {
+            let function = Box::new(Function {
                 name: None,
                 kind: FunctionKind::Closure,
                 params,
@@ -738,14 +787,14 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
                 body: self.parse_block()?,
                 range: self.end_range(start),
                 function_id: OnceLock::new(),
-            };
+            });
             ExprKind::Fn {
                 glo: None,
                 name: None,
-                function: Box::new(function),
+                function,
             }
         } else if self.eat(TokenKind::Do) {
-            let function = Function {
+            let function = Box::new(Function {
                 name: None,
                 kind: FunctionKind::Do,
                 params: Vec::new(),
@@ -755,11 +804,11 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
                 throws: None,
                 range: self.end_range(start),
                 function_id: OnceLock::new(),
-            };
+            });
             ExprKind::Fn {
                 glo: None,
                 name: None,
-                function: Box::new(function),
+                function,
             }
         } else if let Some(try_range) = self.eat_range(TokenKind::Try) {
             let call_kind = if self.eat(TokenKind::Question) {
@@ -835,51 +884,6 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
         } else if self.eat(TokenKind::Throw) {
             let argument = Box::new(self.parse_expr()?);
             ExprKind::Throw { argument }
-        } else if self.eat(TokenKind::Import) {
-            let mut path = Vec::new();
-            let kind = loop {
-                path.push(self.parse_ident()?);
-                if !self.eat(TokenKind::DoubleColon) {
-                    break if self.check(TokenKind::Eol) {
-                        ImportKind::Simple(None)
-                    } else if self.eat(TokenKind::As) {
-                        ImportKind::Simple(Some(Box::new(self.parse_ident()?)))
-                    } else {
-                        return Err(self.unexpected());
-                    };
-                }
-                if !self.check(TokenKind::Ident) {
-                    break if self.eat(TokenKind::OpenBrace) {
-                        let items = self.parse_items_until(
-                            |p| {
-                                let start = p.start_range();
-                                let name = p.parse_ident()?;
-                                let alias = if p.eat(TokenKind::As) {
-                                    Some(p.parse_ident()?)
-                                } else {
-                                    None
-                                };
-                                let range = p.end_range(start);
-                                Ok(ImportItem { name, alias, range })
-                            },
-                            TokenKind::CloseBrace,
-                        )?;
-                        ImportKind::Nested(items)
-                    } else if self.eat(TokenKind::Mul) {
-                        ImportKind::Glob
-                    } else {
-                        return Err(self.unexpected());
-                    };
-                }
-            };
-            let path_str = self
-                .interner
-                .intern(&path.iter().map(|ident| ident.name.as_ref()).join("::"));
-            ExprKind::Import {
-                path,
-                path_str,
-                kind,
-            }
         } else if self.check(TokenKind::OpenBrace) {
             ExprKind::Block(self.parse_block()?)
         } else {
