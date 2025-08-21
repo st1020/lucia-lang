@@ -1,9 +1,12 @@
-use std::fmt;
+use std::{fmt, sync::OnceLock};
 
 use itertools::Itertools;
 use text_size::TextRange;
 
-use crate::{compiler::value::ValueType, utils::Indent};
+use crate::{
+    compiler::{index::ScopeId, value::ValueType},
+    utils::Indent,
+};
 
 use super::*;
 
@@ -271,8 +274,9 @@ pub enum CallKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MatchCase<S> {
     pub patterns: Vec<Pattern<S>>,
-    pub body: Box<Block<S>>,
+    pub body: Box<Expr<S>>,
     pub range: TextRange,
+    pub scope_id: OnceLock<ScopeId>,
 }
 
 impl_locatable!(MatchCase);

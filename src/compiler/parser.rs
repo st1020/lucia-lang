@@ -755,7 +755,6 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
                         ExprKind::Table { properties }
                     }
                 } else {
-                    self.expect(TokenKind::Eol)?;
                     let body = self.parse_exprs(TokenKind::CloseBrace);
                     let range = self.end_range(start);
                     ExprKind::Block(Box::new(Block {
@@ -1059,12 +1058,13 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
             }
         }
         self.expect(TokenKind::FatArrow)?;
-        let body = self.parse_block()?;
+        let body = Box::new(self.parse_expr()?);
         let range = self.end_range(start);
         Ok(MatchCase {
             patterns,
             body,
             range,
+            scope_id: OnceLock::new(),
         })
     }
 

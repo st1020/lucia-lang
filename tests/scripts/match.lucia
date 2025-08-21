@@ -2,39 +2,17 @@ import std::io::{println}
 
 fn foo(a) {
     match a {
-        null => {
-            return 0
-        }
-        true => {
-            return 1
-        }
-        false => {
-            return 2
-        }
-        1 => {
-            return 3
-        }
-        2 | 3 => {
-            return 4
-        }
-        "4" | 4 | 4.0 => {
-            return 5
-        }
-        {"a": a, "b": b} => {
-            return a + b
-        }
-        {"a": a, "b": b, ...} => {
-            return a - b
-        }
-        ["t", a, b] => {
-            return a + b
-        }
-        [a, "t", b, ...] => {
-            return a - b
-        }
-        {"foo": {"a": a}, "bar": ["b", b]} => {
-            return a + b
-        }
+        null => return 0
+        true => return 1
+        false => return 2
+        1 => return 3
+        2 | 3 => return 4
+        "4" | 4 | 4.0 => return 5
+        {"a": a, "b": b} => return a + b
+        {"a": a, "b": b, ...} => return a - b
+        ["t", a, b] => return a + b
+        [a, "t", b, ...] => return a - b
+        {"foo": {"a": a}, "bar": ["b", b]} => return a + b
         _ => {
             return 100
         }

@@ -317,11 +317,11 @@ impl<S: AsRef<str> + Clone> Visit<S> for SemanticAnalyzer<S> {
             ExprKind::Match { expr, cases } => {
                 self.visit_expr(expr);
                 for case in cases {
-                    self.enter_scope(ScopeKind::Block, &case.body.scope_id);
+                    self.enter_scope(ScopeKind::Block, &case.scope_id);
                     for pattern in &case.patterns {
                         self.visit_pattern(pattern);
                     }
-                    self.visit_exprs(&case.body.body);
+                    self.visit_expr(&case.body);
                     self.leave_scope();
                 }
             }

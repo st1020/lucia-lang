@@ -460,7 +460,7 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
                 self.check_expr(expr)?;
                 for case in cases {
                     // TODO: check pattern
-                    self.check_block(&case.body)?;
+                    self.check_expr(&case.body)?;
                 }
                 Type::NULL // TODO: return type
             }

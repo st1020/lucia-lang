@@ -732,7 +732,7 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
                 self.push_code(OpCode::Jump(end_label));
                 for (i, case) in cases.iter().enumerate() {
                     self.push_code(OpCode::JumpTarget(block_labels[i]));
-                    self.visit_block(&case.body)?;
+                    self.visit_expr(&case.body)?;
                     self.push_code(OpCode::Jump(end_label));
                 }
                 self.push_code(OpCode::JumpTarget(end_label));
