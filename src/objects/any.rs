@@ -66,7 +66,7 @@ struct Value<M, V> {
     value: V,
 }
 
-impl<M> fmt::Debug for Any<'_, M>
+impl<'gc, M> fmt::Debug for Any<'gc, M>
 where
     M: fmt::Debug,
 {
@@ -79,23 +79,23 @@ where
     }
 }
 
-impl<M> PartialEq for Any<'_, M> {
+impl<'gc, M> PartialEq for Any<'gc, M> {
     fn eq(&self, other: &Self) -> bool {
         Gc::ptr_eq(self.0, other.0)
     }
 }
 
-impl<M> Eq for Any<'_, M> {}
+impl<'gc, M> Eq for Any<'gc, M> {}
 
-impl<M> Hash for Any<'_, M> {
+impl<'gc, M> Hash for Any<'gc, M> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         Gc::as_ptr(self.0).hash(state)
     }
 }
 
-impl<M> Copy for Any<'_, M> {}
+impl<'gc, M> Copy for Any<'gc, M> {}
 
-impl<M> Clone for Any<'_, M> {
+impl<'gc, M> Clone for Any<'gc, M> {
     fn clone(&self) -> Self {
         *self
     }

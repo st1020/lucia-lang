@@ -2,7 +2,7 @@
 
 use std::{fmt, num::NonZeroU32};
 
-use index_vec::Idx;
+use oxc_index::Idx;
 
 macro_rules! define_index {
     ($($name:ident),*) => {$(

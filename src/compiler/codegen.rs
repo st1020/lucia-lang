@@ -2,8 +2,8 @@
 
 use std::iter;
 
-use index_vec::{IndexVec, index_vec};
 use indexmap::{IndexMap, IndexSet};
+use oxc_index::{IndexVec, index_vec};
 use rustc_hash::FxBuildHasher;
 
 use super::{

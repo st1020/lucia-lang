@@ -1,7 +1,7 @@
 //! The semantic information of Lucia program.
 
-use index_vec::IndexVec;
 use indexmap::{IndexMap, IndexSet};
+use oxc_index::IndexVec;
 use rustc_hash::FxBuildHasher;
 use text_size::TextRange;
 

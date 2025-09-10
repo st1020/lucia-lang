@@ -3,7 +3,6 @@ pub mod error;
 pub mod meta_ops;
 pub mod typing;
 
-use index_vec::{IndexVec, index_vec};
 use indexmap::IndexMap;
 use lucia_lang::compiler::{
     analyzer::analyze,
@@ -15,6 +14,7 @@ use lucia_lang::compiler::{
     semantic::Semantic,
     value::{MetaMethod, ValueType},
 };
+use oxc_index::{IndexVec, index_vec};
 use rustc_hash::FxBuildHasher;
 
 use crate::{

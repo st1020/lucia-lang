@@ -5,8 +5,8 @@
 
 use std::sync::OnceLock;
 
-use index_vec::IndexVec;
 use indexmap::IndexMap;
+use oxc_index::IndexVec;
 use rustc_hash::FxBuildHasher;
 
 use super::{

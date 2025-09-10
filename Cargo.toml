@@ -16,7 +16,7 @@ compact_str = "0.9"
 unicode-ident = "1"
 # Data Structure
 itertools = "0.14"
-index_vec = "0.1"
+oxc_index = "3"
 sorted-vec = "0.8"
 indexmap = "2"
 rustc-hash = "2"
@@ -60,7 +60,7 @@ text-size.workspace = true
 compact_str.workspace = true
 unicode-ident.workspace = true
 itertools.workspace = true
-index_vec.workspace = true
+oxc_index.workspace = true
 sorted-vec.workspace = true
 indexmap.workspace = true
 rustc-hash.workspace = true
