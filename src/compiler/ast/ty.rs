@@ -13,12 +13,7 @@ pub struct Ty<S> {
 }
 
 impl_locatable!(Ty);
-
-impl<S: AsRef<str>> fmt::Display for Ty<S> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.kind)
-    }
-}
+impl_kind_display!(Ty);
 
 /// Kind of type.
 #[derive(Debug, Clone, PartialEq, Eq)]

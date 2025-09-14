@@ -11,12 +11,7 @@ pub struct AssignLeft<S> {
 }
 
 impl_locatable!(AssignLeft);
-
-impl<S: AsRef<str>> fmt::Display for AssignLeft<S> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.kind)
-    }
-}
+impl_kind_display!(AssignLeft);
 
 /// The left part of assign.
 #[derive(Debug, Clone, PartialEq, Eq)]

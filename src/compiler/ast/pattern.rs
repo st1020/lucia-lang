@@ -13,12 +13,7 @@ pub struct Pattern<S> {
 }
 
 impl_locatable!(Pattern);
-
-impl<S: AsRef<str>> fmt::Display for Pattern<S> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.kind)
-    }
-}
+impl_kind_display!(Pattern);
 
 /// Kind of pattern.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -14,12 +14,7 @@ pub struct Lit<S> {
 }
 
 impl_locatable!(Lit);
-
-impl<S: AsRef<str>> fmt::Display for Lit<S> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.kind)
-    }
-}
+impl_kind_display!(Lit);
 
 /// Kind of literal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

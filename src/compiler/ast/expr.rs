@@ -18,12 +18,7 @@ pub struct Expr<S> {
 }
 
 impl_locatable!(Expr);
-
-impl<S: AsRef<str>> fmt::Display for Expr<S> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.kind)
-    }
-}
+impl_kind_display!(Expr);
 
 /// Kind of expression.
 #[derive(Debug, Clone, PartialEq, Eq)]

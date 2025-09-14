@@ -36,7 +36,17 @@ macro_rules! impl_locatable {
     };
 }
 
-use impl_locatable;
+macro_rules! impl_kind_display {
+    ($name:ident) => {
+        impl<S: AsRef<str>> std::fmt::Display for $name<S> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{}", self.kind)
+            }
+        }
+    };
+}
+
+use {impl_kind_display, impl_locatable};
 
 /// Traverse the syntax tree.
 pub trait Visit<S> {
