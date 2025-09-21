@@ -60,6 +60,7 @@ pub enum ExprKind<S> {
         callee: Box<Expr<S>>,
         arguments: Vec<Expr<S>>,
         kind: CallKind,
+        trailing_lambda: Option<Box<Function<S>>>,
     },
     If {
         test: Box<Expr<S>>,
@@ -181,13 +182,19 @@ impl<S: AsRef<str>> fmt::Display for ExprKind<S> {
                 callee,
                 arguments,
                 kind,
+                trailing_lambda,
             } => {
-                let args = arguments.iter().join(", ");
                 match kind {
-                    CallKind::None => write!(f, "{callee}({args})"),
-                    CallKind::Try => write!(f, "try {callee}({args})"),
-                    CallKind::TryOption => write!(f, "try? {callee}({args})"),
-                    CallKind::TryPanic => write!(f, "try! {callee}({args})"),
+                    CallKind::None => (),
+                    CallKind::Try => write!(f, "try ")?,
+                    CallKind::TryOption => write!(f, "try? ")?,
+                    CallKind::TryPanic => write!(f, "try! ")?,
+                }
+                write!(f, "{callee}({})", arguments.iter().join(", "))?;
+                if let Some(trailing_lambda) = trailing_lambda {
+                    write!(f, " {}", trailing_lambda.body)
+                } else {
+                    Ok(())
                 }
             }
             ExprKind::If {

@@ -560,15 +560,33 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
     }
 
     fn parse_expr(&mut self) -> Result<Expr<S::String>, CompilerError> {
-        self.parse_expr_precedence(1)
+        self.parse_expr_with_option(true)
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn parse_expr_and_block(
+        &mut self,
+    ) -> Result<(Box<Expr<S::String>>, Box<Block<S::String>>), CompilerError> {
+        Ok((
+            Box::new(self.parse_expr_with_option(false)?),
+            self.parse_block()?,
+        ))
+    }
+
+    fn parse_expr_with_option(
+        &mut self,
+        allow_trailing_lambda: bool,
+    ) -> Result<Expr<S::String>, CompilerError> {
+        self.parse_expr_precedence(1, allow_trailing_lambda)
     }
 
     fn parse_expr_precedence(
         &mut self,
         min_precedence: u8,
+        allow_trailing_lambda: bool,
     ) -> Result<Expr<S::String>, CompilerError> {
         let start = self.start_range();
-        let mut left = self.parse_expr_unary()?;
+        let mut left = self.parse_expr_unary(allow_trailing_lambda)?;
         loop {
             let operator = match self.current_kind().unwrap_or(TokenKind::Eof) {
                 TokenKind::Add => BinOp::Add,
@@ -614,7 +632,8 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
                     Expr { kind, range }
                 }
                 _ => {
-                    let right = self.parse_expr_precedence(operator.precedence() + 1)?;
+                    let right = self
+                        .parse_expr_precedence(operator.precedence() + 1, allow_trailing_lambda)?;
                     let kind = ExprKind::Binary {
                         operator,
                         left: Box::new(left),
@@ -628,28 +647,53 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
         Ok(left)
     }
 
-    fn parse_expr_unary(&mut self) -> Result<Expr<S::String>, CompilerError> {
+    fn parse_expr_unary(
+        &mut self,
+        allow_trailing_lambda: bool,
+    ) -> Result<Expr<S::String>, CompilerError> {
         let start = self.start_range();
         let kind = if self.eat(TokenKind::Not) {
-            let argument = Box::new(self.parse_expr_primary()?);
+            let argument = Box::new(self.parse_expr_primary(allow_trailing_lambda)?);
             ExprKind::Unary {
                 operator: UnOp::Not,
                 argument,
             }
         } else if self.eat(TokenKind::Sub) {
-            let argument = Box::new(self.parse_expr_primary()?);
+            let argument = Box::new(self.parse_expr_primary(allow_trailing_lambda)?);
             ExprKind::Unary {
                 operator: UnOp::Neg,
                 argument,
             }
+        } else if let Some(try_range) = self.eat_range(TokenKind::Try) {
+            let call_kind = if self.eat(TokenKind::Question) {
+                CallKind::TryOption
+            } else if self.eat(TokenKind::Exclamation) {
+                CallKind::TryPanic
+            } else {
+                CallKind::Try
+            };
+            let mut expr = self.parse_expr_primary(allow_trailing_lambda)?;
+            return if let ExprKind::Call { kind, .. } = &mut expr.kind {
+                *kind = call_kind;
+                Ok(expr)
+            } else {
+                Err(CompilerError::UnexpectedToken {
+                    expected: Vec::new(),
+                    found: TokenKind::Try,
+                    range: try_range,
+                })
+            };
         } else {
-            return self.parse_expr_primary();
+            return self.parse_expr_primary(allow_trailing_lambda);
         };
         let range = self.end_range(start);
         Ok(Expr { kind, range })
     }
 
-    fn parse_expr_primary(&mut self) -> Result<Expr<S::String>, CompilerError> {
+    fn parse_expr_primary(
+        &mut self,
+        allow_trailing_lambda: bool,
+    ) -> Result<Expr<S::String>, CompilerError> {
         let start = self.start_range();
         let mut expr = self.parse_expr_atom()?;
         macro_rules! member_expr {
@@ -693,10 +737,48 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
             let kind = if self.eat(TokenKind::OpenParen) {
                 let arguments =
                     self.parse_items_until(Parser::parse_expr, TokenKind::CloseParen)?;
+                let trailing_lambda = if allow_trailing_lambda && self.check(TokenKind::OpenBrace) {
+                    let body = self.parse_block()?;
+                    let range = body.range;
+                    Some(Box::new(Function {
+                        name: None,
+                        kind: FunctionKind::Closure,
+                        params: Vec::new(),
+                        variadic: None,
+                        returns: None,
+                        throws: None,
+                        body,
+                        range,
+                        function_id: OnceLock::new(),
+                    }))
+                } else {
+                    None
+                };
                 ExprKind::Call {
                     callee: Box::new(expr),
                     arguments,
                     kind: CallKind::None,
+                    trailing_lambda,
+                }
+            } else if allow_trailing_lambda && self.check(TokenKind::OpenBrace) {
+                let body = self.parse_block()?;
+                let range = body.range;
+                let trailing_lambda = Some(Box::new(Function {
+                    name: None,
+                    kind: FunctionKind::Closure,
+                    params: Vec::new(),
+                    variadic: None,
+                    returns: None,
+                    throws: None,
+                    body,
+                    range,
+                    function_id: OnceLock::new(),
+                }));
+                ExprKind::Call {
+                    callee: Box::new(expr),
+                    arguments: Vec::new(),
+                    kind: CallKind::None,
+                    trailing_lambda,
                 }
             } else {
                 let safe = self.eat_range(TokenKind::Question);
@@ -809,28 +891,8 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
                 name: None,
                 function,
             }
-        } else if let Some(try_range) = self.eat_range(TokenKind::Try) {
-            let call_kind = if self.eat(TokenKind::Question) {
-                CallKind::TryOption
-            } else if self.eat(TokenKind::Exclamation) {
-                CallKind::TryPanic
-            } else {
-                CallKind::Try
-            };
-            let mut expr = self.parse_expr_primary()?;
-            return if let ExprKind::Call { kind, .. } = &mut expr.kind {
-                *kind = call_kind;
-                Ok(expr)
-            } else {
-                Err(CompilerError::UnexpectedToken {
-                    expected: Vec::new(),
-                    found: TokenKind::Try,
-                    range: try_range,
-                })
-            };
         } else if self.eat(TokenKind::If) {
-            let test = Box::new(self.parse_expr()?);
-            let consequent = self.parse_block()?;
+            let (test, consequent) = self.parse_expr_and_block()?;
             let alternate = if self.eat(TokenKind::Else) {
                 let expr = if self.check(TokenKind::If) {
                     self.parse_expr()?
@@ -851,7 +913,7 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
                 alternate,
             }
         } else if self.eat(TokenKind::Match) {
-            let expr = Box::new(self.parse_expr()?);
+            let expr = Box::new(self.parse_expr_with_option(false)?);
             self.expect(TokenKind::OpenBrace)?;
             let mut cases = Vec::new();
             while !self.eat(TokenKind::CloseBrace) {
@@ -864,14 +926,12 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
             let body = self.parse_block()?;
             ExprKind::Loop { body }
         } else if self.eat(TokenKind::While) {
-            let test = Box::new(self.parse_expr()?);
-            let body = self.parse_block()?;
+            let (test, body) = self.parse_expr_and_block()?;
             ExprKind::While { test, body }
         } else if self.eat(TokenKind::For) {
             let left = self.parse_items(Parser::parse_ident)?;
             self.expect(TokenKind::In)?;
-            let right = Box::new(self.parse_expr()?);
-            let body = self.parse_block()?;
+            let (right, body) = self.parse_expr_and_block()?;
             ExprKind::For { left, right, body }
         } else if self.eat(TokenKind::Break) {
             ExprKind::Break

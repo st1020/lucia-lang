@@ -414,7 +414,9 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
                 callee,
                 arguments,
                 kind,
+                trailing_lambda: _,
             } => {
+                // TODO: check trailing lambda
                 let function_type = MetaMethodType.call(self.check_expr(callee)?)?;
                 let argument_types = arguments
                     .iter()

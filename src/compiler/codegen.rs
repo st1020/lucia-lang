@@ -639,6 +639,7 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
                 callee,
                 arguments,
                 kind,
+                trailing_lambda,
             } => {
                 let mut argument_count = arguments.len();
                 let safe_label = self.get_jump_target();
@@ -673,6 +674,10 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
                 }
                 for arg in arguments {
                     self.visit_expr(arg)?;
+                }
+                if let Some(trailing_lambda) = trailing_lambda {
+                    self.visit_function(trailing_lambda)?;
+                    argument_count += 1;
                 }
                 self.push_code(match kind {
                     CallKind::None => OpCode::Call(argument_count),

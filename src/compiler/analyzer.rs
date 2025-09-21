@@ -297,10 +297,14 @@ impl<S: AsRef<str> + Clone> Visit<S> for SemanticAnalyzer<S> {
                 callee,
                 arguments,
                 kind: _,
+                trailing_lambda,
             } => {
                 self.visit_expr(callee);
                 for argument in arguments {
                     self.visit_expr(argument);
+                }
+                if let Some(trailing_lambda) = trailing_lambda {
+                    self.visit_function(trailing_lambda);
                 }
             }
             ExprKind::If {
