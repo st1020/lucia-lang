@@ -22,6 +22,7 @@ pub enum Type<S: Eq + Ord> {
     Int,
     Float,
     Str,
+    Bytes,
     Table(Box<TableType<S>>),
     Function(Box<FunctionType<S>>),
     UserData(S),
@@ -70,6 +71,7 @@ impl<S: Clone + Eq + Ord> Type<S> {
                 LitKind::Int(_) => Type::Int.is_subtype_of(ty),
                 LitKind::Float(_) => Type::Float.is_subtype_of(ty),
                 LitKind::Str(_) => Type::Str.is_subtype_of(ty),
+                LitKind::Bytes(_) => Type::Bytes.is_subtype_of(ty),
             },
             (Type::Table(table1), Type::Table(table2)) => table1 == table2,
             (Type::Function(function1), Type::Function(function2)) => {
@@ -149,6 +151,7 @@ impl<S: AsRef<str> + Eq + Ord> fmt::Display for Type<S> {
             Type::Int => write!(f, "int"),
             Type::Float => write!(f, "float"),
             Type::Str => write!(f, "str"),
+            Type::Bytes => write!(f, "bytes"),
             Type::Table(table) => write!(f, "{table}"),
             Type::Function(function) => write!(f, "{function}"),
             Type::UserData(userdata) => write!(f, "{}", userdata.as_ref()),

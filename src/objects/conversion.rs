@@ -4,7 +4,7 @@ use crate::{
     Context,
     errors::{Error, RuntimeError},
     objects::{
-        Callback, Closure, Function, Str, Table, TableEntries, TableState, UserData, Value,
+        Bytes, Callback, Closure, Function, Str, Table, TableEntries, TableState, UserData, Value,
         ValueType,
     },
     utils::Float,
@@ -25,7 +25,7 @@ macro_rules! impl_int_into {
         )*
     };
 }
-impl_int_into!(i8, u8, i16, u16, i32, u32);
+impl_int_into!(i16, u16, i32, u32);
 
 macro_rules! impl_float_into {
     ($($i:ty),* $(,)?) => {
@@ -73,8 +73,6 @@ macro_rules! impl_into {
 impl_into!(
     (),
     bool,
-    i8,
-    u8,
     i16,
     u16,
     i32,
@@ -92,15 +90,33 @@ impl_into!(
     Value<'gc>,
 );
 
-impl<'gc> IntoValue<'gc> for &'static str {
+impl<'gc> IntoValue<'gc> for &str {
     fn into_value(self, ctx: Context<'gc>) -> Value<'gc> {
-        Value::Str(Str::new(&ctx, CompactString::const_new(self)))
+        CompactString::new(self).into_value(ctx)
+    }
+}
+
+impl<'gc> IntoValue<'gc> for String {
+    fn into_value(self, ctx: Context<'gc>) -> Value<'gc> {
+        CompactString::new(self).into_value(ctx)
     }
 }
 
 impl<'gc> IntoValue<'gc> for CompactString {
     fn into_value(self, ctx: Context<'gc>) -> Value<'gc> {
         Value::Str(Str::new(&ctx, self))
+    }
+}
+
+impl<'gc> IntoValue<'gc> for &[u8] {
+    fn into_value(self, ctx: Context<'gc>) -> Value<'gc> {
+        self.to_vec().into_value(ctx)
+    }
+}
+
+impl<'gc> IntoValue<'gc> for Vec<u8> {
+    fn into_value(self, ctx: Context<'gc>) -> Value<'gc> {
+        Value::Bytes(Bytes::new(&ctx, self))
     }
 }
 
@@ -250,6 +266,7 @@ impl_from! {
     [Int i64],
     [Float Float],
     [Str Str<'gc>],
+    [Bytes Bytes<'gc>],
     [Table Table<'gc>],
     [Function Function<'gc>],
     [UserData UserData<'gc>],
@@ -274,17 +291,17 @@ macro_rules! impl_int_from {
                         if let Ok(i) = <$i>::try_from(i) {
                             Ok(i)
                         } else {
-                            Err(unexpected_type_error!( ValueType::Int, value))
+                            Err(unexpected_type_error!(ValueType::Int, value))
                         }
                     } else {
-                        Err(unexpected_type_error!( ValueType::Int, value))
+                        Err(unexpected_type_error!(ValueType::Int, value))
                     }
                 }
             }
         )*
     };
 }
-impl_int_from!(u64, i32, u32, i16, u16, i8, u8, isize, usize);
+impl_int_from!(i16, u16, i32, u32, u64, isize, usize);
 
 macro_rules! impl_float_from {
     ($($f:ty),* $(,)?) => {
@@ -308,7 +325,17 @@ impl<'gc> FromValue<'gc> for CompactString {
         if let Value::Str(v) = value {
             Ok(v.to_compact_string())
         } else {
-            Err(unexpected_type_error!(ValueType::Float, value))
+            Err(unexpected_type_error!(ValueType::Str, value))
+        }
+    }
+}
+
+impl<'gc> FromValue<'gc> for Vec<u8> {
+    fn from_value(value: Value<'gc>) -> Result<Self, Error<'gc>> {
+        if let Value::Bytes(v) = value {
+            Ok(v.as_ref().to_vec())
+        } else {
+            Err(unexpected_type_error!(ValueType::Bytes, value))
         }
     }
 }

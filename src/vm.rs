@@ -135,6 +135,7 @@ impl<'gc> ThreadState<'gc> {
                         RuntimeConstValue::Int(v) => Value::Int(v),
                         RuntimeConstValue::Float(v) => Value::Float(v),
                         RuntimeConstValue::Str(v) => Value::Str(v),
+                        RuntimeConstValue::Bytes(v) => Value::Bytes(v),
                         RuntimeConstValue::Code(v) => Value::Function(Function::Closure(
                             Closure::new(&ctx, v, Some(frame.closure)),
                         )),

@@ -82,6 +82,7 @@ impl<S: AsRef<str>> From<LitKind<S>> for ConstValue<S> {
             LitKind::Int(v) => ConstValue::Int(v),
             LitKind::Float(v) => ConstValue::Float(v),
             LitKind::Str(v) => ConstValue::Str(v),
+            LitKind::Bytes(v) => ConstValue::Bytes(v),
         }
     }
 }
@@ -469,7 +470,7 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
                     LitKind::Null | LitKind::Bool(_) | LitKind::Int(_) | LitKind::Float(_) => {
                         OpCode::Identical
                     }
-                    LitKind::Str(_) => OpCode::Eq,
+                    LitKind::Str(_) | LitKind::Bytes(_) => OpCode::Eq,
                 });
                 self.push_code(OpCode::PopJumpIfFalse(next_pattern_label));
             }

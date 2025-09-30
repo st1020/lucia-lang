@@ -118,6 +118,8 @@ pub enum ConstValue<S> {
     Float(Float),
     /// ""abc"", ""abc"
     Str(S),
+    /// "b"abc""
+    Bytes(Vec<u8>),
     /// A function code.
     Code(Box<Code<S>>),
 }
@@ -130,6 +132,7 @@ impl<S: AsRef<str>> fmt::Display for ConstValue<S> {
             Self::Int(v) => write!(f, "{v}"),
             Self::Float(v) => write!(f, "{v}"),
             Self::Str(v) => write!(f, "{}", v.as_ref()),
+            Self::Bytes(v) => write!(f, "b\"{}\"", v.escape_ascii()),
             Self::Code(_) => write!(f, "<code>"),
         }
     }
@@ -160,6 +163,7 @@ impl<S: AsRef<str>> hash::Hash for ConstValue<S> {
             ConstValue::Int(v) => v.hash(state),
             ConstValue::Float(v) => v.hash(state),
             ConstValue::Str(v) => v.as_ref().hash(state),
+            ConstValue::Bytes(v) => v.hash(state),
             ConstValue::Code(_) => (),
         }
     }

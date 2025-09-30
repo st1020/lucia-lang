@@ -202,7 +202,19 @@ impl Cursor<'_> {
 
             // Raw string.
             'r' => match self.first() {
-                c @ ('"' | '\'') => self.string(c, true),
+                c @ ('"' | '\'') => {
+                    self.bump();
+                    self.string(c, true, RawStr, UnterminatedStr)
+                }
+                _ => self.ident_or_keyword(start),
+            },
+
+            // Byte string.
+            'b' => match self.first() {
+                c @ ('"' | '\'') => {
+                    self.bump();
+                    self.string(c, false, ByteStr, UnterminatedStr)
+                }
                 _ => self.ident_or_keyword(start),
             },
 
@@ -213,7 +225,7 @@ impl Cursor<'_> {
             c @ '0'..='9' => self.number(c),
 
             // String literal.
-            c @ ('"' | '\'') => self.string(c, false),
+            c @ ('"' | '\'') => self.string(c, false, Str, UnterminatedStr),
 
             // Escaped newline are treated as whitespace.
             '\\' if self.eat('\n') => Whitespace,
@@ -450,15 +462,17 @@ impl Cursor<'_> {
         }
     }
 
-    fn string(&mut self, quoted: char, is_raw: bool) -> TokenKind {
-        if is_raw {
-            debug_assert!(self.prev() == 'r');
-            self.bump();
-        }
+    fn string(
+        &mut self,
+        quoted: char,
+        is_raw: bool,
+        kind: TokenKind,
+        unterminated_kind: TokenKind,
+    ) -> TokenKind {
         debug_assert!(self.prev() == '"' || self.prev() == '\'');
         while let Some(c) = self.bump() {
             if c == quoted {
-                return if is_raw { RawStr } else { Str };
+                return kind;
             }
             if !is_raw && c == '\\' && matches!(self.first(), '\\' | '"' | '\'') {
                 // Bump again to skip escaped character.
@@ -466,7 +480,7 @@ impl Cursor<'_> {
             }
         }
         // End of file reached.
-        UnterminatedStr
+        unterminated_kind
     }
 
     fn eat_decimal_digits(&mut self) -> bool {

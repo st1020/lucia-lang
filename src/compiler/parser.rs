@@ -3,9 +3,10 @@
 use std::{iter::Peekable, sync::OnceLock};
 
 use itertools::Itertools;
+use rustc_literal_escaper::{unescape_byte_str, unescape_str};
 use text_size::{TextRange, TextSize};
 
-use crate::utils::{Float, unescape_str};
+use crate::utils::Float;
 
 use super::{
     ast::*,
@@ -1051,10 +1052,16 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
                         || text.starts_with('\'') && text.ends_with('\'')
                 );
                 let text = &text[1..text.len() - 1];
-                let mut s = String::new();
-                unescape_str(text, &mut |c| s.push(c))
-                    .map(|_| LitKind::Str(self.interner.intern(&s)))
-                    .map_err(|error| CompilerError::EscapeError { error, range })?
+                let mut s = Ok(String::new());
+                unescape_str(text, |_, c| match (&mut s, c) {
+                    (Ok(s), Ok(c)) => s.push(c),
+                    (Ok(_), Err(e)) => s = Err(e),
+                    _ => (),
+                });
+                match s {
+                    Ok(s) => LitKind::Str(self.interner.intern(&s)),
+                    Err(error) => return Err(CompilerError::EscapeError { error, range }),
+                }
             }
             TokenKind::RawStr => {
                 debug_assert!(
@@ -1063,6 +1070,23 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
                 );
                 let text = &text[2..text.len() - 1];
                 LitKind::Str(self.interner.intern(text))
+            }
+            TokenKind::ByteStr => {
+                debug_assert!(
+                    text.starts_with("b\"") && text.ends_with('"')
+                        || text.starts_with("b'") && text.ends_with('\'')
+                );
+                let text = &text[2..text.len() - 1];
+                let mut s = Ok(Vec::new());
+                unescape_byte_str(text, |_, c| match (&mut s, c) {
+                    (Ok(s), Ok(c)) => s.push(c),
+                    (Ok(_), Err(e)) => s = Err(e),
+                    _ => (),
+                });
+                match s {
+                    Ok(s) => LitKind::Bytes(s),
+                    Err(error) => return Err(CompilerError::EscapeError { error, range }),
+                }
             }
             _ => return Err(self.unexpected()),
         };

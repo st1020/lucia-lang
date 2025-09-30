@@ -4,7 +4,7 @@ use compact_str::{CompactString, ToCompactString};
 use gc_arena::{Collect, Gc, static_collect};
 
 use crate::{
-    objects::{Function, Str, Table, UserData},
+    objects::{Bytes, Function, Str, Table, UserData},
     utils::{Float, impl_enum_from},
 };
 
@@ -27,6 +27,8 @@ pub enum Value<'gc> {
     Float(Float),
     /// `str` - A UTF-8 string.
     Str(Str<'gc>),
+    /// `bytes` - A byte array.
+    Bytes(Bytes<'gc>),
     /// `table` - A table.
     Table(Table<'gc>),
     /// `function` - A function.
@@ -46,6 +48,7 @@ impl_enum_from!(Value<'gc>, {
     Int(i64),
     Float(Float),
     Str(Str<'gc>),
+    Bytes(Bytes<'gc>),
     Table(Table<'gc>),
     Function(Function<'gc>),
     UserData(UserData<'gc>),
@@ -67,6 +70,7 @@ impl<'gc> Value<'gc> {
             Self::Int(_) => None,
             Self::Float(_) => None,
             Self::Str(v) => NonZeroUsize::new(Gc::as_ptr(v.into_inner()) as usize),
+            Self::Bytes(v) => NonZeroUsize::new(Gc::as_ptr(v.into_inner()) as usize),
             Self::Table(v) => NonZeroUsize::new(Gc::as_ptr(v.into_inner()) as usize),
             Self::Function(v) => NonZeroUsize::new(v.const_ptr() as usize),
             Self::UserData(v) => NonZeroUsize::new(Gc::as_ptr(v.into_inner()) as usize),
@@ -88,6 +92,7 @@ impl<'gc> Value<'gc> {
             Self::Int(_) => ValueType::Int,
             Self::Float(_) => ValueType::Float,
             Self::Str(_) => ValueType::Str,
+            Self::Bytes(_) => ValueType::Bytes,
             Self::Table(_) => ValueType::Table,
             Self::Function(_) => ValueType::Function,
             Self::UserData(_) => ValueType::UserData,
@@ -107,6 +112,7 @@ impl fmt::Display for Value<'_> {
             Self::Int(v) => write!(f, "{v}"),
             Self::Float(v) => write!(f, "{v}"),
             Self::Str(v) => write!(f, "{v}"),
+            Self::Bytes(v) => write!(f, "{v}"),
             Self::Table(v) => write!(f, "{v}"),
             Self::Function(v) => write!(f, "{v}"),
             Self::UserData(v) => write!(f, "{v}"),
@@ -123,6 +129,7 @@ pub enum ExternValue {
     Int(i64),
     Float(Float),
     Str(CompactString),
+    Bytes(Vec<u8>),
     Table(*const ()),
     Function(*const ()),
     UserData(*const ()),
@@ -136,6 +143,7 @@ impl From<Value<'_>> for ExternValue {
             Value::Int(v) => ExternValue::Int(v),
             Value::Float(v) => ExternValue::Float(v),
             Value::Str(v) => ExternValue::Str(v.to_compact_string()),
+            Value::Bytes(v) => ExternValue::Bytes(v.to_vec()),
             Value::Table(v) => ExternValue::Table(Gc::as_ptr(v.into_inner()) as _),
             Value::Function(v) => ExternValue::Function(v.const_ptr()),
             Value::UserData(v) => ExternValue::UserData(Gc::as_ptr(v.into_inner()) as _),
@@ -151,6 +159,7 @@ impl fmt::Display for ExternValue {
             ExternValue::Int(v) => write!(f, "{v}"),
             ExternValue::Float(v) => write!(f, "{v}"),
             ExternValue::Str(v) => write!(f, "{v}"),
+            ExternValue::Bytes(v) => write!(f, "{:?}", v),
             ExternValue::Table(v) => write!(f, "<table {v:p}>"),
             ExternValue::Function(v) => write!(f, "<function {v:p}>"),
             ExternValue::UserData(v) => write!(f, "<userdata {v:p}>"),

@@ -24,7 +24,9 @@ impl IntoSemanticTokenType for TokenKind {
             TokenKind::Whitespace => None,
             TokenKind::Ident => Some(SemanticTokenType::VARIABLE),
             TokenKind::Int | TokenKind::Float => Some(SemanticTokenType::NUMBER),
-            TokenKind::Str | TokenKind::RawStr => Some(SemanticTokenType::STRING),
+            TokenKind::Str | TokenKind::RawStr | TokenKind::ByteStr => {
+                Some(SemanticTokenType::STRING)
+            }
             TokenKind::If
             | TokenKind::Else
             | TokenKind::Match

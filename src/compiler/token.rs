@@ -57,6 +57,8 @@ pub enum TokenKind {
     Str,
     /// "r"abc""
     RawStr,
+    /// "b"abc""
+    ByteStr,
 
     // Keywords:
     /// "if"

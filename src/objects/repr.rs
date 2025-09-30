@@ -4,8 +4,8 @@ use compact_str::{CompactString, ToCompactString, format_compact};
 use gc_arena::Gc;
 
 use crate::{
-    objects::{Callback, Closure, Function, Str, Table, UserData, Value},
-    utils::{Float, escape_str},
+    objects::{Bytes, Callback, Closure, Function, Str, Table, UserData, Value},
+    utils::Float,
 };
 
 pub trait Repr {
@@ -35,7 +35,13 @@ impl_display_repr!(
 
 impl Repr for Str<'_> {
     fn repr(&self) -> CompactString {
-        format_compact!("\"{}\"", escape_str(self, false))
+        format_compact!("{:?}", self.as_ref())
+    }
+}
+
+impl Repr for Bytes<'_> {
+    fn repr(&self) -> CompactString {
+        format_compact!("b\"{}\"", self.as_ref().escape_ascii())
     }
 }
 
@@ -87,6 +93,7 @@ impl Repr for Value<'_> {
             Value::Int(v) => v.repr(),
             Value::Float(v) => v.repr(),
             Value::Str(v) => v.repr(),
+            Value::Bytes(v) => v.repr(),
             Value::Table(v) => v.repr(),
             Value::Function(v) => v.repr(),
             Value::UserData(v) => v.repr(),

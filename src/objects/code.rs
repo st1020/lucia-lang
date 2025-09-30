@@ -8,7 +8,7 @@ use crate::{
         code::{Code, ConstValue},
         opcode::OpCode,
     },
-    objects::{Str, define_object},
+    objects::{Bytes, Str, define_object},
     utils::Float,
 };
 
@@ -88,6 +88,8 @@ pub enum RuntimeConstValue<'gc> {
     Float(Float),
     /// ""abc"", ""abc"
     Str(Str<'gc>),
+    /// "b"abc""
+    Bytes(Bytes<'gc>),
     /// A function code.
     Code(RuntimeCode<'gc>),
 }
@@ -100,6 +102,7 @@ impl<'gc> RuntimeConstValue<'gc> {
             ConstValue::Int(v) => RuntimeConstValue::Int(v),
             ConstValue::Float(v) => RuntimeConstValue::Float(v),
             ConstValue::Str(v) => RuntimeConstValue::Str(v),
+            ConstValue::Bytes(v) => RuntimeConstValue::Bytes(Bytes::new(mc, v)),
             ConstValue::Code(v) => RuntimeConstValue::Code(RuntimeCode::new(mc, *v)),
         }
     }

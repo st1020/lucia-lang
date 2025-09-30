@@ -1,6 +1,7 @@
 //! The Lucia Objects.
 
 mod any;
+mod bytes;
 mod callback;
 mod closure;
 mod code;
@@ -16,6 +17,7 @@ mod userdata;
 mod value;
 
 pub use any::*;
+pub use bytes::*;
 pub use callback::*;
 pub use closure::*;
 pub use code::*;

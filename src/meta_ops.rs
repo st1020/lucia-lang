@@ -256,6 +256,7 @@ impl<'gc> MetaMethod<Value<'gc>> for Context<'gc> {
         call_metamethod!(self, MetaName::Len, value);
         match value {
             Value::Str(s) => Ok(MetaResult::Value(Value::Int(s.len().try_into().unwrap()))),
+            Value::Bytes(b) => Ok(MetaResult::Value(Value::Int(b.len().try_into().unwrap()))),
             Value::Table(t) => Ok(MetaResult::Value(i64::try_from(t.len()).unwrap().into())),
             _ => Err(meta_operator_error!(MetaName::Len, value)),
         }
@@ -269,6 +270,7 @@ impl<'gc> MetaMethod<Value<'gc>> for Context<'gc> {
             Value::Int(v) => Ok(MetaResult::Value((v != 0).into())),
             Value::Float(v) => Ok(MetaResult::Value((v.0 != 0.0).into())),
             Value::Str(v) => Ok(MetaResult::Value((!v.is_empty()).into())),
+            Value::Bytes(v) => Ok(MetaResult::Value((!v.is_empty()).into())),
             Value::Table(v) => Ok(MetaResult::Value((!v.is_empty()).into())),
             _ => Ok(MetaResult::Value(true.into())),
         }
@@ -281,8 +283,15 @@ impl<'gc> MetaMethod<Value<'gc>> for Context<'gc> {
             Value::Bool(v) => Ok(MetaResult::Value((if v { 1 } else { 0 }).into())),
             Value::Int(v) => Ok(MetaResult::Value(v.into())),
             Value::Float(v) => Ok(MetaResult::Value((v.0 as i64).into())),
-            Value::Str(s) => Ok(MetaResult::Value(
-                s.parse::<i64>()
+            Value::Str(v) => Ok(MetaResult::Value(
+                v.parse::<i64>()
+                    .map_err(|_| meta_operator_error!(MetaName::Int, value))?
+                    .into(),
+            )),
+            Value::Bytes(v) => Ok(MetaResult::Value(
+                std::str::from_utf8(&v)
+                    .map_err(|_| meta_operator_error!(MetaName::Int, value))?
+                    .parse::<i64>()
                     .map_err(|_| meta_operator_error!(MetaName::Int, value))?
                     .into(),
             )),
@@ -300,6 +309,13 @@ impl<'gc> MetaMethod<Value<'gc>> for Context<'gc> {
             Value::Str(s) => Ok(MetaResult::Value(
                 s.parse::<f64>()
                     .map_err(|_| meta_operator_error!(MetaName::Int, value))?
+                    .into(),
+            )),
+            Value::Bytes(b) => Ok(MetaResult::Value(
+                std::str::from_utf8(&b)
+                    .map_err(|_| meta_operator_error!(MetaName::Float, value))?
+                    .parse::<f64>()
+                    .map_err(|_| meta_operator_error!(MetaName::Float, value))?
                     .into(),
             )),
             _ => Err(meta_operator_error!(MetaName::Float, value)),

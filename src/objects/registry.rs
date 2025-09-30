@@ -3,7 +3,7 @@ use std::fmt;
 use gc_arena::{Collect, DynamicRoot, DynamicRootSet, Mutation, Rootable};
 
 use crate::{
-    objects::{Callback, Closure, Function, RuntimeCode, Str, Table, UserData, Value},
+    objects::{Bytes, Callback, Closure, Function, RuntimeCode, Str, Table, UserData, Value},
     utils::{Float, impl_enum_from},
 };
 
@@ -91,6 +91,7 @@ macro_rules! define_stash {
 }
 
 define_stash!(Str, StashedStr);
+define_stash!(Bytes, StashedBytes);
 define_stash!(Table, StashedTable);
 define_stash!(Closure, StashedClosure);
 define_stash!(Callback, StashedCallback);
@@ -137,6 +138,7 @@ pub enum StashedValue {
     Int(i64),
     Float(Float),
     Str(StashedStr),
+    Bytes(StashedBytes),
     Table(StashedTable),
     Function(StashedFunction),
     UserData(StashedUserData),
@@ -147,6 +149,7 @@ impl_enum_from!(StashedValue, {
     Int(i64),
     Float(Float),
     Str(StashedStr),
+    Bytes(StashedBytes),
     Table(StashedTable),
     Function(StashedFunction),
     UserData(StashedUserData),
@@ -162,6 +165,7 @@ impl<'gc> Stashable<'gc> for Value<'gc> {
             Value::Int(i) => StashedValue::Int(i),
             Value::Float(n) => StashedValue::Float(n),
             Value::Str(s) => StashedValue::Str(s.stash(mc, roots)),
+            Value::Bytes(b) => StashedValue::Bytes(b.stash(mc, roots)),
             Value::Table(t) => StashedValue::Table(t.stash(mc, roots)),
             Value::Function(f) => StashedValue::Function(f.stash(mc, roots)),
             Value::UserData(u) => StashedValue::UserData(u.stash(mc, roots)),
@@ -179,6 +183,7 @@ impl Fetchable for StashedValue {
             StashedValue::Int(i) => Value::Int(*i),
             StashedValue::Float(n) => Value::Float(*n),
             StashedValue::Str(s) => Value::Str(s.fetch(roots)),
+            StashedValue::Bytes(b) => Value::Bytes(b.fetch(roots)),
             StashedValue::Table(t) => Value::Table(t.fetch(roots)),
             StashedValue::Function(f) => Value::Function(f.fetch(roots)),
             StashedValue::UserData(u) => Value::UserData(u.fetch(roots)),

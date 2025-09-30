@@ -3,15 +3,16 @@
 use std::num::{ParseFloatError, ParseIntError};
 
 use itertools::Itertools;
+use rustc_literal_escaper::EscapeError;
 use text_size::TextRange;
 use thiserror::Error;
 
-use crate::utils::{EscapeError, Locatable};
+use crate::utils::Locatable;
 
 use super::token::TokenKind;
 
 /// The compiler error type.
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[derive(Debug, PartialEq, Eq, Error)]
 pub enum CompilerError {
     #[error(
         "unexpected token (expected {}, found {}) {:?}",
@@ -34,7 +35,7 @@ pub enum CompilerError {
         error: ParseFloatError,
         range: TextRange,
     },
-    #[error("escape error ({}) {:?}", .error, .range)]
+    #[error("escape error ({:?}) {:?}", .error, .range)]
     EscapeError {
         error: EscapeError,
         range: TextRange,

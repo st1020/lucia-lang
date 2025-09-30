@@ -2,7 +2,7 @@ use std::fmt;
 
 use text_size::TextRange;
 
-use crate::utils::{Float, escape_str};
+use crate::utils::Float;
 
 use super::*;
 
@@ -17,7 +17,7 @@ impl_locatable!(Lit);
 impl_kind_display!(Lit);
 
 /// Kind of literal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum LitKind<S> {
     /// "null"
     Null,
@@ -29,6 +29,8 @@ pub enum LitKind<S> {
     Float(Float),
     /// ""abc"", ""abc"
     Str(S),
+    /// "b"abc""
+    Bytes(Vec<u8>),
 }
 
 impl<S: AsRef<str>> fmt::Display for LitKind<S> {
@@ -38,7 +40,8 @@ impl<S: AsRef<str>> fmt::Display for LitKind<S> {
             LitKind::Bool(v) => write!(f, "{v}"),
             LitKind::Int(v) => write!(f, "{v}"),
             LitKind::Float(v) => write!(f, "{v:?}"),
-            LitKind::Str(v) => write!(f, "\"{}\"", escape_str(v.as_ref(), false)),
+            LitKind::Str(v) => write!(f, "{:?}", v.as_ref()),
+            LitKind::Bytes(v) => write!(f, "b\"{}\"", v.escape_ascii()),
         }
     }
 }
