@@ -3,12 +3,7 @@ use gc_arena::{Collect, Gc, Mutation};
 use crate::{
     Context,
     errors::{Error, RuntimeError},
-    meta_ops::MetaResult,
-    objects::{
-        ArgumentRange, Function, Value,
-        conversion::{FromValue, IntoValue},
-        define_object,
-    },
+    objects::{ArgumentRange, FromValue, Function, IntoValue, MetaResult, Value, define_object},
 };
 
 pub type CallbackResult<'gc> = Result<CallbackReturn<'gc>, Error<'gc>>;

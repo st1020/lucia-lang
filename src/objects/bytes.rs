@@ -2,7 +2,11 @@ use std::{borrow::Borrow, fmt, ops};
 
 use gc_arena::{Collect, Gc, Mutation, static_collect};
 
-use crate::objects::define_object;
+use crate::{
+    Context,
+    compiler::value::MetaMethod,
+    objects::{IntoMetaResult, define_object, value_metamethod},
+};
 
 define_object!(Bytes, BytesInner, inner);
 
@@ -41,4 +45,21 @@ impl fmt::Display for BytesInner {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         write!(fmt, "b\"{}\"", self.escape_ascii())
     }
+}
+
+impl<'gc> MetaMethod<Context<'gc>> for Bytes<'gc> {
+    value_metamethod!(Bytes);
+
+    fn meta_len(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
+        Ok((self.len() as i64).into_meta_result(ctx))
+    }
+
+    value_metamethod!(Bytes, str);
+    value_metamethod!(Bytes, repr);
+
+    value_metamethod!(Bytes, eq_ne);
+    value_metamethod!(Bytes, compare, Gt, meta_gt, gt);
+    value_metamethod!(Bytes, compare, Ge, meta_ge, ge);
+    value_metamethod!(Bytes, compare, Lt, meta_lt, lt);
+    value_metamethod!(Bytes, compare, Le, meta_le, le);
 }

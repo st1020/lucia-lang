@@ -6,7 +6,9 @@ use std::{
 use gc_arena::{Collect, Gc};
 
 use crate::{
-    objects::{Callback, Closure},
+    Context,
+    compiler::value::MetaMethod,
+    objects::{Callback, Closure, IntoMetaResult, value_metamethod},
     utils::impl_enum_from,
 };
 
@@ -36,6 +38,20 @@ impl fmt::Display for Function<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "<function {:p}>", self.const_ptr())
     }
+}
+
+impl<'gc> MetaMethod<Context<'gc>> for Function<'gc> {
+    value_metamethod!(Function);
+
+    fn meta_call(&self, _ctx: Context<'gc>) -> Result<Self::ResultCall, Self::Error> {
+        Ok(*self)
+    }
+
+    fn meta_iter(&self, _ctx: Context<'gc>) -> Result<Self::ResultIter, Self::Error> {
+        Ok(*self)
+    }
+
+    value_metamethod!(Function, eq_ne);
 }
 
 /// The required number of arguments when calling a function.

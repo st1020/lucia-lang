@@ -12,7 +12,7 @@ use lucia_lang::compiler::{
     interning::StringInterner,
     parser::parse,
     semantic::Semantic,
-    value::{MetaMethod, ValueType},
+    value::ValueType,
 };
 use oxc_index::{IndexVec, index_vec};
 use rustc_hash::FxBuildHasher;
@@ -20,7 +20,7 @@ use rustc_hash::FxBuildHasher;
 use crate::{
     env::Env,
     error::TypeError,
-    meta_ops::MetaMethodType,
+    meta_ops::{MetaMethod, MetaMethodType},
     typing::{FunctionType, ParmaType, TableType, Type},
 };
 

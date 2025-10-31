@@ -108,35 +108,78 @@ impl fmt::Display for MetaName {
     }
 }
 
-pub trait MetaMethod<Value> {
+macro_rules! metamethod_default {
+    (1, $name:ident, $meta_name:ident) => {
+        fn $name(&self, ctx: Context) -> Result<Self::Result1, Self::Error> {
+            Err(self.meta_error(ctx, MetaName::$meta_name, vec![]))
+        }
+    };
+    (2, $name:ident, $meta_name:ident) => {
+        fn $name(&self, ctx: Context, other: Self::Value) -> Result<Self::Result2, Self::Error> {
+            Err(self.meta_error(ctx, MetaName::$meta_name, vec![other]))
+        }
+    };
+}
+
+pub trait MetaMethod<Context> {
+    type Value;
+    type Error;
     type ResultCall;
     type ResultIter;
     type Result1;
     type Result2;
     type Result3;
 
-    fn call(&self, value: Value) -> Self::ResultCall;
-    fn iter(&self, value: Value) -> Self::ResultIter;
-    fn get_attr(&self, table: Value, key: Value) -> Self::Result2;
-    fn get_item(&self, table: Value, key: Value) -> Self::Result2;
-    fn set_attr(&self, table: Value, key: Value, value: Value) -> Self::Result3;
-    fn set_item(&self, table: Value, key: Value, value: Value) -> Self::Result3;
-    fn neg(&self, value: Value) -> Self::Result1;
-    fn add(&self, lhs: Value, rhs: Value) -> Self::Result2;
-    fn sub(&self, lhs: Value, rhs: Value) -> Self::Result2;
-    fn mul(&self, lhs: Value, rhs: Value) -> Self::Result2;
-    fn div(&self, lhs: Value, rhs: Value) -> Self::Result2;
-    fn rem(&self, lhs: Value, rhs: Value) -> Self::Result2;
-    fn eq(&self, lhs: Value, rhs: Value) -> Self::Result2;
-    fn ne(&self, lhs: Value, rhs: Value) -> Self::Result2;
-    fn gt(&self, lhs: Value, rhs: Value) -> Self::Result2;
-    fn ge(&self, lhs: Value, rhs: Value) -> Self::Result2;
-    fn lt(&self, lhs: Value, rhs: Value) -> Self::Result2;
-    fn le(&self, lhs: Value, rhs: Value) -> Self::Result2;
-    fn len(&self, value: Value) -> Self::Result1;
-    fn bool(&self, value: Value) -> Self::Result1;
-    fn int(&self, value: Value) -> Self::Result1;
-    fn float(&self, value: Value) -> Self::Result1;
-    fn str(&self, value: Value) -> Self::Result1;
-    fn repr(&self, value: Value) -> Self::Result1;
+    fn meta_call(&self, ctx: Context) -> Result<Self::ResultCall, Self::Error> {
+        Err(self.meta_error(ctx, MetaName::Call, vec![]))
+    }
+    fn meta_iter(&self, ctx: Context) -> Result<Self::ResultIter, Self::Error> {
+        Err(self.meta_error(ctx, MetaName::Iter, vec![]))
+    }
+    metamethod_default!(1, meta_len, Len);
+
+    metamethod_default!(1, meta_bool, Bool);
+    metamethod_default!(1, meta_int, Int);
+    metamethod_default!(1, meta_float, Float);
+    metamethod_default!(1, meta_str, Str);
+    metamethod_default!(1, meta_repr, Repr);
+
+    metamethod_default!(1, meta_neg, Neg);
+    metamethod_default!(2, meta_add, Add);
+    metamethod_default!(2, meta_sub, Sub);
+    metamethod_default!(2, meta_mul, Mul);
+    metamethod_default!(2, meta_div, Div);
+    metamethod_default!(2, meta_rem, Rem);
+
+    metamethod_default!(2, meta_eq, Eq);
+    metamethod_default!(2, meta_ne, Ne);
+    metamethod_default!(2, meta_gt, Gt);
+    metamethod_default!(2, meta_ge, Ge);
+    metamethod_default!(2, meta_lt, Lt);
+    metamethod_default!(2, meta_le, Le);
+
+    fn meta_get_attr(&self, ctx: Context, key: Self::Value) -> Result<Self::Result2, Self::Error> {
+        Err(self.meta_error(ctx, MetaName::GetAttr, vec![key]))
+    }
+    fn meta_get_item(&self, ctx: Context, key: Self::Value) -> Result<Self::Result2, Self::Error> {
+        Err(self.meta_error(ctx, MetaName::GetItem, vec![key]))
+    }
+    fn meta_set_attr(
+        &self,
+        ctx: Context,
+        key: Self::Value,
+        value: Self::Value,
+    ) -> Result<Self::Result3, Self::Error> {
+        Err(self.meta_error(ctx, MetaName::SetAttr, vec![key, value]))
+    }
+    fn meta_set_item(
+        &self,
+        ctx: Context,
+        key: Self::Value,
+        value: Self::Value,
+    ) -> Result<Self::Result3, Self::Error> {
+        Err(self.meta_error(ctx, MetaName::SetItem, vec![key, value]))
+    }
+
+    fn meta_error(&self, ctx: Context, operator: MetaName, args: Vec<Self::Value>) -> Self::Error;
 }

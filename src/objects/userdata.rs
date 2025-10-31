@@ -7,7 +7,14 @@ use std::{
 use gc_arena::{Collect, Gc, Mutation, Rootable, arena::Root, barrier, lock};
 use thiserror::Error;
 
-use crate::objects::{Any, AnyInner, Table};
+use crate::{
+    Context,
+    compiler::value::{MetaMethod, MetaName},
+    objects::{
+        Any, AnyInner, Callback, CallbackReturn, Function, Table, Value, call_metamethod_error,
+        value_metamethod,
+    },
+};
 
 #[derive(Debug, Copy, Clone, Error)]
 #[error("UserData type mismatch")]
@@ -189,4 +196,61 @@ impl<'gc> UserData<'gc> {
         md.set(v);
         old_metatable
     }
+}
+
+impl<'gc> MetaMethod<Context<'gc>> for UserData<'gc> {
+    value_metamethod!(UserData);
+
+    fn meta_call(&self, ctx: Context<'gc>) -> Result<Self::ResultCall, Self::Error> {
+        if let Some(metatable) = self.metatable() {
+            match metatable.get(ctx, MetaName::Call) {
+                Value::Function(v) => Ok(v),
+                Value::Table(v) => v.meta_call(ctx),
+                v => Err(v.meta_error(ctx, MetaName::Call, vec![])),
+            }
+        } else {
+            Err(self.meta_error(ctx, MetaName::Call, vec![]))
+        }
+    }
+
+    fn meta_iter(&self, ctx: Context<'gc>) -> Result<Self::ResultIter, Self::Error> {
+        if let Some(metatable) = self.metatable() {
+            let t = metatable.get(ctx, MetaName::Iter);
+            if !t.is_null() {
+                return Ok(Function::Callback(Callback::from_fn_with(
+                    &ctx,
+                    (t.meta_call(ctx)?, *self),
+                    |(f, v), _ctx, _args| Ok(CallbackReturn::TailCall(*f, vec![(*v).into()])),
+                )));
+            }
+        }
+        Err(self.meta_error(ctx, MetaName::Iter, vec![]))
+    }
+
+    call_metamethod_error!(1, meta_len, Len);
+
+    call_metamethod_error!(1, meta_bool, Bool);
+    call_metamethod_error!(1, meta_int, Int);
+    call_metamethod_error!(1, meta_float, Float);
+    call_metamethod_error!(1, meta_str, Str);
+    call_metamethod_error!(1, meta_repr, Repr);
+
+    call_metamethod_error!(1, meta_neg, Neg);
+    call_metamethod_error!(2, meta_add, Add);
+    call_metamethod_error!(2, meta_sub, Sub);
+    call_metamethod_error!(2, meta_mul, Mul);
+    call_metamethod_error!(2, meta_div, Div);
+    call_metamethod_error!(2, meta_rem, Rem);
+
+    call_metamethod_error!(2, meta_eq, Eq);
+    call_metamethod_error!(2, meta_ne, Ne);
+    call_metamethod_error!(2, meta_gt, Gt);
+    call_metamethod_error!(2, meta_ge, Ge);
+    call_metamethod_error!(2, meta_lt, Lt);
+    call_metamethod_error!(2, meta_le, Le);
+
+    call_metamethod_error!(2, meta_get_attr, GetAttr);
+    call_metamethod_error!(2, meta_get_item, GetItem);
+    call_metamethod_error!(3, meta_set_attr, SetAttr);
+    call_metamethod_error!(3, meta_set_item, SetItem);
 }

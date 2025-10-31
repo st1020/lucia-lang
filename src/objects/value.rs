@@ -4,7 +4,10 @@ use compact_str::{CompactString, ToCompactString};
 use gc_arena::{Collect, Gc, static_collect};
 
 use crate::{
-    objects::{Bytes, Function, Str, Table, UserData},
+    Context,
+    compiler::value::{MetaMethod, MetaName},
+    errors::{Error, RuntimeError},
+    objects::{Bytes, Function, IntoValue, Str, Table, UserData},
     utils::{Float, impl_enum_from},
 };
 
@@ -116,6 +119,139 @@ impl fmt::Display for Value<'_> {
             Self::Table(v) => write!(f, "{v}"),
             Self::Function(v) => write!(f, "{v}"),
             Self::UserData(v) => write!(f, "{v}"),
+        }
+    }
+}
+
+static_collect!(MetaName);
+
+impl<'gc> IntoValue<'gc> for MetaName {
+    fn into_value(self, ctx: Context<'gc>) -> Value<'gc> {
+        self.name().into_value(ctx)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Collect)]
+#[collect(no_drop)]
+pub enum MetaResult<'gc, const N: usize> {
+    Value(Value<'gc>),
+    Call(Function<'gc>, [Value<'gc>; N]),
+}
+
+pub(crate) trait IntoMetaResult<'gc, const N: usize> {
+    fn into_meta_result(self, ctx: Context<'gc>) -> MetaResult<'gc, N>;
+}
+
+impl<'gc, T: IntoValue<'gc>, const N: usize> IntoMetaResult<'gc, N> for T {
+    fn into_meta_result(self, ctx: Context<'gc>) -> MetaResult<'gc, N> {
+        MetaResult::Value(self.into_value(ctx))
+    }
+}
+
+macro_rules! value_enum_dispatch {
+    ($value:expr, $path:ident($($arg:expr),*)) => {
+        match $value {
+            Value::Null => ().$path($($arg),*),
+            Value::Bool(v) => v.$path($($arg),*),
+            Value::Int(v) => v.$path($($arg),*),
+            Value::Float(v) => v.$path($($arg),*),
+            Value::Str(v) => v.$path($($arg),*),
+            Value::Bytes(v) => v.$path($($arg),*),
+            Value::Table(v) => v.$path($($arg),*),
+            Value::Function(v) => v.$path($($arg),*),
+            Value::UserData(v) => v.$path($($arg),*),
+        }
+    };
+}
+
+macro_rules! value_enum_dispatch_meta_method {
+    (1, $($name:ident),*) => {
+        $(
+            fn $name(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
+                value_enum_dispatch!(self, $name(ctx))
+            }
+        )*
+    };
+    (2, $($name:ident),*) => {
+        $(
+            fn $name(
+                &self,
+                ctx: Context<'gc>,
+                other: Self::Value,
+            ) -> Result<Self::Result2, Self::Error> {
+                value_enum_dispatch!(self, $name(ctx, other))
+            }
+        )*
+    };
+    (3, $($name:ident),*) => {
+        $(
+            fn $name(
+                &self,
+                ctx: Context<'gc>,
+                key: Self::Value,
+                value: Self::Value,
+            ) -> Result<Self::Result3, Self::Error> {
+                value_enum_dispatch!(self, $name(ctx, key, value))
+            }
+        )*
+    };
+}
+
+impl<'gc> MetaMethod<Context<'gc>> for Value<'gc> {
+    type Value = Value<'gc>;
+    type Error = Error<'gc>;
+    type ResultCall = Function<'gc>;
+    type ResultIter = Self::ResultCall;
+    type Result1 = MetaResult<'gc, 1>;
+    type Result2 = MetaResult<'gc, 2>;
+    type Result3 = MetaResult<'gc, 3>;
+
+    fn meta_call(&self, ctx: Context<'gc>) -> Result<Self::ResultCall, Self::Error> {
+        value_enum_dispatch!(self, meta_call(ctx))
+    }
+    fn meta_iter(&self, ctx: Context<'gc>) -> Result<Self::ResultIter, Self::Error> {
+        value_enum_dispatch!(self, meta_iter(ctx))
+    }
+
+    value_enum_dispatch_meta_method!(
+        1, meta_len, meta_bool, meta_int, meta_float, meta_str, meta_repr, meta_neg
+    );
+
+    value_enum_dispatch_meta_method!(
+        2,
+        meta_add,
+        meta_sub,
+        meta_mul,
+        meta_div,
+        meta_rem,
+        meta_eq,
+        meta_ne,
+        meta_gt,
+        meta_ge,
+        meta_lt,
+        meta_le,
+        meta_get_attr,
+        meta_get_item
+    );
+
+    value_enum_dispatch_meta_method!(3, meta_set_attr, meta_set_item);
+
+    fn meta_error(
+        &self,
+        _: Context<'gc>,
+        operator: MetaName,
+        args: Vec<Self::Value>,
+    ) -> Self::Error {
+        if args.is_empty() {
+            Error::new(RuntimeError::MetaUnOperator {
+                operator,
+                operand: self.value_type(),
+            })
+        } else {
+            Error::new(RuntimeError::MetaBinOperator {
+                operator,
+                operand: (self.value_type(), args[0].value_type()),
+            })
         }
     }
 }

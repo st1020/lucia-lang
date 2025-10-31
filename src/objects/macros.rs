@@ -72,4 +72,183 @@ macro_rules! define_object {
     };
 }
 
+macro_rules! value_metamethod {
+    ($type:ident) => {
+        type Value = $crate::objects::Value<'gc>;
+        type Error = $crate::errors::Error<'gc>;
+        type ResultCall = $crate::objects::Function<'gc>;
+        type ResultIter = Self::ResultCall;
+        type Result1 = $crate::objects::MetaResult<'gc, 1>;
+        type Result2 = $crate::objects::MetaResult<'gc, 2>;
+        type Result3 = $crate::objects::MetaResult<'gc, 3>;
+
+        fn meta_error(
+            &self,
+            _: Context<'gc>,
+            operator: $crate::compiler::value::MetaName,
+            args: Vec<Self::Value>,
+        ) -> Self::Error {
+            if args.len() == 0 {
+                $crate::errors::Error::new($crate::errors::RuntimeError::MetaUnOperator {
+                    operator,
+                    operand: $crate::objects::ValueType::$type,
+                })
+            } else {
+                $crate::errors::Error::new($crate::errors::RuntimeError::MetaBinOperator {
+                    operator,
+                    operand: ($crate::objects::ValueType::$type, args[0].value_type()),
+                })
+            }
+        }
+    };
+    ($type:ident, str) => {
+        fn meta_str(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
+            Ok(compact_str::ToCompactString::to_compact_string(self).into_meta_result(ctx))
+        }
+    };
+    ($type:ident, repr) => {
+        fn meta_repr(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
+            self.meta_str(ctx)
+        }
+    };
+    ($type:ident, repr) => {
+        fn meta_repr(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
+            self.str(ctx)
+        }
+    };
+    ($type:ident, neg) => {
+        fn meta_neg(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
+            Ok((-*self).into_meta_result(ctx))
+        }
+    };
+    ($type:ident, arithmetic, $operator:ident, $name:ident, $fn_name:ident) => {
+        fn $name(
+            &self,
+            ctx: Context<'gc>,
+            other: Self::Value,
+        ) -> Result<Self::Result2, Self::Error> {
+            if let $crate::objects::Value::$type(other) = other {
+                Ok(self.$fn_name(other).into_meta_result(ctx))
+            } else {
+                Err(self.meta_error(
+                    ctx,
+                    $crate::compiler::value::MetaName::$operator,
+                    vec![other],
+                ))
+            }
+        }
+    };
+    ($value:ident, eq_ne) => {
+        fn meta_eq(
+            &self,
+            ctx: Context<'gc>,
+            other: Self::Value,
+        ) -> Result<Self::Result2, Self::Error> {
+            if let $crate::objects::Value::$value(v) = &other {
+                Ok((self == v).into_meta_result(ctx))
+            } else {
+                Ok(false.into_meta_result(ctx))
+            }
+        }
+        fn meta_ne(
+            &self,
+            ctx: Context<'gc>,
+            other: Self::Value,
+        ) -> Result<Self::Result2, Self::Error> {
+            if let $crate::objects::Value::$value(v) = &other {
+                Ok((self != v).into_meta_result(ctx))
+            } else {
+                Ok(true.into_meta_result(ctx))
+            }
+        }
+    };
+    ($type:ident, compare, $operator:ident, $name:ident, $fn_name:ident) => {
+        fn $name(
+            &self,
+            ctx: Context<'gc>,
+            other: Self::Value,
+        ) -> Result<Self::Result2, Self::Error> {
+            if let $crate::objects::Value::$type(other) = &other {
+                Ok(self.$fn_name(other).into_meta_result(ctx))
+            } else {
+                Err(self.meta_error(
+                    ctx,
+                    $crate::compiler::value::MetaName::$operator,
+                    vec![other],
+                ))
+            }
+        }
+    };
+}
+
+macro_rules! call_metamethod {
+    ($ctx:ident, $meta_name:expr, $self:ident $(,)? $($arg:ident),*) => {
+        if let Some(metatable) = $self.metatable() {
+            let metamethod = metatable.get($ctx, $meta_name);
+            if !metamethod.is_null() {
+                return Ok($crate::objects::MetaResult::Call(
+                    metamethod.meta_call($ctx)?,
+                    [(*$self).into(), $($arg.into()),*],
+                ));
+            }
+        }
+    };
+}
+
+macro_rules! call_metamethod_error {
+    (1, $name:ident, $meta_name:ident) => {
+        fn $name(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
+            $crate::objects::call_metamethod!(
+                ctx,
+                $crate::compiler::value::MetaName::$meta_name,
+                self
+            );
+            Err(self.meta_error(ctx, $crate::compiler::value::MetaName::$meta_name, vec![]))
+        }
+    };
+    (2, $name:ident, $meta_name:ident) => {
+        fn $name(
+            &self,
+            ctx: Context<'gc>,
+            other: Self::Value,
+        ) -> Result<Self::Result2, Self::Error> {
+            $crate::objects::call_metamethod!(
+                ctx,
+                $crate::compiler::value::MetaName::$meta_name,
+                self,
+                other
+            );
+            Err(self.meta_error(
+                ctx,
+                $crate::compiler::value::MetaName::$meta_name,
+                vec![other],
+            ))
+        }
+    };
+    (3, $name:ident, $meta_name:ident) => {
+        fn $name(
+            &self,
+            ctx: Context<'gc>,
+            key: Self::Value,
+            value: Self::Value,
+        ) -> Result<Self::Result3, Self::Error> {
+            $crate::objects::call_metamethod!(
+                ctx,
+                $crate::compiler::value::MetaName::$meta_name,
+                self,
+                key,
+                value
+            );
+            Err(self.meta_error(
+                ctx,
+                $crate::compiler::value::MetaName::$meta_name,
+                vec![key, value],
+            ))
+        }
+    };
+}
+
+pub(crate) use call_metamethod;
+pub(crate) use call_metamethod_error;
 pub(crate) use define_object;
+pub(crate) use value_metamethod;

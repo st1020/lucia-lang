@@ -37,32 +37,32 @@ pub fn load_builtin<'gc>(ctx: Context<'gc>) {
     builtins.set(
         ctx,
         "len",
-        Callback::from(&ctx, |ctx: Context<'gc>, value| ctx.len(value)),
+        Callback::from(&ctx, |ctx, value: Value<'gc>| value.meta_len(ctx)),
     );
     builtins.set(
         ctx,
         "bool",
-        Callback::from(&ctx, |ctx: Context<'gc>, value| ctx.bool(value)),
+        Callback::from(&ctx, |ctx, value: Value<'gc>| value.meta_bool(ctx)),
     );
     builtins.set(
         ctx,
         "int",
-        Callback::from(&ctx, |ctx: Context<'gc>, value| ctx.int(value)),
+        Callback::from(&ctx, |ctx, value: Value<'gc>| value.meta_int(ctx)),
     );
     builtins.set(
         ctx,
         "float",
-        Callback::from(&ctx, |ctx: Context<'gc>, value| ctx.float(value)),
+        Callback::from(&ctx, |ctx, value: Value<'gc>| value.meta_float(ctx)),
     );
     builtins.set(
         ctx,
         "str",
-        Callback::from(&ctx, |ctx: Context<'gc>, value| ctx.str(value)),
+        Callback::from(&ctx, |ctx, value: Value<'gc>| value.meta_str(ctx)),
     );
     builtins.set(
         ctx,
         "repr",
-        Callback::from(&ctx, |ctx: Context<'gc>, value| ctx.repr(value)),
+        Callback::from(&ctx, |ctx, value: Value<'gc>| value.meta_repr(ctx)),
     );
     builtins.set(
         ctx,

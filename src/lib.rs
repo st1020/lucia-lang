@@ -32,7 +32,6 @@ pub mod errors;
 pub mod frame;
 pub mod fuel;
 pub mod libs;
-pub mod meta_ops;
 pub mod objects;
 pub mod thread;
 pub mod utils;

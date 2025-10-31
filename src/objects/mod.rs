@@ -1,14 +1,18 @@
 //! The Lucia Objects.
 
 mod any;
+mod bool;
 mod bytes;
 mod callback;
 mod closure;
 mod code;
 mod conversion;
 mod equal;
+mod float;
 mod function;
+mod int;
 mod macros;
+mod null;
 mod registry;
 mod repr;
 mod string;

@@ -1,12 +1,42 @@
-use lucia_lang::compiler::{
-    ast::LitKind,
-    value::{MetaMethod, MetaName},
-};
+use lucia_lang::compiler::{ast::LitKind, value::MetaName};
 
 use crate::{
     error::TypeError,
     typing::{FunctionType, TableType, Type},
 };
+
+pub trait MetaMethod<Value> {
+    type ResultCall;
+    type ResultIter;
+    type Result1;
+    type Result2;
+    type Result3;
+
+    fn call(&self, value: Value) -> Self::ResultCall;
+    fn iter(&self, value: Value) -> Self::ResultIter;
+    fn get_attr(&self, table: Value, key: Value) -> Self::Result2;
+    fn get_item(&self, table: Value, key: Value) -> Self::Result2;
+    fn set_attr(&self, table: Value, key: Value, value: Value) -> Self::Result3;
+    fn set_item(&self, table: Value, key: Value, value: Value) -> Self::Result3;
+    fn neg(&self, value: Value) -> Self::Result1;
+    fn add(&self, lhs: Value, rhs: Value) -> Self::Result2;
+    fn sub(&self, lhs: Value, rhs: Value) -> Self::Result2;
+    fn mul(&self, lhs: Value, rhs: Value) -> Self::Result2;
+    fn div(&self, lhs: Value, rhs: Value) -> Self::Result2;
+    fn rem(&self, lhs: Value, rhs: Value) -> Self::Result2;
+    fn eq(&self, lhs: Value, rhs: Value) -> Self::Result2;
+    fn ne(&self, lhs: Value, rhs: Value) -> Self::Result2;
+    fn gt(&self, lhs: Value, rhs: Value) -> Self::Result2;
+    fn ge(&self, lhs: Value, rhs: Value) -> Self::Result2;
+    fn lt(&self, lhs: Value, rhs: Value) -> Self::Result2;
+    fn le(&self, lhs: Value, rhs: Value) -> Self::Result2;
+    fn len(&self, value: Value) -> Self::Result1;
+    fn bool(&self, value: Value) -> Self::Result1;
+    fn int(&self, value: Value) -> Self::Result1;
+    fn float(&self, value: Value) -> Self::Result1;
+    fn str(&self, value: Value) -> Self::Result1;
+    fn repr(&self, value: Value) -> Self::Result1;
+}
 
 pub(crate) struct MetaMethodType;
 

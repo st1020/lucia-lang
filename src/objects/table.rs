@@ -1,9 +1,14 @@
+use compact_str::ToCompactString;
 use gc_arena::{Collect, Gc, Mutation, lock::RefLock};
 use indexmap::IndexMap;
 
 use crate::{
     Context,
-    objects::{Callback, CallbackReturn, IntoValue, Value, define_object},
+    compiler::value::{MetaMethod, MetaName},
+    objects::{
+        Callback, CallbackReturn, Equal, Function, IntoMetaResult, IntoValue, MetaResult, Repr,
+        Value, call_metamethod, call_metamethod_error, define_object, value_metamethod,
+    },
 };
 
 pub type TableInner<'gc> = RefLock<TableState<'gc>>;
@@ -103,6 +108,131 @@ impl<'gc> Table<'gc> {
                 )))
             },
         )
+    }
+}
+
+impl<'gc> MetaMethod<Context<'gc>> for Table<'gc> {
+    value_metamethod!(Table);
+
+    fn meta_call(&self, ctx: Context<'gc>) -> Result<Self::ResultCall, Self::Error> {
+        if let Some(metatable) = self.metatable() {
+            match metatable.get(ctx, MetaName::Call) {
+                Value::Function(v) => Ok(v),
+                Value::Table(v) => v.meta_call(ctx),
+                v => Err(v.meta_error(ctx, MetaName::Call, vec![])),
+            }
+        } else {
+            Err(self.meta_error(ctx, MetaName::Call, vec![]))
+        }
+    }
+
+    fn meta_iter(&self, ctx: Context<'gc>) -> Result<Self::ResultIter, Self::Error> {
+        if let Some(metatable) = self.metatable() {
+            let t = metatable.get(ctx, MetaName::Iter);
+            if !t.is_null() {
+                return Ok(Function::Callback(Callback::from_fn_with(
+                    &ctx,
+                    (t.meta_call(ctx)?, *self),
+                    |(f, v), _ctx, _args| Ok(CallbackReturn::TailCall(*f, vec![(*v).into()])),
+                )));
+            }
+        }
+        Ok(Function::Callback(self.iter_callback(ctx)))
+    }
+
+    fn meta_len(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
+        call_metamethod!(ctx, MetaName::Len, self);
+        Ok((self.len() as i64).into_meta_result(ctx))
+    }
+
+    fn meta_bool(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
+        call_metamethod!(ctx, MetaName::Bool, self);
+        Ok((!self.is_empty()).into_meta_result(ctx))
+    }
+
+    call_metamethod_error!(1, meta_int, Int);
+    call_metamethod_error!(1, meta_float, Float);
+
+    fn meta_str(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
+        call_metamethod!(ctx, MetaName::Str, self);
+        Ok(self.to_compact_string().into_meta_result(ctx))
+    }
+
+    fn meta_repr(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
+        call_metamethod!(ctx, MetaName::Repr, self);
+        Ok(self.repr().into_meta_result(ctx))
+    }
+
+    call_metamethod_error!(1, meta_neg, Neg);
+    call_metamethod_error!(2, meta_add, Add);
+    call_metamethod_error!(2, meta_sub, Sub);
+    call_metamethod_error!(2, meta_mul, Mul);
+    call_metamethod_error!(2, meta_div, Div);
+    call_metamethod_error!(2, meta_rem, Rem);
+
+    fn meta_eq(&self, ctx: Context<'gc>, other: Self::Value) -> Result<Self::Result2, Self::Error> {
+        call_metamethod!(ctx, MetaName::Eq, self, other);
+        Ok(if let Value::Table(other) = other {
+            self.equal(&other)
+        } else {
+            false
+        }
+        .into_meta_result(ctx))
+    }
+
+    fn meta_ne(&self, ctx: Context<'gc>, other: Self::Value) -> Result<Self::Result2, Self::Error> {
+        call_metamethod!(ctx, MetaName::Ne, self, other);
+        Ok(if let Value::Table(other) = other {
+            self.not_equal(&other)
+        } else {
+            true
+        }
+        .into_meta_result(ctx))
+    }
+
+    call_metamethod_error!(2, meta_gt, Gt);
+    call_metamethod_error!(2, meta_ge, Ge);
+    call_metamethod_error!(2, meta_lt, Lt);
+    call_metamethod_error!(2, meta_le, Le);
+
+    fn meta_get_attr(
+        &self,
+        ctx: Context<'gc>,
+        key: Self::Value,
+    ) -> Result<Self::Result2, Self::Error> {
+        call_metamethod!(ctx, MetaName::GetAttr, self, key);
+        Ok(MetaResult::Value(self.get(ctx, key)))
+    }
+
+    fn meta_get_item(
+        &self,
+        ctx: Context<'gc>,
+        key: Self::Value,
+    ) -> Result<Self::Result2, Self::Error> {
+        call_metamethod!(ctx, MetaName::GetItem, self, key);
+        Ok(MetaResult::Value(self.get(ctx, key)))
+    }
+
+    fn meta_set_attr(
+        &self,
+        ctx: Context<'gc>,
+        key: Self::Value,
+        value: Self::Value,
+    ) -> Result<Self::Result3, Self::Error> {
+        call_metamethod!(ctx, MetaName::SetAttr, self, key, value);
+        self.set(ctx, key, value);
+        Ok(MetaResult::Value(Value::Null))
+    }
+
+    fn meta_set_item(
+        &self,
+        ctx: Context<'gc>,
+        key: Self::Value,
+        value: Self::Value,
+    ) -> Result<Self::Result3, Self::Error> {
+        call_metamethod!(ctx, MetaName::SetItem, self, key, value);
+        self.set(ctx, key, value);
+        Ok(MetaResult::Value(Value::Null))
     }
 }
 

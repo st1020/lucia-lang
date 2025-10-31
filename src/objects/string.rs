@@ -1,10 +1,17 @@
 use std::{borrow::Borrow, collections::HashSet, fmt, ops};
 
-use compact_str::CompactString;
+use compact_str::{CompactString, ToCompactString, format_compact};
 use gc_arena::{Collect, Gc, Mutation, static_collect};
 use rustc_hash::FxBuildHasher;
 
-use crate::{Context, compiler::interning::StringInterner, objects::define_object};
+use crate::{
+    Context,
+    compiler::{
+        interning::StringInterner,
+        value::{MetaMethod, MetaName},
+    },
+    objects::{IntoMetaResult, Value, define_object, value_metamethod},
+};
 
 define_object!(Str, StrInner, inner);
 
@@ -81,4 +88,54 @@ unsafe impl Collect for StrInterner<'_> {
     fn trace(&self, cc: &gc_arena::Collection) {
         self.interner.trace(cc)
     }
+}
+
+impl<'gc> MetaMethod<Context<'gc>> for Str<'gc> {
+    value_metamethod!(Str);
+
+    fn meta_len(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
+        Ok((self.len() as i64).into_meta_result(ctx))
+    }
+
+    fn meta_bool(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
+        Ok((!self.is_empty()).into_meta_result(ctx))
+    }
+
+    fn meta_int(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
+        Ok(self
+            .parse::<i64>()
+            .map_err(|_| self.meta_error(ctx, MetaName::Int, vec![]))?
+            .into_meta_result(ctx))
+    }
+
+    fn meta_float(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
+        Ok(self
+            .parse::<f64>()
+            .map_err(|_| self.meta_error(ctx, MetaName::Float, vec![]))?
+            .into_meta_result(ctx))
+    }
+
+    value_metamethod!(Str, str);
+
+    fn meta_repr(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
+        Ok(format_compact!("{:?}", self.as_ref()).into_meta_result(ctx))
+    }
+
+    fn meta_add(
+        &self,
+        ctx: Context<'gc>,
+        other: Self::Value,
+    ) -> Result<Self::Result2, Self::Error> {
+        if let Value::Str(other) = other {
+            Ok((self.to_compact_string() + other.as_ref()).into_meta_result(ctx))
+        } else {
+            Err(self.meta_error(ctx, MetaName::Add, vec![other]))
+        }
+    }
+
+    value_metamethod!(Str, eq_ne);
+    value_metamethod!(Str, compare, Gt, meta_gt, gt);
+    value_metamethod!(Str, compare, Ge, meta_ge, ge);
+    value_metamethod!(Str, compare, Lt, meta_lt, lt);
+    value_metamethod!(Str, compare, Le, meta_le, le);
 }
