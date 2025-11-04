@@ -43,10 +43,15 @@ impl fmt::Display for Error<'_> {
                         writeln!(f, "[{i}] lucia frame")?;
                         writeln!(f, "{}", frame.indent(4))?;
                     }
-                    Frame::Callback(callback, args) => {
+                    Frame::Callback { callback, args } => {
                         writeln!(f, "[{i}] callback frame")?;
                         writeln!(f, "    callback: {callback:?}")?;
                         writeln!(f, "    args: {}", args.iter().join(", "))?;
+                    }
+                    Frame::CallbackThen { callback, arg } => {
+                        writeln!(f, "[{i}] callback-then frame")?;
+                        writeln!(f, "    callback: {callback:?}")?;
+                        writeln!(f, "    arg: {arg}")?;
                     }
                 }
             }

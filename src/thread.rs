@@ -84,13 +84,57 @@ impl<'gc> Thread<'gc> {
             let mut state: RefMut<'_, ThreadState<'gc>> = self.into_inner().borrow_mut(&ctx);
             let state = &mut *state;
             match state.frames.pop().expect("no frame to step") {
-                Frame::Callback(callback, args) => {
+                Frame::Callback { callback, args } => {
                     fuel.consume(Self::FUEL_PER_CALLBACK);
                     match callback.call(ctx, &args) {
                         Ok(CallbackReturn::Return(v)) => state.return_to(ctx, v),
-                        Ok(CallbackReturn::TailCall(f, args)) => {
+                        Ok(CallbackReturn::TailCall(function, args)) => {
                             if let Err(e) =
-                                state.call_function(ctx, f, args, CallStatusKind::Normal)
+                                state.call_function(ctx, function, args, CallStatusKind::Normal)
+                            {
+                                state.return_error(ctx, e);
+                            }
+                        }
+                        Ok(CallbackReturn::Call {
+                            function,
+                            args,
+                            then,
+                        }) => {
+                            state.frames.push(Frame::CallbackThen {
+                                callback: then,
+                                arg: Value::Null,
+                            });
+                            if let Err(e) =
+                                state.call_function(ctx, function, args, CallStatusKind::Normal)
+                            {
+                                state.return_error(ctx, e);
+                            }
+                        }
+                        Err(e) => state.return_error(ctx, e),
+                    }
+                }
+                Frame::CallbackThen { callback, arg } => {
+                    fuel.consume(Self::FUEL_PER_CALLBACK);
+                    match callback.call(ctx, &[arg]) {
+                        Ok(CallbackReturn::Return(v)) => state.return_to(ctx, v),
+                        Ok(CallbackReturn::TailCall(function, args)) => {
+                            if let Err(e) =
+                                state.call_function(ctx, function, args, CallStatusKind::Normal)
+                            {
+                                state.return_error(ctx, e);
+                            }
+                        }
+                        Ok(CallbackReturn::Call {
+                            function,
+                            args,
+                            then,
+                        }) => {
+                            state.frames.push(Frame::CallbackThen {
+                                callback: then,
+                                arg: Value::Null,
+                            });
+                            if let Err(e) =
+                                state.call_function(ctx, function, args, CallStatusKind::Normal)
                             {
                                 state.return_error(ctx, e);
                             }
@@ -166,7 +210,7 @@ impl<'gc> ThreadState<'gc> {
         }
         self.frames.push(match function {
             Function::Closure(closure) => Frame::Lucia(LuciaFrame::new(ctx, closure, args)?),
-            Function::Callback(callback) => Frame::Callback(callback, args),
+            Function::Callback(callback) => Frame::Callback { callback, args },
         });
         Ok(())
     }
@@ -179,7 +223,7 @@ impl<'gc> ThreadState<'gc> {
     ) -> Result<(), Error<'gc>> {
         *self.frames.last_mut().expect("top frame is not lua frame") = match function {
             Function::Closure(closure) => Frame::Lucia(LuciaFrame::new(ctx, closure, args)?),
-            Function::Callback(callback) => Frame::Callback(callback, args),
+            Function::Callback(callback) => Frame::Callback { callback, args },
         };
         Ok(())
     }
@@ -198,6 +242,9 @@ impl<'gc> ThreadState<'gc> {
                 CallStatusKind::IgnoreReturn => (),
                 _ => stack.push(return_value),
             },
+            Some(Frame::CallbackThen { callback: _, arg }) => {
+                *arg = return_value;
+            }
             None => self.return_value = return_value,
             _ => panic!("lua frame must be above a lua frame"),
         }

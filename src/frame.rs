@@ -31,7 +31,15 @@ pub enum Frame<'gc> {
     // An running Lucia frame.
     Lucia(LuciaFrame<'gc>),
     // A callback that has been queued but not called yet.
-    Callback(Callback<'gc>, Vec<Value<'gc>>),
+    Callback {
+        callback: Callback<'gc>,
+        args: Vec<Value<'gc>>,
+    },
+    // A callback that will be called after the frame above it returns.
+    CallbackThen {
+        callback: Callback<'gc>,
+        arg: Value<'gc>,
+    },
 }
 
 #[derive(Debug, Clone, Collect)]

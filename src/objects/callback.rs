@@ -13,6 +13,11 @@ pub type CallbackResult<'gc> = Result<CallbackReturn<'gc>, Error<'gc>>;
 pub enum CallbackReturn<'gc> {
     Return(Value<'gc>),
     TailCall(Function<'gc>, Vec<Value<'gc>>),
+    Call {
+        function: Function<'gc>,
+        args: Vec<Value<'gc>>,
+        then: Callback<'gc>,
+    },
 }
 
 impl<'gc, const N: usize> From<MetaResult<'gc, N>> for CallbackReturn<'gc> {
