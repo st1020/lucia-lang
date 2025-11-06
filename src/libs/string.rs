@@ -31,25 +31,25 @@ pub fn string_lib<'gc>(ctx: Context<'gc>) -> Table<'gc> {
     t.set(
         ctx,
         "contains",
-        Callback::from(&ctx, |s1: Str<'gc>, s2: Str<'gc>| s1.contains(s2.as_ref())),
+        Callback::from(&ctx, |s1: Str<'gc>, s2: Str<'gc>| s1.contains(s2.as_str())),
     );
     t.set(
         ctx,
         "starts_with",
         Callback::from(&ctx, |s1: Str<'gc>, s2: Str<'gc>| {
-            s1.starts_with(s2.as_ref())
+            s1.starts_with(s2.as_str())
         }),
     );
     t.set(
         ctx,
         "ends_with",
-        Callback::from(&ctx, |s1: Str<'gc>, s2: Str<'gc>| s1.ends_with(s2.as_ref())),
+        Callback::from(&ctx, |s1: Str<'gc>, s2: Str<'gc>| s1.ends_with(s2.as_str())),
     );
     t.set(
         ctx,
         "find",
         Callback::from(&ctx, |s1: Str<'gc>, s2: Str<'gc>| {
-            (s1.find(s2.as_ref())).map(|x| Value::Int(x.try_into().unwrap()))
+            (s1.find(s2.as_str())).map(|x| Value::Int(x.try_into().unwrap()))
         }),
     );
     t.set(
@@ -57,7 +57,7 @@ pub fn string_lib<'gc>(ctx: Context<'gc>) -> Table<'gc> {
         "split",
         Callback::from(&ctx, |ctx: Context<'gc>, s: Str<'gc>, pat: Str<'gc>| {
             TableEntries::from_iter(
-                s.split(pat.as_ref())
+                s.split(pat.as_str())
                     .map(|x| x.to_compact_string().into_value(ctx)),
             )
         }),
@@ -69,7 +69,7 @@ pub fn string_lib<'gc>(ctx: Context<'gc>) -> Table<'gc> {
             &ctx,
             |ctx: Context<'gc>, s: Str<'gc>, pat: Str<'gc>, count: usize| {
                 TableEntries::from_iter(
-                    s.splitn(count, pat.as_ref())
+                    s.splitn(count, pat.as_str())
                         .map(|x| x.to_compact_string().into_value(ctx)),
                 )
             },
@@ -94,14 +94,14 @@ pub fn string_lib<'gc>(ctx: Context<'gc>) -> Table<'gc> {
         ctx,
         "strip_prefix",
         Callback::from(&ctx, |s1: Str<'gc>, s2: Str<'gc>| {
-            s1.strip_prefix(s2.as_ref()).map(|x| x.to_compact_string())
+            s1.strip_prefix(s2.as_str()).map(|x| x.to_compact_string())
         }),
     );
     t.set(
         ctx,
         "strip_suffix",
         Callback::from(&ctx, |s1: Str<'gc>, s2: Str<'gc>| {
-            s1.strip_suffix(s2.as_ref()).map(|x| x.to_compact_string())
+            s1.strip_suffix(s2.as_str()).map(|x| x.to_compact_string())
         }),
     );
     t.set(
@@ -113,7 +113,7 @@ pub fn string_lib<'gc>(ctx: Context<'gc>) -> Table<'gc> {
         ctx,
         "replace",
         Callback::from(&ctx, |s: Str<'gc>, from: Str<'gc>, to: Str<'gc>| {
-            s.replace(from.as_ref(), to.as_ref()).to_compact_string()
+            s.replace(from.as_str(), to.as_str()).to_compact_string()
         }),
     );
     t.set(
@@ -122,7 +122,7 @@ pub fn string_lib<'gc>(ctx: Context<'gc>) -> Table<'gc> {
         Callback::from(
             &ctx,
             |s: Str<'gc>, from: Str<'gc>, to: Str<'gc>, count: usize| {
-                s.replacen(from.as_ref(), to.as_ref(), count)
+                s.replacen(from.as_str(), to.as_str(), count)
                     .to_compact_string()
             },
         ),

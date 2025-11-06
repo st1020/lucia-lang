@@ -35,13 +35,13 @@ impl_display_repr!(
 
 impl Repr for Str<'_> {
     fn repr(&self) -> CompactString {
-        format_compact!("{:?}", self.as_ref())
+        format_compact!("{:?}", self)
     }
 }
 
 impl Repr for Bytes<'_> {
     fn repr(&self) -> CompactString {
-        format_compact!("b\"{}\"", self.as_ref().escape_ascii())
+        format_compact!("b\"{}\"", self.escape_ascii())
     }
 }
 

@@ -1,10 +1,11 @@
 use std::fmt;
 
+use derive_more::From;
 use gc_arena::{Collect, DynamicRoot, DynamicRootSet, Mutation, Rootable};
 
 use crate::{
     objects::{Bytes, Callback, Closure, Function, RuntimeCode, Str, Table, UserData, Value},
-    utils::{Float, impl_enum_from},
+    utils::Float,
 };
 
 /// A collection of stashed values.
@@ -98,16 +99,11 @@ define_stash!(Callback, StashedCallback);
 define_stash!(UserData, StashedUserData);
 define_stash!(RuntimeCode, StashedRuntimeCode);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, From)]
 pub enum StashedFunction {
     Closure(StashedClosure),
     Callback(StashedCallback),
 }
-
-impl_enum_from!(StashedFunction, {
-    Closure(StashedClosure),
-    Callback(StashedCallback),
-});
 
 impl<'gc> Stashable<'gc> for Function<'gc> {
     type Stashed = StashedFunction;
@@ -131,7 +127,7 @@ impl Fetchable for StashedFunction {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, From)]
 pub enum StashedValue {
     Null,
     Bool(bool),
@@ -143,17 +139,6 @@ pub enum StashedValue {
     Function(StashedFunction),
     UserData(StashedUserData),
 }
-
-impl_enum_from!(StashedValue, {
-    Bool(bool),
-    Int(i64),
-    Float(Float),
-    Str(StashedStr),
-    Bytes(StashedBytes),
-    Table(StashedTable),
-    Function(StashedFunction),
-    UserData(StashedUserData),
-});
 
 impl<'gc> Stashable<'gc> for Value<'gc> {
     type Stashed = StashedValue;

@@ -18,17 +18,30 @@ macro_rules! define_object {
             type Target = $inner_name;
 
             fn deref(&self) -> &$inner_name {
-                &self.0
+                &self.into_inner().as_ref()
+            }
+        }
+
+        impl<'gc> AsRef<$inner_name> for $name<'gc> {
+            fn as_ref(&self) -> &$inner_name {
+                self.into_inner().as_ref()
+            }
+        }
+
+        impl<'gc> std::borrow::Borrow<$inner_name> for $name<'gc> {
+            fn borrow(&self) -> &$inner_name {
+                self.into_inner().as_ref()
             }
         }
     };
 
-    ($name:ident, $inner_name:ty, inner) => {
+    ($name:ident, $inner_name:ty, inner $(,)? $($ty:ty),* $(,)?) => {
         define_object!($name, $inner_name);
 
         impl<'gc> PartialEq for $name<'gc> {
             fn eq(&self, other: &Self) -> bool {
-                Gc::ptr_eq(self.0, other.0) || self.0 == other.0
+                Gc::ptr_eq(self.into_inner(), other.into_inner())
+                    || self.into_inner() == other.into_inner()
             }
         }
 
@@ -36,13 +49,31 @@ macro_rules! define_object {
 
         impl<'gc> std::hash::Hash for $name<'gc> {
             fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-                (*self.0).hash(state);
+                self.into_inner().hash(state);
             }
         }
 
         impl std::fmt::Display for $name<'_> {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                write!(f, "{}", self.0)
+                self.into_inner().fmt(f)
+            }
+        }
+
+        $(
+            impl<'gc> AsRef<$ty> for $name<'gc> {
+                fn as_ref(&self) -> &$ty {
+                    self.into_inner().as_ref().as_ref()
+                }
+            }
+        )*
+    };
+
+    ($name:ident, $inner_name:ty, $wrapped_ty:ty, inner $(,)? $($ty:ty),*) => {
+        define_object!($name, $inner_name, inner, $wrapped_ty, $($ty),*);
+
+        impl<'gc> std::borrow::Borrow<$wrapped_ty> for $name<'gc> {
+            fn borrow(&self) -> &$wrapped_ty {
+                self.into_inner().as_ref()
             }
         }
     };
@@ -52,7 +83,7 @@ macro_rules! define_object {
 
         impl<'gc> PartialEq for $name<'gc> {
             fn eq(&self, other: &Self) -> bool {
-                Gc::ptr_eq(self.0, other.0)
+                Gc::ptr_eq(self.into_inner(), other.into_inner())
             }
         }
 
@@ -60,7 +91,7 @@ macro_rules! define_object {
 
         impl<'gc> std::hash::Hash for $name<'gc> {
             fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-                Gc::as_ptr(self.0).hash(state);
+                Gc::as_ptr(self.into_inner()).hash(state);
             }
         }
 
@@ -72,7 +103,7 @@ macro_rules! define_object {
     };
 }
 
-macro_rules! value_metamethod {
+macro_rules! impl_metamethod {
     ($type:ident) => {
         type Value = $crate::objects::Value<'gc>;
         type Error = $crate::errors::Error<'gc>;
@@ -251,4 +282,4 @@ macro_rules! call_metamethod_error {
 pub(crate) use call_metamethod;
 pub(crate) use call_metamethod_error;
 pub(crate) use define_object;
-pub(crate) use value_metamethod;
+pub(crate) use impl_metamethod;

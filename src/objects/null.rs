@@ -1,11 +1,11 @@
 use crate::{
     Context,
     compiler::value::MetaMethod,
-    objects::{IntoMetaResult, Value, value_metamethod},
+    objects::{IntoMetaResult, Value, impl_metamethod},
 };
 
 impl<'gc> MetaMethod<Context<'gc>> for () {
-    value_metamethod!(Null);
+    impl_metamethod!(Null);
 
     fn meta_bool(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
         Ok(false.into_meta_result(ctx))

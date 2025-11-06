@@ -3,27 +3,22 @@ use std::{
     ops::{Bound, RangeBounds},
 };
 
+use derive_more::{From, IsVariant, TryInto};
 use gc_arena::{Collect, Gc};
 
 use crate::{
     Context,
     compiler::value::MetaMethod,
-    objects::{Callback, Closure, IntoMetaResult, value_metamethod},
-    utils::impl_enum_from,
+    objects::{Callback, Closure, IntoMetaResult, impl_metamethod},
 };
 
 /// Enum of lucia function (Closure / Callback).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Collect)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Collect, From, TryInto, IsVariant)]
 #[collect(no_drop)]
 pub enum Function<'gc> {
     Closure(Closure<'gc>),
     Callback(Callback<'gc>),
 }
-
-impl_enum_from!(Function<'gc>, {
-    Closure(Closure<'gc>),
-    Callback(Callback<'gc>),
-});
 
 impl Function<'_> {
     pub fn const_ptr(&self) -> *const () {
@@ -41,7 +36,7 @@ impl fmt::Display for Function<'_> {
 }
 
 impl<'gc> MetaMethod<Context<'gc>> for Function<'gc> {
-    value_metamethod!(Function);
+    impl_metamethod!(Function);
 
     fn meta_call(&self, _ctx: Context<'gc>) -> Result<Self::ResultCall, Self::Error> {
         Ok(*self)
@@ -51,7 +46,7 @@ impl<'gc> MetaMethod<Context<'gc>> for Function<'gc> {
         Ok(*self)
     }
 
-    value_metamethod!(Function, eq_ne);
+    impl_metamethod!(Function, eq_ne);
 }
 
 /// The required number of arguments when calling a function.

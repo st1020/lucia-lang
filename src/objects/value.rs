@@ -1,6 +1,7 @@
 use std::{fmt, num::NonZeroUsize};
 
 use compact_str::{CompactString, ToCompactString};
+use derive_more::{Display, From, IsVariant, TryInto};
 use gc_arena::{Collect, Gc, static_collect};
 
 use crate::{
@@ -8,19 +9,36 @@ use crate::{
     compiler::value::{MetaMethod, MetaName},
     errors::{Error, RuntimeError},
     objects::{Bytes, Function, IntoValue, Str, Table, UserData},
-    utils::{Float, impl_enum_from},
+    utils::Float,
 };
 
 pub use crate::compiler::value::ValueType;
 
 static_collect!(ValueType);
 
+impl<'gc> IntoValue<'gc> for ValueType {
+    fn into_value(self, ctx: Context<'gc>) -> Value<'gc> {
+        self.name().into_value(ctx)
+    }
+}
+
+static_collect!(MetaName);
+
+impl<'gc> IntoValue<'gc> for MetaName {
+    fn into_value(self, ctx: Context<'gc>) -> Value<'gc> {
+        self.name().into_value(ctx)
+    }
+}
+
 /// Enum of all lucia values.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Collect)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Collect, From, TryInto, Display, IsVariant,
+)]
 #[collect(no_drop)]
 pub enum Value<'gc> {
     /// `null` - A null value.
     #[default]
+    #[display("null")]
     Null,
     /// `bool` - A `true` / `false` value.
     Bool(bool),
@@ -45,17 +63,6 @@ impl From<()> for Value<'_> {
         Value::Null
     }
 }
-
-impl_enum_from!(Value<'gc>, {
-    Bool(bool),
-    Int(i64),
-    Float(Float),
-    Str(Str<'gc>),
-    Bytes(Bytes<'gc>),
-    Table(Table<'gc>),
-    Function(Function<'gc>),
-    UserData(UserData<'gc>),
-});
 
 impl<'gc> Value<'gc> {
     pub fn metatable(self) -> Option<Table<'gc>> {
@@ -100,34 +107,6 @@ impl<'gc> Value<'gc> {
             Self::Function(_) => ValueType::Function,
             Self::UserData(_) => ValueType::UserData,
         }
-    }
-
-    pub fn is_null(self) -> bool {
-        matches!(self, Self::Null)
-    }
-}
-
-impl fmt::Display for Value<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Null => write!(f, "null"),
-            Self::Bool(v) => write!(f, "{v}"),
-            Self::Int(v) => write!(f, "{v}"),
-            Self::Float(v) => write!(f, "{v}"),
-            Self::Str(v) => write!(f, "{v}"),
-            Self::Bytes(v) => write!(f, "{v}"),
-            Self::Table(v) => write!(f, "{v}"),
-            Self::Function(v) => write!(f, "{v}"),
-            Self::UserData(v) => write!(f, "{v}"),
-        }
-    }
-}
-
-static_collect!(MetaName);
-
-impl<'gc> IntoValue<'gc> for MetaName {
-    fn into_value(self, ctx: Context<'gc>) -> Value<'gc> {
-        self.name().into_value(ctx)
     }
 }
 

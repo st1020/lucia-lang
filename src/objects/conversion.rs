@@ -333,7 +333,7 @@ impl<'gc> FromValue<'gc> for CompactString {
 impl<'gc> FromValue<'gc> for Vec<u8> {
     fn from_value(value: Value<'gc>) -> Result<Self, Error<'gc>> {
         if let Value::Bytes(v) = value {
-            Ok(v.as_ref().to_vec())
+            Ok(v.to_vec())
         } else {
             Err(unexpected_type_error!(ValueType::Bytes, value))
         }

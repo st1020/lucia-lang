@@ -7,7 +7,7 @@ use crate::{
     compiler::value::{MetaMethod, MetaName},
     objects::{
         Callback, CallbackReturn, Equal, Function, IntoMetaResult, IntoValue, MetaResult, Repr,
-        Value, call_metamethod, call_metamethod_error, define_object, value_metamethod,
+        Value, call_metamethod, call_metamethod_error, define_object, impl_metamethod,
     },
 };
 
@@ -112,7 +112,7 @@ impl<'gc> Table<'gc> {
 }
 
 impl<'gc> MetaMethod<Context<'gc>> for Table<'gc> {
-    value_metamethod!(Table);
+    impl_metamethod!(Table);
 
     fn meta_call(&self, ctx: Context<'gc>) -> Result<Self::ResultCall, Self::Error> {
         if let Some(metatable) = self.metatable() {
