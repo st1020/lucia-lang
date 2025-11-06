@@ -18,7 +18,7 @@ rustc-literal-escaper = "0.0.5"
 # Data Structure
 itertools = "0.14"
 derive_more = { version = "2", features = ["full"] }
-oxc_index = "3"
+oxc_index = { version = "4", features = ["nonmax"] }
 sorted-vec = "0.8"
 indexmap = "2"
 rustc-hash = "2"
