@@ -54,7 +54,7 @@ impl<S: AsRef<str>> fmt::Display for TyKind<S> {
             } => {
                 let params_str = params
                     .iter()
-                    .map(|param| param.to_string())
+                    .map(ToString::to_string)
                     .chain(variadic.iter().map(|variadic| format!("...{variadic}")))
                     .join(", ");
                 let returns_str = returns

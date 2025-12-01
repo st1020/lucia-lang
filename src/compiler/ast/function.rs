@@ -28,7 +28,7 @@ impl<S: AsRef<str>> fmt::Display for Function<S> {
         let params_str = self
             .params
             .iter()
-            .map(|param| param.to_string())
+            .map(ToString::to_string)
             .chain(
                 self.variadic
                     .iter()

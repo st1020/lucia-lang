@@ -19,20 +19,20 @@ macro_rules! impl_int_into {
         $(
             impl<'gc> From<$i> for Value<'gc> {
                 fn from(v: $i) -> Value<'gc> {
-                    Value::Int(v.into())
+                    Value::Int(v.try_into().unwrap_or(i64::MAX))
                 }
             }
         )*
     };
 }
-impl_int_into!(i16, u16, i32, u32);
+impl_int_into!(i16, u16, i32, u32, u64, isize, usize);
 
 macro_rules! impl_float_into {
     ($($i:ty),* $(,)?) => {
         $(
             impl<'gc> From<$i> for Value<'gc> {
                 fn from(v: $i) -> Value<'gc> {
-                    Value::Float(Float(v as f64))
+                    Value::Float(Float(f64::from(v)))
                 }
             }
         )*
@@ -78,6 +78,9 @@ impl_into!(
     i32,
     u32,
     i64,
+    u64,
+    isize,
+    usize,
     f32,
     f64,
     Float,
@@ -155,7 +158,10 @@ impl<'gc> IntoValue<'gc> for TableEntries<'gc> {
 
 impl<'gc, T: IntoValue<'gc>> IntoValue<'gc> for Vec<T> {
     fn into_value(self, ctx: Context<'gc>) -> Value<'gc> {
-        TableEntries::from_iter(self.into_iter().map(|x| x.into_value(ctx))).into_value(ctx)
+        self.into_iter()
+            .map(|x| x.into_value(ctx))
+            .collect::<TableEntries>()
+            .into_value(ctx)
     }
 }
 
@@ -164,7 +170,10 @@ where
     &'a T: IntoValue<'gc>,
 {
     fn into_value(self, ctx: Context<'gc>) -> Value<'gc> {
-        TableEntries::from_iter(self.iter().map(|x| x.into_value(ctx))).into_value(ctx)
+        self.iter()
+            .map(|x| x.into_value(ctx))
+            .collect::<TableEntries>()
+            .into_value(ctx)
     }
 }
 
@@ -173,7 +182,10 @@ where
     T: IntoValue<'gc>,
 {
     fn into_value(self, ctx: Context<'gc>) -> Value<'gc> {
-        TableEntries::from_iter(self.into_iter().map(|x| x.into_value(ctx))).into_value(ctx)
+        self.into_iter()
+            .map(|x| x.into_value(ctx))
+            .collect::<TableEntries>()
+            .into_value(ctx)
     }
 }
 
@@ -183,11 +195,10 @@ where
     V: IntoValue<'gc>,
 {
     fn into_value(self, ctx: Context<'gc>) -> Value<'gc> {
-        TableEntries::from_iter(
-            self.into_iter()
-                .map(|(k, v)| (k.into_value(ctx), v.into_value(ctx))),
-        )
-        .into_value(ctx)
+        self.into_iter()
+            .map(|(k, v)| (k.into_value(ctx), v.into_value(ctx)))
+            .collect::<TableEntries>()
+            .into_value(ctx)
     }
 }
 
@@ -197,11 +208,10 @@ where
     &'a V: IntoValue<'gc>,
 {
     fn into_value(self, ctx: Context<'gc>) -> Value<'gc> {
-        TableEntries::from_iter(
-            self.iter()
-                .map(|(k, v)| (k.into_value(ctx), v.into_value(ctx))),
-        )
-        .into_value(ctx)
+        self.iter()
+            .map(|(k, v)| (k.into_value(ctx), v.into_value(ctx)))
+            .collect::<TableEntries>()
+            .into_value(ctx)
     }
 }
 
@@ -211,11 +221,10 @@ where
     V: IntoValue<'gc>,
 {
     fn into_value(self, ctx: Context<'gc>) -> Value<'gc> {
-        TableEntries::from_iter(
-            self.into_iter()
-                .map(|(k, v)| (k.into_value(ctx), v.into_value(ctx))),
-        )
-        .into_value(ctx)
+        self.into_iter()
+            .map(|(k, v)| (k.into_value(ctx), v.into_value(ctx)))
+            .collect::<TableEntries>()
+            .into_value(ctx)
     }
 }
 
@@ -306,6 +315,7 @@ impl_int_from!(i16, u16, i32, u32, u64, isize, usize);
 macro_rules! impl_float_from {
     ($($f:ty),* $(,)?) => {
         $(
+            #[allow(clippy::cast_possible_truncation, clippy::allow_attributes)]
             impl<'gc> FromValue<'gc> for $f {
                 fn from_value(value: Value<'gc>) -> Result<Self, Error<'gc>> {
                     if let Value::Float(v) = value {

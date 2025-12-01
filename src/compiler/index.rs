@@ -1,5 +1,7 @@
 //! The index types used in the compiler.
 
+#![expect(clippy::integer_division_remainder_used, clippy::same_name_method)]
+
 use oxc_index::define_nonmax_u32_index_type;
 
 define_nonmax_u32_index_type! {

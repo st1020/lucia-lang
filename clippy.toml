@@ -1,0 +1,46 @@
+allowed-wildcard-imports = ["super"]
+
+module-item-order-groupings = [
+    [
+        "modules",
+        [
+            "extern_crate",
+            "mod",
+            "foreign_mod",
+        ],
+    ],
+    [
+        "use",
+        [
+            "use",
+        ],
+    ],
+    [
+        "global_asm",
+        [
+            "global_asm",
+        ],
+    ],
+    [
+        "UPPER_SNAKE_CASE",
+        [
+            "static",
+            "const",
+        ],
+    ],
+    [
+        "everything_else",
+        [
+            "macro",
+            "ty_alias",
+            "enum",
+            "struct",
+            "union",
+            "trait",
+            "trait_alias",
+            "impl",
+            "fn",
+        ],
+    ],
+]
+source-item-ordering = ["module"]

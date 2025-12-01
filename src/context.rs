@@ -67,7 +67,7 @@ pub struct Lucia {
 
 impl Lucia {
     pub fn empty() -> Self {
-        #[allow(clippy::redundant_closure)]
+        #[expect(clippy::redundant_closure)]
         let arena = Arena::<Rootable![State<'_>]>::new(|mc| State::new(mc));
         Lucia { arena }
     }
@@ -86,7 +86,7 @@ impl Lucia {
                 .libs
                 .set(ctx, "std::string", libs::string_lib(ctx));
             ctx.state.libs.set(ctx, "std::table", libs::table_lib(ctx));
-        })
+        });
     }
 
     pub fn gc_collect(&mut self) {

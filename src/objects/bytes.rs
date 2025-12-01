@@ -29,7 +29,7 @@ impl<'gc> MetaMethod<Context<'gc>> for Bytes<'gc> {
     impl_metamethod!(Bytes);
 
     fn meta_len(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
-        Ok((self.len() as i64).into_meta_result(ctx))
+        Ok(self.len().into_meta_result(ctx))
     }
 
     impl_metamethod!(Bytes, str);

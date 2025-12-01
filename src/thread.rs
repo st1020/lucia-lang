@@ -82,7 +82,6 @@ impl<'gc> Thread<'gc> {
             }
 
             let mut state: RefMut<'_, ThreadState<'gc>> = self.into_inner().borrow_mut(&ctx);
-            let state = &mut *state;
             match state.frames.pop().expect("no frame to step") {
                 Frame::Callback { callback, args } => {
                     fuel.consume(Self::FUEL_PER_CALLBACK);
@@ -145,7 +144,9 @@ impl<'gc> Thread<'gc> {
                 frame @ Frame::Lucia { .. } => {
                     state.frames.push(frame);
                     match state.run_vm(ctx, Self::VM_GRANULARITY) {
-                        Ok(instructions_run) => fuel.consume(instructions_run.try_into().unwrap()),
+                        Ok(instructions_run) => {
+                            fuel.consume(instructions_run.try_into().unwrap_or(i32::MAX));
+                        }
                         Err(e) => state.return_error(ctx, e),
                     }
                 }
@@ -165,6 +166,7 @@ impl<'gc> Thread<'gc> {
         expected: ThreadMode,
     ) -> Result<RefMut<'a, ThreadState<'gc>>, RuntimeError> {
         assert!(expected != ThreadMode::Running);
+        #[expect(clippy::map_err_ignore)]
         let state = self
             .0
             .try_borrow_mut(mc)
@@ -174,10 +176,10 @@ impl<'gc> Thread<'gc> {
             })?;
 
         let found = state.mode();
-        if found != expected {
-            Err(RuntimeError::BadThreadMode { expected, found })
-        } else {
+        if found == expected {
             Ok(state)
+        } else {
+            Err(RuntimeError::BadThreadMode { expected, found })
         }
     }
 }
@@ -235,12 +237,14 @@ impl<'gc> ThreadState<'gc> {
             })) => match call_status {
                 CallStatusKind::Try => {
                     let table = Table::new(&ctx);
-                    table.set(ctx, 0, return_value);
-                    table.set(ctx, 1, Value::Null);
+                    table.set(ctx, 0_i64, return_value);
+                    table.set(ctx, 1_i64, Value::Null);
                     stack.push(table.into_value(ctx));
                 }
                 CallStatusKind::IgnoreReturn => (),
-                _ => stack.push(return_value),
+                CallStatusKind::Normal | CallStatusKind::TryOption | CallStatusKind::TryPanic => {
+                    stack.push(return_value);
+                }
             },
             Some(Frame::CallbackThen { callback: _, arg }) => {
                 *arg = return_value;
@@ -269,10 +273,10 @@ impl<'gc> ThreadState<'gc> {
                         CallStatusKind::Normal | CallStatusKind::IgnoreReturn => (),
                         CallStatusKind::Try => {
                             let table = Table::new(&ctx);
-                            table.set(ctx, 0, Value::Null);
+                            table.set(ctx, 0_i64, Value::Null);
                             table.set(
                                 ctx,
-                                1,
+                                1_i64,
                                 if let ErrorKind::LuciaError(LuciaError::Error(v)) = e.kind {
                                     v
                                 } else {

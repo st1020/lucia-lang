@@ -12,7 +12,7 @@ impl<'gc> MetaMethod<Context<'gc>> for bool {
     }
 
     fn meta_int(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
-        Ok((if *self { 1 } else { 0 }).into_meta_result(ctx))
+        Ok(i32::from(*self).into_meta_result(ctx))
     }
 
     fn meta_float(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {

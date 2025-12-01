@@ -57,7 +57,7 @@ impl Repr for Table<'_> {
         while let Some(current) = stack.pop() {
             match current {
                 ValueOrStr::Value(Value::Table(t)) => {
-                    let id = Gc::as_ptr(t.into_inner()) as *const ();
+                    let id = Gc::as_ptr(t.into_inner()).cast::<()>();
                     if visited.contains(&id) {
                         result.push_str("<table>");
                         continue;

@@ -14,6 +14,7 @@ impl<'gc> MetaMethod<Context<'gc>> for Float {
         Ok((self.0 != 0.0).into_meta_result(ctx))
     }
 
+    #[expect(clippy::as_conversions, clippy::cast_possible_truncation)]
     fn meta_int(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
         Ok((self.0 as i64).into_meta_result(ctx))
     }

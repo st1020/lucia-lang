@@ -66,12 +66,12 @@ struct Value<M, V> {
     value: V,
 }
 
-impl<'gc, M> fmt::Debug for Any<'gc, M>
+impl<M> fmt::Debug for Any<'_, M>
 where
     M: fmt::Debug,
 {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.debug_struct("Any")
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("Any")
             .field("data", &Gc::as_ptr(self.0))
             .field("metadata", self.metadata())
             .field("type_id", &(self.type_id()))
@@ -79,23 +79,23 @@ where
     }
 }
 
-impl<'gc, M> PartialEq for Any<'gc, M> {
+impl<M> PartialEq for Any<'_, M> {
     fn eq(&self, other: &Self) -> bool {
         Gc::ptr_eq(self.0, other.0)
     }
 }
 
-impl<'gc, M> Eq for Any<'gc, M> {}
+impl<M> Eq for Any<'_, M> {}
 
-impl<'gc, M> Hash for Any<'gc, M> {
+impl<M> Hash for Any<'_, M> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        Gc::as_ptr(self.0).hash(state)
+        Gc::as_ptr(self.0).hash(state);
     }
 }
 
-impl<'gc, M> Copy for Any<'gc, M> {}
+impl<M> Copy for Any<'_, M> {}
 
-impl<'gc, M> Clone for Any<'gc, M> {
+impl<M> Clone for Any<'_, M> {
     fn clone(&self) -> Self {
         *self
     }
@@ -165,12 +165,11 @@ impl<'gc, M> Any<'gc, M> {
         R: for<'b> Rootable<'b> + 'static,
         Root<'gc, R>: Sized,
     {
-        if TypeId::of::<R>() == self.0.type_id {
+        (TypeId::of::<R>() == self.0.type_id).then(|| {
+            // SAFETY: We have checked that the stored type is indeed `Value<M, Root<'gc, R>>`.
             let ptr = unsafe { Gc::cast::<Value<M, Root<'gc, R>>>(self.0) };
-            Some(&ptr.as_ref().value)
-        } else {
-            None
-        }
+            &ptr.as_ref().value
+        })
     }
 
     pub fn downcast_write<R>(self, mc: &Mutation<'gc>) -> Option<&'gc Write<Root<'gc, R>>>
@@ -206,20 +205,20 @@ mod tests {
             #[collect(no_drop)]
             struct C<'gc>(Gc<'gc, i32>);
 
-            let any1 = Any::with_metadata::<Rootable![A<'_>]>(mc, 1i32, A(Gc::new(mc, 5)));
-            let any2 = Any::with_metadata::<Rootable![B<'_>]>(mc, 2i32, B(Gc::new(mc, 6)));
-            let any3 = Any::with_metadata::<Rootable![C<'_>]>(mc, 3i32, C(Gc::new(mc, 7)));
+            let any1 = Any::with_metadata::<Rootable![A<'_>]>(mc, 1_i32, A(Gc::new(mc, 5_i32)));
+            let any2 = Any::with_metadata::<Rootable![B<'_>]>(mc, 2_i32, B(Gc::new(mc, 6_i32)));
+            let any3 = Any::with_metadata::<Rootable![C<'_>]>(mc, 3_i32, C(Gc::new(mc, 7_i32)));
 
             assert!(any1.is::<Rootable![A<'_>]>());
             assert!(!any1.is::<Rootable![B<'_>]>());
             assert!(!any1.is::<Rootable![C<'_>]>());
 
-            assert_eq!(*any1.metadata(), 1);
-            assert_eq!(*any1.downcast::<Rootable![A<'_>]>().unwrap().0, 5);
-            assert_eq!(*any2.metadata(), 2);
-            assert_eq!(*any2.downcast::<Rootable![B<'_>]>().unwrap().0, 6);
-            assert_eq!(*any3.metadata(), 3);
-            assert_eq!(*any3.downcast::<Rootable![C<'_>]>().unwrap().0, 7);
+            assert_eq!(*any1.metadata(), 1_i32);
+            assert_eq!(*any1.downcast::<Rootable![A<'_>]>().unwrap().0, 5_i32);
+            assert_eq!(*any2.metadata(), 2_i32);
+            assert_eq!(*any2.downcast::<Rootable![B<'_>]>().unwrap().0, 6_i32);
+            assert_eq!(*any3.metadata(), 3_i32);
+            assert_eq!(*any3.downcast::<Rootable![C<'_>]>().unwrap().0, 7_i32);
 
             assert!(any1.downcast::<Rootable![B<'_>]>().is_none());
             assert!(any1.downcast::<Rootable![C<'_>]>().is_none());
@@ -227,6 +226,6 @@ mod tests {
             assert!(any2.downcast::<Rootable![C<'_>]>().is_none());
             assert!(any3.downcast::<Rootable![A<'_>]>().is_none());
             assert!(any3.downcast::<Rootable![B<'_>]>().is_none());
-        })
+        });
     }
 }

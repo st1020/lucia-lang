@@ -10,10 +10,10 @@ pub fn table_lib<'gc>(ctx: Context<'gc>) -> Table<'gc> {
     t.set(
         ctx,
         "keys",
-        Callback::from(&ctx, |ctx: Context<'gc>, t: Table<'gc>| {
+        Callback::from(&ctx, |ctx: Context<'gc>, table: Table<'gc>| {
             Callback::from_fn_with(
                 &ctx,
-                Gc::new(&ctx, RefLock::new(t.iter())),
+                Gc::new(&ctx, RefLock::new(table.iter())),
                 |iter, ctx, _args| {
                     Ok(CallbackReturn::Return(
                         iter.borrow_mut(&ctx).next().map_or(Value::Null, |(k, _)| k),
@@ -25,10 +25,10 @@ pub fn table_lib<'gc>(ctx: Context<'gc>) -> Table<'gc> {
     t.set(
         ctx,
         "values",
-        Callback::from(&ctx, |ctx: Context<'gc>, t: Table<'gc>| {
+        Callback::from(&ctx, |ctx: Context<'gc>, table: Table<'gc>| {
             Callback::from_fn_with(
                 &ctx,
-                Gc::new(&ctx, RefLock::new(t.iter())),
+                Gc::new(&ctx, RefLock::new(table.iter())),
                 |iter, ctx, _args| {
                     Ok(CallbackReturn::Return(
                         iter.borrow_mut(&ctx).next().map_or(Value::Null, |(_, v)| v),

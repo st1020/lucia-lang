@@ -63,7 +63,7 @@ impl Eq for UserData<'_> {}
 
 impl Hash for UserData<'_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.hash(state)
+        self.0.hash(state);
     }
 }
 
@@ -203,9 +203,10 @@ impl<'gc> MetaMethod<Context<'gc>> for UserData<'gc> {
 
     fn meta_call(&self, ctx: Context<'gc>) -> Result<Self::ResultCall, Self::Error> {
         if let Some(metatable) = self.metatable() {
+            #[expect(clippy::wildcard_enum_match_arm)]
             match metatable.get(ctx, MetaName::Call) {
                 Value::Function(v) => Ok(v),
-                Value::Table(v) => v.meta_call(ctx),
+                Value::Table(v) => v.meta_call(ctx), // TODO: prevent infinite recursion
                 v => Err(v.meta_error(ctx, MetaName::Call, vec![])),
             }
         } else {

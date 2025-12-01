@@ -67,7 +67,7 @@ impl fmt::Display for LuciaFrame<'_> {
                 .join(", ")
         )?;
         writeln!(f, "stack: [{}]", self.stack.iter().join(", "))?;
-        write!(f, "call_status: {:?}", self.call_status)?;
+        write!(f, "call_status: {}", self.call_status)?;
         Ok(())
     }
 }
@@ -106,11 +106,10 @@ impl<'gc> LuciaFrame<'gc> {
                         required: params_num.into(),
                         given: args.len(),
                     }));
-                } else {
-                    let t = args.split_off(params_num);
-                    stack.append(&mut args.clone());
-                    stack.push(t.into_value(ctx));
                 }
+                let t = args.split_off(params_num);
+                stack.append(&mut args.clone());
+                stack.push(t.into_value(ctx));
             }
         }
 

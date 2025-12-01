@@ -79,7 +79,7 @@ impl fmt::Display for BinOp {
 }
 
 impl BinOp {
-    pub fn precedence(&self) -> u8 {
+    pub const fn precedence(self) -> u8 {
         match self {
             BinOp::Mul | BinOp::Div | BinOp::Rem => 5,
             BinOp::Add | BinOp::Sub => 4,

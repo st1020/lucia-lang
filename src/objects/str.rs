@@ -11,6 +11,7 @@ use crate::{
         interning::StringInterner,
         value::{MetaMethod, MetaName},
     },
+    errors::{Error, RuntimeError},
     objects::{IntoMetaResult, Value, define_object, impl_metamethod},
 };
 
@@ -35,7 +36,7 @@ impl<'gc> MetaMethod<Context<'gc>> for Str<'gc> {
     impl_metamethod!(Str);
 
     fn meta_len(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
-        Ok((self.len() as i64).into_meta_result(ctx))
+        Ok(self.len().into_meta_result(ctx))
     }
 
     fn meta_bool(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
@@ -45,14 +46,22 @@ impl<'gc> MetaMethod<Context<'gc>> for Str<'gc> {
     fn meta_int(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
         Ok(self
             .parse::<i64>()
-            .map_err(|_| self.meta_error(ctx, MetaName::Int, vec![]))?
+            .map_err(|e| {
+                Error::new(RuntimeError::ParseError {
+                    reason: e.to_string(),
+                })
+            })?
             .into_meta_result(ctx))
     }
 
     fn meta_float(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
         Ok(self
             .parse::<f64>()
-            .map_err(|_| self.meta_error(ctx, MetaName::Float, vec![]))?
+            .map_err(|e| {
+                Error::new(RuntimeError::ParseError {
+                    reason: e.to_string(),
+                })
+            })?
             .into_meta_result(ctx))
     }
 
@@ -83,7 +92,7 @@ impl<'gc> MetaMethod<Context<'gc>> for Str<'gc> {
 
 pub struct StrInterner<'gc> {
     context: Context<'gc>,
-    interner: HashSet<Str<'gc>, FxBuildHasher>,
+    interner: HashSet<Str<'gc>, FxBuildHasher>, // TODO: use weak references?
 }
 
 impl<'gc> StrInterner<'gc> {
@@ -109,12 +118,10 @@ impl<'gc> StringInterner for StrInterner<'gc> {
     }
 }
 
+// SAFETY: Str<'gc> is Collect, and HashSet is Collect when its elements are Collect, the
+// Context<'gc> does need to be traced.
 unsafe impl Collect for StrInterner<'_> {
-    fn needs_trace() -> bool {
-        true
-    }
-
     fn trace(&self, cc: &gc_arena::Collection) {
-        self.interner.trace(cc)
+        self.interner.trace(cc);
     }
 }

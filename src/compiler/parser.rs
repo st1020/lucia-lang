@@ -1,5 +1,11 @@
 //! The parser.
 
+#![expect(
+    clippy::shadow_unrelated,
+    clippy::if_then_some_else_none,
+    clippy::string_slice
+)]
+
 use std::{iter::Peekable, sync::OnceLock};
 
 use itertools::Itertools;
@@ -132,7 +138,7 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
     fn eat_range(&mut self, t: TokenKind) -> Option<TextRange> {
         let is_present = self.check(t);
         if is_present {
-            let range = self.current_range().unwrap();
+            let range = self.current_range()?;
             self.bump();
             Some(range)
         } else {
@@ -142,10 +148,10 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
 
     /// Returns an error for an unexpected token.
     fn unexpected(&mut self) -> CompilerError {
-        let (found, range) = self
-            .current_token()
-            .map(|token| (token.kind, token.range))
-            .unwrap_or((TokenKind::Eof, TextRange::empty(self.prev_token_end)));
+        let (found, range) = self.current_token().map_or(
+            (TokenKind::Eof, TextRange::empty(self.prev_token_end)),
+            |token| (token.kind, token.range),
+        );
 
         CompilerError::UnexpectedToken {
             expected: self.expected_kinds.clone(),
@@ -276,7 +282,7 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
     }
 }
 
-impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input, S, I> {
+impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
     /// Parse token iter into AST.
     fn parse(mut self) -> (Program<S::String>, Vec<CompilerError>) {
         let start = self.start_range();
@@ -319,11 +325,13 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
             }
             if self.eat(end) {
                 break;
-            } else if self.check(TokenKind::Eof) {
+            }
+            if self.check(TokenKind::Eof) {
                 let e = self.unexpected();
                 self.errors.push(e);
                 break;
-            } else if let Err(e) = self.expect(TokenKind::Eol) {
+            }
+            if let Err(e) = self.expect(TokenKind::Eol) {
                 self.errors.push(e);
             }
             self.eat_eol();
@@ -484,6 +492,7 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
                 let left = self
                     .expr_to_assign_left(expr)
                     .ok_or_else(|| self.unexpected())?;
+                #[expect(clippy::wildcard_enum_match_arm)]
                 let operator = match self.current_kind().unwrap() {
                     TokenKind::AddAssign => BinOp::Add,
                     TokenKind::SubAssign => BinOp::Sub,
@@ -521,7 +530,9 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
         Ok(Expr { kind, range })
     }
 
+    #[expect(clippy::unused_self)]
     fn expr_to_assign_left(&self, expr: Expr<S::String>) -> Option<AssignLeft<S::String>> {
+        #[expect(clippy::wildcard_enum_match_arm)]
         let kind = match expr.kind {
             ExprKind::Ident(ident) => AssignLeftKind::Ident(Box::new(TypedIdent {
                 ty: None,
@@ -564,7 +575,7 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
         self.parse_expr_with_option(true)
     }
 
-    #[allow(clippy::type_complexity)]
+    #[expect(clippy::type_complexity)]
     fn parse_expr_and_block(
         &mut self,
     ) -> Result<(Box<Expr<S::String>>, Box<Block<S::String>>), CompilerError> {
@@ -589,6 +600,7 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
         let start = self.start_range();
         let mut left = self.parse_expr_unary(allow_trailing_lambda)?;
         loop {
+            #[expect(clippy::wildcard_enum_match_arm)]
             let operator = match self.current_kind().unwrap_or(TokenKind::Eof) {
                 TokenKind::Add => BinOp::Add,
                 TokenKind::Sub => BinOp::Sub,
@@ -612,37 +624,34 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
                 break;
             }
             self.bump();
-            left = match operator {
-                BinOp::Is => {
-                    let token = self.current_token().ok_or_else(|| self.unexpected())?;
-                    let right = match (token.kind, &self.input[token.range]) {
-                        (TokenKind::Null, _) => ValueType::Null,
-                        (TokenKind::Ident, "bool") => ValueType::Bool,
-                        (TokenKind::Ident, "int") => ValueType::Int,
-                        (TokenKind::Ident, "float") => ValueType::Float,
-                        (TokenKind::Ident, "str") => ValueType::Str,
-                        (TokenKind::Ident, "table") => ValueType::Table,
-                        (TokenKind::Ident, "function") => ValueType::Function,
-                        (TokenKind::Ident, "userdata") => ValueType::UserData,
-                        _ => return Err(self.unexpected()),
-                    };
-                    self.bump();
-                    let left = Box::new(left);
-                    let kind = ExprKind::TypeCheck { left, right };
-                    let range = self.end_range(start);
-                    Expr { kind, range }
-                }
-                _ => {
-                    let right = self
-                        .parse_expr_precedence(operator.precedence() + 1, allow_trailing_lambda)?;
-                    let kind = ExprKind::Binary {
-                        operator,
-                        left: Box::new(left),
-                        right: Box::new(right),
-                    };
-                    let range = self.end_range(start);
-                    Expr { kind, range }
-                }
+            left = if operator == BinOp::Is {
+                let token = self.current_token().ok_or_else(|| self.unexpected())?;
+                let right = match (token.kind, &self.input[token.range]) {
+                    (TokenKind::Null, _) => ValueType::Null,
+                    (TokenKind::Ident, "bool") => ValueType::Bool,
+                    (TokenKind::Ident, "int") => ValueType::Int,
+                    (TokenKind::Ident, "float") => ValueType::Float,
+                    (TokenKind::Ident, "str") => ValueType::Str,
+                    (TokenKind::Ident, "table") => ValueType::Table,
+                    (TokenKind::Ident, "function") => ValueType::Function,
+                    (TokenKind::Ident, "userdata") => ValueType::UserData,
+                    _ => return Err(self.unexpected()),
+                };
+                self.bump();
+                let left = Box::new(left);
+                let kind = ExprKind::TypeCheck { left, right };
+                let range = self.end_range(start);
+                Expr { kind, range }
+            } else {
+                let right =
+                    self.parse_expr_precedence(operator.precedence() + 1, allow_trailing_lambda)?;
+                let kind = ExprKind::Binary {
+                    operator,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                };
+                let range = self.end_range(start);
+                Expr { kind, range }
             };
         }
         Ok(left)
@@ -1021,12 +1030,13 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
         let token = self.current_token().ok_or_else(|| self.unexpected())?;
         let range = token.range;
         let text = &self.input[range];
+        #[expect(clippy::wildcard_enum_match_arm)]
         let kind = match token.kind {
             TokenKind::Null => LitKind::Null,
             TokenKind::True => LitKind::Bool(true),
             TokenKind::False => LitKind::Bool(false),
             TokenKind::Int => {
-                let mut s = text.to_string();
+                let mut s = text.to_owned();
                 s.retain(|c| c != '_');
                 let base = match s.as_bytes() {
                     [b'0', b'x', ..] => 16,
@@ -1034,13 +1044,13 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
                     [b'0', b'b', ..] => 2,
                     _ => 10,
                 };
-                let s = &s[if base != 10 { 2 } else { 0 }..];
+                let s = &s[if base == 10 { 0 } else { 2 }..];
                 i64::from_str_radix(s, base)
                     .map(LitKind::Int)
                     .map_err(|error| CompilerError::ParseIntError { error, range })?
             }
             TokenKind::Float => {
-                let mut s = text.to_string();
+                let mut s = text.to_owned();
                 s.retain(|c| c != '_');
                 s.parse::<f64>()
                     .map(|f| LitKind::Float(Float(f)))

@@ -1,3 +1,7 @@
+#![allow(clippy::arbitrary_source_item_ordering)]
+
+use std::ops::RangeBounds;
+
 use gc_arena::{Collect, Gc, Mutation};
 
 use crate::{
@@ -100,7 +104,7 @@ impl<'gc> Callback<'gc> {
             }
 
             fn trace(&self, cc: &gc_arena::Collection) {
-                self.callback.trace(cc)
+                self.callback.trace(cc);
             }
         }
 
@@ -108,8 +112,9 @@ impl<'gc> Callback<'gc> {
             mc,
             HeaderCallback {
                 header: CallbackInner {
+                    // SAFETY: The pointer is valid and points to a `HeaderCallback`.
                     call: |ptr, ctx, args| unsafe {
-                        let hc = ptr as *const HeaderCallback<C>;
+                        let hc = ptr.cast::<HeaderCallback<C>>();
                         ((*hc).callback).call(ctx, args)
                     },
                 },
@@ -117,6 +122,7 @@ impl<'gc> Callback<'gc> {
             },
         );
 
+        // SAFETY: `HeaderCallback` has the same layout as `CallbackInner` at the start.
         Self(unsafe { Gc::cast::<CallbackInner>(hc) })
     }
 
@@ -135,7 +141,7 @@ impl<'gc> Callback<'gc> {
     where
         F: 'static + Fn(Context<'gc>, &[Value<'gc>]) -> CallbackResult<'gc>,
     {
-        Self::from_fn_with(mc, (), move |_, ctx, args| call(ctx, args))
+        Self::from_fn_with(mc, (), move |(), ctx, args| call(ctx, args))
     }
 
     /// Create a callback from a Rust function together with a GC object.
@@ -166,6 +172,7 @@ impl<'gc> Callback<'gc> {
     }
 
     pub fn call(self, ctx: Context<'gc>, args: &[Value<'gc>]) -> CallbackResult<'gc> {
+        // SAFETY: `self.0` is a valid pointer to `CallbackInner`.
         unsafe { (self.0.call)(Gc::as_ptr(self.0), ctx, args) }
     }
 }
@@ -185,7 +192,7 @@ macro_rules! impl_into_callback {
             fn call(&self, ctx: Context<'gc>, args: &[Value<'gc>]) -> CallbackResult<'gc> {
                 let args_len = args.len();
                 let required = ArgumentRange::from($len);
-                if !required.contains(args_len) {
+                if !required.contains(&args_len) {
                     return Err(Error::new(
                         RuntimeError::CallArguments {
                             required,
@@ -193,10 +200,12 @@ macro_rules! impl_into_callback {
                         },
                     ));
                 }
+                debug_assert!(args.len() == $len);
                 self($($t::from_value(args[$idx])?,)*).into_callback_result(ctx)
             }
         }
 
+        #[allow(unused_comparisons, clippy::allow_attributes)]
         impl<'gc, Func, Ret, $($t,)*> IntoCallback<'gc, fn($($t,)* &[Value<'gc>]) -> Ret> for Func
         where
             Func: Fn($($t,)* &[Value<'gc>]) -> Ret,
@@ -206,7 +215,7 @@ macro_rules! impl_into_callback {
             fn call(&self, ctx: Context<'gc>, args: &[Value<'gc>]) -> CallbackResult<'gc> {
                 let args_len = args.len();
                 let required = ArgumentRange::from(($len, None));
-                if !required.contains(args_len) {
+                if !required.contains(&args_len) {
                     return Err(Error::new(
                         RuntimeError::CallArguments {
                             required,
@@ -214,6 +223,7 @@ macro_rules! impl_into_callback {
                         },
                     ));
                 }
+                debug_assert!(args.len() >= $len);
                 self($($t::from_value(args[$idx])?,)* &args[$len..]).into_callback_result(ctx)
             }
         }
@@ -227,7 +237,7 @@ macro_rules! impl_into_callback {
             fn call(&self, ctx: Context<'gc>, args: &[Value<'gc>]) -> CallbackResult<'gc> {
                 let args_len = args.len();
                 let required = ArgumentRange::from($len);
-                if !required.contains(args_len) {
+                if !required.contains(&args_len) {
                     return Err(Error::new(
                         RuntimeError::CallArguments {
                             required,
@@ -235,10 +245,12 @@ macro_rules! impl_into_callback {
                         },
                     ));
                 }
+                debug_assert!(args.len() == $len);
                 self(ctx, $($t::from_value(args[$idx])?,)*).into_callback_result(ctx)
             }
         }
 
+        #[allow(unused_comparisons, clippy::allow_attributes)]
         impl<'gc, Func, Ret, $($t,)*> IntoCallback<'gc, fn(Context<'gc>, $($t,)* &[Value<'gc>]) -> Ret> for Func
         where
             Func: Fn(Context<'gc>, $($t,)* &[Value<'gc>]) -> Ret,
@@ -248,7 +260,7 @@ macro_rules! impl_into_callback {
             fn call(&self, ctx: Context<'gc>, args: &[Value<'gc>]) -> CallbackResult<'gc> {
                 let args_len = args.len();
                 let required = ArgumentRange::from(($len, None));
-                if !required.contains(args_len) {
+                if !required.contains(&args_len) {
                     return Err(Error::new(
                         RuntimeError::CallArguments {
                             required,
@@ -256,6 +268,7 @@ macro_rules! impl_into_callback {
                         },
                     ));
                 }
+                debug_assert!(args.len() >= $len);
                 self(ctx, $($t::from_value(args[$idx])?,)* &args[$len..]).into_callback_result(ctx)
             }
         }
@@ -292,7 +305,7 @@ mod tests {
     fn test_dyn_callback() {
         #[derive(Collect)]
         #[collect(require_static)]
-        struct CB();
+        struct CB;
 
         impl<'gc> CallbackFn<'gc> for CB {
             fn call(&self, _ctx: Context<'gc>, _args: &[Value<'gc>]) -> CallbackResult<'gc> {
@@ -300,11 +313,11 @@ mod tests {
             }
         }
 
-        #[allow(clippy::redundant_closure)]
+        #[expect(clippy::redundant_closure)]
         let arena = Arena::<Rootable![State<'_>]>::new(|mc| State::new(mc));
         arena.mutate(|mc, state| {
             let ctx = state.ctx(mc);
-            let dyn_callback = Callback::new(mc, CB());
+            let dyn_callback = Callback::new(mc, CB);
             assert_eq!(
                 dyn_callback.call(ctx, &[]),
                 Ok(CallbackReturn::Return(Value::Int(42)))

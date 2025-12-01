@@ -59,13 +59,14 @@ pub enum Value<'gc> {
 }
 
 impl From<()> for Value<'_> {
-    fn from(_: ()) -> Self {
+    fn from((): ()) -> Self {
         Value::Null
     }
 }
 
 impl<'gc> Value<'gc> {
     pub fn metatable(self) -> Option<Table<'gc>> {
+        #[expect(clippy::wildcard_enum_match_arm)]
         match self {
             Self::Table(t) => t.metatable(),
             Self::UserData(u) => u.metatable(),
@@ -73,12 +74,10 @@ impl<'gc> Value<'gc> {
         }
     }
 
+    #[expect(clippy::as_conversions)]
     pub fn id(self) -> Option<NonZeroUsize> {
         match self {
-            Self::Null => None,
-            Self::Bool(_) => None,
-            Self::Int(_) => None,
-            Self::Float(_) => None,
+            Self::Null | Self::Bool(_) | Self::Int(_) | Self::Float(_) => None,
             Self::Str(v) => NonZeroUsize::new(Gc::as_ptr(v.into_inner()) as usize),
             Self::Bytes(v) => NonZeroUsize::new(Gc::as_ptr(v.into_inner()) as usize),
             Self::Table(v) => NonZeroUsize::new(Gc::as_ptr(v.into_inner()) as usize),
@@ -259,9 +258,9 @@ impl From<Value<'_>> for ExternValue {
             Value::Float(v) => ExternValue::Float(v),
             Value::Str(v) => ExternValue::Str(v.to_compact_string()),
             Value::Bytes(v) => ExternValue::Bytes(v.to_vec()),
-            Value::Table(v) => ExternValue::Table(Gc::as_ptr(v.into_inner()) as _),
+            Value::Table(v) => ExternValue::Table(Gc::as_ptr(v.into_inner()).cast()),
             Value::Function(v) => ExternValue::Function(v.const_ptr()),
-            Value::UserData(v) => ExternValue::UserData(Gc::as_ptr(v.into_inner()) as _),
+            Value::UserData(v) => ExternValue::UserData(Gc::as_ptr(v.into_inner()).cast()),
         }
     }
 }
@@ -274,7 +273,7 @@ impl fmt::Display for ExternValue {
             ExternValue::Int(v) => write!(f, "{v}"),
             ExternValue::Float(v) => write!(f, "{v}"),
             ExternValue::Str(v) => write!(f, "{v}"),
-            ExternValue::Bytes(v) => write!(f, "{:?}", v),
+            ExternValue::Bytes(v) => write!(f, "b\"{}\"", v.escape_ascii()),
             ExternValue::Table(v) => write!(f, "<table {v:p}>"),
             ExternValue::Function(v) => write!(f, "<function {v:p}>"),
             ExternValue::UserData(v) => write!(f, "<userdata {v:p}>"),
@@ -285,4 +284,6 @@ impl fmt::Display for ExternValue {
 // SAFETY: The pointers in `ExternValue` are not actually dereferenced at all, they are purely
 // informational.
 unsafe impl Send for ExternValue {}
+// SAFETY: The pointers in `ExternValue` are not actually dereferenced at all, they are purely
+// informational.
 unsafe impl Sync for ExternValue {}

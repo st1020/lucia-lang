@@ -25,12 +25,12 @@ pub fn load_builtin<'gc>(ctx: Context<'gc>) {
         ctx,
         "assert",
         Callback::from(&ctx, |v: bool, msg: &[Value<'gc>]| {
-            if !v {
-                Err(Error::new(LuciaError::Assert(
-                    msg.first().cloned().unwrap_or(Value::Null),
-                )))
-            } else {
+            if v {
                 Ok(v)
+            } else {
+                Err(Error::new(LuciaError::Assert(
+                    msg.first().copied().unwrap_or(Value::Null),
+                )))
             }
         }),
     );

@@ -21,9 +21,8 @@ impl<'gc> ThreadState<'gc> {
     ) -> Result<u32, Error<'gc>> {
         assert_ne!(instructions, 0);
 
-        let frame = match self.frames.last_mut() {
-            Some(Frame::Lucia(frame)) => frame,
-            _ => panic!("top frame is not lua frame"),
+        let Some(Frame::Lucia(frame)) = self.frames.last_mut() else {
+            panic!("top frame is already finished");
         };
         let code = &frame.closure.code;
 
@@ -180,17 +179,17 @@ impl<'gc> ThreadState<'gc> {
                         }
                     } else {
                         return Err(operator_error!(opcode, module));
-                    };
+                    }
                 }
                 OpCode::BuildTable(i) => {
-                    let table = TableEntries::from_iter(
-                        frame
-                            .stack
-                            .split_off(frame.stack.len() - i * 2)
-                            .chunks_exact(2)
-                            .map(|chunk| (chunk[0], chunk[1])),
-                    )
-                    .into_value(ctx);
+                    #[expect(clippy::missing_asserts_for_indexing)]
+                    let table = frame
+                        .stack
+                        .split_off(frame.stack.len() - i * 2)
+                        .chunks(2)
+                        .map(|chunk| (chunk[0], chunk[1]))
+                        .collect::<TableEntries>()
+                        .into_value(ctx);
                     frame.stack.push(table);
                 }
                 OpCode::BuildList(i) => {
@@ -212,7 +211,7 @@ impl<'gc> ThreadState<'gc> {
                     match (table, metatable) {
                         (Value::Table(table), Value::Null) => table.set_metatable(&ctx, None),
                         (Value::Table(table), Value::Table(metatable)) => {
-                            table.set_metatable(&ctx, Some(metatable))
+                            table.set_metatable(&ctx, Some(metatable));
                         }
                         _ => return Err(operator_error!(opcode, table, metatable)),
                     }
@@ -276,6 +275,7 @@ impl<'gc> ThreadState<'gc> {
                 }
                 OpCode::PopJumpIfTrue(JumpTarget(i)) => {
                     let value = frame.stack.pop().unwrap();
+                    #[expect(clippy::wildcard_enum_match_arm)]
                     match value {
                         Value::Bool(true) => {
                             frame.pc = i;
@@ -287,6 +287,7 @@ impl<'gc> ThreadState<'gc> {
                 }
                 OpCode::PopJumpIfFalse(JumpTarget(i)) => {
                     let value = frame.stack.pop().unwrap();
+                    #[expect(clippy::wildcard_enum_match_arm)]
                     match value {
                         Value::Bool(true) => (),
                         Value::Bool(false) => {
@@ -298,6 +299,7 @@ impl<'gc> ThreadState<'gc> {
                 }
                 OpCode::JumpIfTrueOrPop(JumpTarget(i)) => {
                     let value = frame.stack.last().copied().unwrap();
+                    #[expect(clippy::wildcard_enum_match_arm)]
                     match value {
                         Value::Bool(true) => {
                             frame.pc = i;
@@ -311,6 +313,7 @@ impl<'gc> ThreadState<'gc> {
                 }
                 OpCode::JumpIfFalseOrPop(JumpTarget(i)) => {
                     let value = frame.stack.last().copied().unwrap();
+                    #[expect(clippy::wildcard_enum_match_arm)]
                     match value {
                         Value::Bool(true) => {
                             frame.stack.pop().unwrap();
@@ -355,9 +358,8 @@ impl<'gc> ThreadState<'gc> {
 
             if instructions == 0 {
                 break;
-            } else {
-                instructions -= 1
             }
+            instructions -= 1;
         }
         Ok(instructions)
     }

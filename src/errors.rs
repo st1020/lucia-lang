@@ -19,6 +19,7 @@ use crate::{
 /// Lucia error.
 #[derive(Debug, Clone, Collect, Error)]
 #[collect(no_drop)]
+#[expect(clippy::error_impl_error)]
 pub struct Error<'gc> {
     pub kind: ErrorKind<'gc>,
     pub traceback: Option<Vec<Frame<'gc>>>,
@@ -45,12 +46,12 @@ impl fmt::Display for Error<'_> {
                     }
                     Frame::Callback { callback, args } => {
                         writeln!(f, "[{i}] callback frame")?;
-                        writeln!(f, "    callback: {callback:?}")?;
+                        writeln!(f, "    callback: {callback}")?;
                         writeln!(f, "    args: {}", args.iter().join(", "))?;
                     }
                     Frame::CallbackThen { callback, arg } => {
                         writeln!(f, "[{i}] callback-then frame")?;
-                        writeln!(f, "    callback: {callback:?}")?;
+                        writeln!(f, "    callback: {callback}")?;
                         writeln!(f, "    arg: {arg}")?;
                     }
                 }
@@ -158,8 +159,10 @@ pub enum RuntimeError {
         operator: MetaName,
         operand: (ValueType, ValueType),
     },
-    #[error("divide by zero")]
-    DivideByZero,
+    #[error("divide by zero: can not divide {value} by zero")]
+    DivideByZero { value: i64 },
+    #[error("parse error: {reason}")]
+    ParseError { reason: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

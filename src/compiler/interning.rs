@@ -1,6 +1,6 @@
 //! The string interner.
 
-use std::{borrow::Borrow, collections::HashSet, fmt, hash, rc::Rc};
+use std::{borrow::Borrow, cmp::Ordering, collections::HashSet, fmt, hash, rc::Rc};
 
 use rustc_hash::FxBuildHasher;
 
@@ -34,13 +34,13 @@ impl<S: AsRef<str>> PartialEq for InternedString<S> {
 impl<S: AsRef<str>> Eq for InternedString<S> {}
 
 impl<S: AsRef<str>> PartialOrd for InternedString<S> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl<S: AsRef<str>> Ord for InternedString<S> {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> Ordering {
         self.0.as_ref().cmp(other.0.as_ref())
     }
 }
@@ -84,7 +84,7 @@ impl StringInterner for BasicInterner {
 
     fn intern(&mut self, s: &str) -> Self::String {
         if let Some(s) = self.0.get(s) {
-            s.clone()
+            Rc::clone(s)
         } else {
             let s = Rc::from(Box::from(s));
             self.0.insert(Rc::clone(&s));

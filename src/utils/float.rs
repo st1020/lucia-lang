@@ -9,8 +9,8 @@ use derive_more::{
 use gc_arena::Collect;
 
 // canonical raw float bit
-const CANONICAL_NAN_BITS: u64 = 0x7ff8000000000000u64;
-const CANONICAL_ZERO_BITS: u64 = 0x0u64;
+const CANONICAL_NAN_BITS: u64 = 0x7ff8_0000_0000_0000_u64;
+const CANONICAL_ZERO_BITS: u64 = 0x0_u64;
 
 /// The f64 which impl Eq, Ord, Hash.
 #[derive(
@@ -75,11 +75,11 @@ impl Ord for Float {
 impl hash::Hash for Float {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
         if self.0.is_nan() {
-            CANONICAL_NAN_BITS.hash(state)
-        } else if self.0 == 0.0f64 {
-            CANONICAL_ZERO_BITS.hash(state)
+            CANONICAL_NAN_BITS.hash(state);
+        } else if self.0 == 0.0_f64 {
+            CANONICAL_ZERO_BITS.hash(state);
         } else {
-            self.0.to_bits().hash(state)
+            self.0.to_bits().hash(state);
         }
     }
 }

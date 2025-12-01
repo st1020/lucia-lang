@@ -1,3 +1,5 @@
+#![expect(clippy::arbitrary_source_item_ordering)]
+
 macro_rules! define_object {
     ($name:ident, $inner_name:ty) => {
         #[derive(Debug, Clone, Copy, Collect)]

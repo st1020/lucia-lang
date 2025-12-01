@@ -78,13 +78,14 @@ impl<S: AsRef<str>> fmt::Display for Code<S> {
                 })
                 .join(", ")
         )?;
+        #[expect(clippy::wildcard_enum_match_arm)]
         let code_str = self
             .code
             .iter()
             .enumerate()
-            .map(|(i, code)| {
+            .map(|(index, code)| {
                 format!(
-                    "{i:>12} {code}{}",
+                    "{index:>12} {code}{}",
                     match code {
                         OpCode::LoadLocal(i) | OpCode::StoreLocal(i) =>
                             format!(" ({})", self.local_names[*i].as_ref()),
@@ -96,7 +97,7 @@ impl<S: AsRef<str>> fmt::Display for Code<S> {
                         }
                         OpCode::LoadConst(i) | OpCode::Import(i) | OpCode::ImportFrom(i) =>
                             format!(" ({})", self.consts[*i]),
-                        _ => "".to_string(),
+                        _ => String::new(),
                     }
                 )
             })
@@ -146,7 +147,6 @@ impl<S: AsRef<str>> PartialEq for ConstValue<S> {
             (Self::Int(l0), Self::Int(r0)) => l0 == r0,
             (Self::Float(l0), Self::Float(r0)) => l0 == r0,
             (Self::Str(l0), Self::Str(r0)) => l0.as_ref() == r0.as_ref(),
-            (Self::Code(_), Self::Code(_)) => false,
             _ => false,
         }
     }
@@ -155,6 +155,7 @@ impl<S: AsRef<str>> PartialEq for ConstValue<S> {
 impl<S: AsRef<str>> Eq for ConstValue<S> {}
 
 impl<S: AsRef<str>> hash::Hash for ConstValue<S> {
+    #[expect(clippy::match_same_arms)]
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
         mem::discriminant(self).hash(state);
         match self {

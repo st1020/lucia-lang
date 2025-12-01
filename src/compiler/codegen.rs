@@ -70,7 +70,7 @@ impl<S> MemberKind<S> {
 
 impl<S> From<usize> for ConstValue<S> {
     fn from(value: usize) -> Self {
-        ConstValue::Int(value as i64)
+        ConstValue::Int(value.try_into().unwrap_or(i64::MAX)) // TODO: handle overflow
     }
 }
 
@@ -305,33 +305,34 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
             .is_some_and(|&opcode| opcode == OpCode::Return)
         {
             self.push_code(OpCode::Return);
+        } else {
+            // The function already has a return statement, do nothing.
         }
 
         let mut jump_target_table = vec![0; self.context().jump_target_count];
         let mut i = 0;
         while i < self.code().len() {
-            match self.code()[i] {
-                OpCode::JumpTarget(JumpTarget(index)) => {
-                    jump_target_table[index] = i;
-                    self.code().remove(i);
-                }
-                _ => i += 1,
+            if let OpCode::JumpTarget(JumpTarget(index)) = self.code()[i] {
+                jump_target_table[index] = i;
+                self.code().remove(i);
+            } else {
+                i += 1;
             }
         }
         for opcode in self.code().iter_mut() {
-            match opcode {
-                OpCode::Jump(JumpTarget(v)) => *v = jump_target_table[*v],
-                OpCode::JumpPopIfNull(JumpTarget(v)) => *v = jump_target_table[*v],
-                OpCode::PopJumpIfFalse(JumpTarget(v)) => *v = jump_target_table[*v],
-                OpCode::JumpIfTrueOrPop(JumpTarget(v)) => *v = jump_target_table[*v],
-                OpCode::JumpIfFalseOrPop(JumpTarget(v)) => *v = jump_target_table[*v],
-                _ => (),
+            if let OpCode::Jump(JumpTarget(v))
+            | OpCode::JumpPopIfNull(JumpTarget(v))
+            | OpCode::PopJumpIfFalse(JumpTarget(v))
+            | OpCode::JumpIfTrueOrPop(JumpTarget(v))
+            | OpCode::JumpIfFalseOrPop(JumpTarget(v)) = opcode
+            {
+                *v = jump_target_table[*v];
             }
         }
 
         let stack_size = Self::get_stack_size(
             self.code(),
-            function.params.len() + if function.variadic.is_some() { 1 } else { 0 },
+            function.params.len() + usize::from(function.variadic.is_some()),
         );
         let code = Code {
             name: function.name.clone(),
@@ -358,6 +359,7 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
     }
 
     /// Try estimate function stack size.
+    #[expect(clippy::match_same_arms)]
     fn get_stack_size(code: &[OpCode], init_size: usize) -> usize {
         let mut max_stack_depth = init_size;
         let mut stack_depths = vec![None; code.len()];
@@ -383,7 +385,7 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
                 | OpCode::LoadUpvalue(_)
                 | OpCode::LoadConst(_) => new_depth += 1,
                 OpCode::StoreLocal(_) | OpCode::StoreGlobal(_) | OpCode::StoreUpvalue(_) => {
-                    new_depth -= 1
+                    new_depth -= 1;
                 }
                 OpCode::Import(_) => new_depth += 1,
                 OpCode::ImportFrom(_) => new_depth += 1,
@@ -593,6 +595,7 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
                 self.visit_expr(argument)?;
                 self.push_code(OpCode::from(*operator));
             }
+            #[expect(clippy::wildcard_enum_match_arm)]
             ExprKind::Binary {
                 operator,
                 left,
@@ -612,7 +615,7 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
                     self.visit_expr(right)?;
                     self.push_code(OpCode::JumpTarget(label));
                 }
-                operator => {
+                _ => {
                     self.visit_expr(left)?;
                     self.visit_expr(right)?;
                     self.push_code(OpCode::from(*operator));
@@ -644,6 +647,7 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
             } => {
                 let mut argument_count = arguments.len();
                 let safe_label = self.get_jump_target();
+                #[expect(clippy::wildcard_enum_match_arm)]
                 match &callee.kind {
                     ExprKind::Member {
                         table,
@@ -710,24 +714,23 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
             ExprKind::Match { expr, cases } => {
                 let end_label = self.get_jump_target();
                 self.visit_expr(expr)?;
-                let block_labels: Vec<_> = iter::repeat_with(|| self.get_jump_target())
+                let block_labels = iter::repeat_with(|| self.get_jump_target())
                     .take(cases.len())
-                    .collect();
+                    .collect::<Vec<_>>();
                 for (i, case) in cases.iter().enumerate() {
                     let block_label = block_labels[i];
                     for pattern in &case.patterns {
-                        let clean_stack_label = self.get_jump_target();
-                        let mut clean_stack_label_stack = vec![clean_stack_label];
+                        let mut clean_stack_label_stack = vec![self.get_jump_target()];
 
                         self.push_code(OpCode::Copy(1));
                         self.visit_pattern_depth(pattern, 0, &mut clean_stack_label_stack)?;
                         self.push_code(OpCode::Pop);
                         self.push_code(OpCode::Jump(block_label));
 
-                        for (i, clean_stack_label) in
+                        for (clean_stack_index, clean_stack_label) in
                             clean_stack_label_stack.into_iter().rev().enumerate()
                         {
-                            if i != 0 {
+                            if clean_stack_index != 0 {
                                 self.push_code(OpCode::Pop);
                             }
                             self.push_code(OpCode::JumpTarget(clean_stack_label));
@@ -839,15 +842,15 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
                 }
                 if let ExprKind::Call { kind, .. } = argument.kind {
                     self.visit_expr(argument)?;
-                    if kind != CallKind::None {
-                        self.push_code(OpCode::Return);
-                    } else {
+                    if kind == CallKind::None {
                         let code_len = self.code().len();
                         if let OpCode::Call(i) = self.code()[code_len - 2] {
                             self.code()[code_len - 2] = OpCode::ReturnCall(i);
                         } else {
                             self.push_code(OpCode::Return);
                         }
+                    } else {
+                        self.push_code(OpCode::Return);
                     }
                 } else {
                     self.visit_expr(argument)?;
@@ -871,11 +874,11 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
                 path_str,
                 kind,
             } => {
-                let const_id = self.add_const(ConstValue::Str(path_str.clone()));
-                self.push_code(OpCode::Import(const_id));
+                let path_const_id = self.add_const(ConstValue::Str(path_str.clone()));
+                self.push_code(OpCode::Import(path_const_id));
                 match kind {
                     ImportKind::Simple(alias) => {
-                        self.store(alias.as_ref().map_or(path.last().unwrap(), |v| v))
+                        self.store(alias.as_ref().map_or(path.last().unwrap(), |v| v));
                     }
                     ImportKind::Nested(items) => {
                         for item in items {
@@ -940,7 +943,7 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
                             self.push_code(property.set_opcode());
                         }
                     },
-                };
+                }
                 self.push_load_const(ConstValue::Null);
             }
             ExprKind::AssignUnpack { left, right } => {
@@ -957,11 +960,11 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
             }
             ExprKind::AssignMulti { left, right } => {
                 assert!(left.len() == right.len());
-                for right in right {
-                    self.visit_expr(right)?;
+                for right_expr in right {
+                    self.visit_expr(right_expr)?;
                 }
-                for left in left.iter().rev() {
-                    self.visit_assign_left(left)?;
+                for assign_left in left.iter().rev() {
+                    self.visit_assign_left(assign_left)?;
                 }
                 self.push_load_const(ConstValue::Null);
             }

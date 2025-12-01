@@ -1,5 +1,7 @@
 //! The Lucia Abstract Syntax Tree (AST).
 
+#![expect(clippy::arbitrary_source_item_ordering)]
+
 mod assign;
 mod block;
 mod expr;

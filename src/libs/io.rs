@@ -13,6 +13,7 @@ pub fn io_lib<'gc>(ctx: Context<'gc>) -> Table<'gc> {
     t.set(
         ctx,
         "print",
+        #[expect(clippy::print_stdout)]
         Callback::from(&ctx, |args: &[Value<'gc>]| match args.len() {
             0 => (),
             1 => print!("{}", args.first().unwrap()),
@@ -22,6 +23,7 @@ pub fn io_lib<'gc>(ctx: Context<'gc>) -> Table<'gc> {
     t.set(
         ctx,
         "println",
+        #[expect(clippy::print_stdout)]
         Callback::from(&ctx, |args: &[Value<'gc>]| match args.len() {
             0 => println!(),
             1 => println!("{}", args.first().unwrap()),
@@ -32,9 +34,9 @@ pub fn io_lib<'gc>(ctx: Context<'gc>) -> Table<'gc> {
         ctx,
         "input",
         Callback::from(&ctx, || {
-            let mut t = String::new();
-            io::stdin().read_line(&mut t).unwrap();
-            t.strip_suffix('\n').unwrap_or(&t).to_compact_string()
+            let mut buf = String::new();
+            io::stdin().read_line(&mut buf).unwrap();
+            buf.strip_suffix('\n').unwrap_or(&buf).to_compact_string()
         }),
     );
     t

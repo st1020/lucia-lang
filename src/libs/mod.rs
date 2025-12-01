@@ -13,7 +13,7 @@ pub use table::table_lib;
 /// This macro is deprecated, and was instead by the IntoCallback trait.
 /// But it takes me a lot of time to write it, so I don't want to remove it.
 #[deprecated]
-#[allow(unused_macros)]
+#[expect(unused_macros)]
 macro_rules! check_args {
     (@AS_EXPR $e:expr) => {$e};
 

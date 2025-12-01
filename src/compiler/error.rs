@@ -21,7 +21,7 @@ pub enum CompilerError {
         .range,
     )]
     UnexpectedToken {
-        expected: std::vec::Vec<TokenKind>,
+        expected: Vec<TokenKind>,
         found: TokenKind,
         range: TextRange,
     },
@@ -53,14 +53,14 @@ pub enum CompilerError {
 impl Locatable for CompilerError {
     fn range(&self) -> TextRange {
         match self {
-            CompilerError::UnexpectedToken { range, .. } => *range,
-            CompilerError::ParseIntError { range, .. } => *range,
-            CompilerError::ParseFloatError { range, .. } => *range,
-            CompilerError::EscapeError { range, .. } => *range,
-            CompilerError::BreakOutsideLoop { range, .. } => *range,
-            CompilerError::ContinueOutsideLoop { range, .. } => *range,
-            CompilerError::ReturnOutsideFunction { range, .. } => *range,
-            CompilerError::ThrowOutsideFunction { range, .. } => *range,
+            CompilerError::UnexpectedToken { range, .. }
+            | CompilerError::ParseIntError { range, .. }
+            | CompilerError::ParseFloatError { range, .. }
+            | CompilerError::EscapeError { range, .. }
+            | CompilerError::BreakOutsideLoop { range, .. }
+            | CompilerError::ContinueOutsideLoop { range, .. }
+            | CompilerError::ReturnOutsideFunction { range, .. }
+            | CompilerError::ThrowOutsideFunction { range, .. } => *range,
         }
     }
 }

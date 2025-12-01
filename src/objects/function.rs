@@ -23,8 +23,8 @@ pub enum Function<'gc> {
 impl Function<'_> {
     pub fn const_ptr(&self) -> *const () {
         match self {
-            Function::Closure(v) => Gc::as_ptr(v.into_inner()) as *const (),
-            Function::Callback(v) => Gc::as_ptr(v.into_inner()) as *const (),
+            Function::Closure(v) => Gc::as_ptr(v.into_inner()).cast::<()>(),
+            Function::Callback(v) => Gc::as_ptr(v.into_inner()).cast::<()>(),
         }
     }
 }
@@ -105,12 +105,6 @@ impl RangeBounds<usize> for ArgumentRange {
         } else {
             Bound::Unbounded
         }
-    }
-}
-
-impl ArgumentRange {
-    pub fn contains(&self, item: usize) -> bool {
-        <Self as RangeBounds<usize>>::contains(self, &item)
     }
 }
 

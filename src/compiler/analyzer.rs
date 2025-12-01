@@ -217,9 +217,8 @@ impl<S: AsRef<str> + Clone> Visit<S> for SemanticAnalyzer<S> {
     fn visit_function(&mut self, function: &Function<S>) -> Self::Return {
         self.enter_function(function.kind, &function.function_id);
         let scope_kind = match function.kind {
-            FunctionKind::Function => ScopeKind::Function,
             FunctionKind::Closure => ScopeKind::Closure,
-            FunctionKind::Do => ScopeKind::Function,
+            FunctionKind::Function | FunctionKind::Do => ScopeKind::Function,
         };
         self.enter_scope(scope_kind, &function.body.scope_id);
 
@@ -241,6 +240,7 @@ impl<S: AsRef<str> + Clone> Visit<S> for SemanticAnalyzer<S> {
         self.leave_scope();
     }
 
+    #[expect(clippy::match_same_arms)]
     fn visit_expr(&mut self, expr: &Expr<S>) -> Self::Return {
         match &expr.kind {
             ExprKind::Lit(_lit) => (),
@@ -343,8 +343,7 @@ impl<S: AsRef<str> + Clone> Visit<S> for SemanticAnalyzer<S> {
                 self.visit_exprs(&body.body);
                 self.leave_scope();
             }
-            ExprKind::Break => (),
-            ExprKind::Continue => (),
+            ExprKind::Break | ExprKind::Continue => (),
             ExprKind::Return { argument } => self.visit_expr(argument),
             ExprKind::Throw { argument } => self.visit_expr(argument),
             ExprKind::Import {
@@ -381,17 +380,17 @@ impl<S: AsRef<str> + Clone> Visit<S> for SemanticAnalyzer<S> {
                 self.visit_expr(right);
             }
             ExprKind::AssignUnpack { left, right } => {
-                for left in left {
-                    self.visit_assign_left(left);
+                for assign_left in left {
+                    self.visit_assign_left(assign_left);
                 }
                 self.visit_expr(right);
             }
             ExprKind::AssignMulti { left, right } => {
-                for left in left {
-                    self.visit_assign_left(left);
+                for assign_left in left {
+                    self.visit_assign_left(assign_left);
                 }
-                for right in right {
-                    self.visit_expr(right);
+                for right_expr in right {
+                    self.visit_expr(right_expr);
                 }
             }
         }

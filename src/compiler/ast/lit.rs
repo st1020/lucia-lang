@@ -34,12 +34,13 @@ pub enum LitKind<S> {
 }
 
 impl<S: AsRef<str>> fmt::Display for LitKind<S> {
+    #[expect(clippy::use_debug)]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             LitKind::Null => write!(f, "null"),
             LitKind::Bool(v) => write!(f, "{v}"),
             LitKind::Int(v) => write!(f, "{v}"),
-            LitKind::Float(v) => write!(f, "{v:?}"),
+            LitKind::Float(v) => write!(f, "{v}"),
             LitKind::Str(v) => write!(f, "{:?}", v.as_ref()),
             LitKind::Bytes(v) => write!(f, "b\"{}\"", v.escape_ascii()),
         }

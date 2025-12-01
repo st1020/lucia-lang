@@ -18,14 +18,18 @@ pub fn string_lib<'gc>(ctx: Context<'gc>) -> Table<'gc> {
         ctx,
         "chars",
         Callback::from(&ctx, |ctx: Context<'gc>, s: Str<'gc>| {
-            TableEntries::from_iter(s.chars().map(|x| x.to_compact_string().into_value(ctx)))
+            s.chars()
+                .map(|x| x.to_compact_string().into_value(ctx))
+                .collect::<TableEntries>()
         }),
     );
     t.set(
         ctx,
         "lines",
         Callback::from(&ctx, |ctx: Context<'gc>, s: Str<'gc>| {
-            TableEntries::from_iter(s.lines().map(|x| x.to_compact_string().into_value(ctx)))
+            s.lines()
+                .map(|x| x.to_compact_string().into_value(ctx))
+                .collect::<TableEntries>()
         }),
     );
     t.set(
@@ -56,10 +60,9 @@ pub fn string_lib<'gc>(ctx: Context<'gc>) -> Table<'gc> {
         ctx,
         "split",
         Callback::from(&ctx, |ctx: Context<'gc>, s: Str<'gc>, pat: Str<'gc>| {
-            TableEntries::from_iter(
-                s.split(pat.as_str())
-                    .map(|x| x.to_compact_string().into_value(ctx)),
-            )
+            s.split(pat.as_str())
+                .map(|x| x.to_compact_string().into_value(ctx))
+                .collect::<TableEntries>()
         }),
     );
     t.set(
@@ -68,10 +71,9 @@ pub fn string_lib<'gc>(ctx: Context<'gc>) -> Table<'gc> {
         Callback::from(
             &ctx,
             |ctx: Context<'gc>, s: Str<'gc>, pat: Str<'gc>, count: usize| {
-                TableEntries::from_iter(
-                    s.splitn(count, pat.as_str())
-                        .map(|x| x.to_compact_string().into_value(ctx)),
-                )
+                s.splitn(count, pat.as_str())
+                    .map(|x| x.to_compact_string().into_value(ctx))
+                    .collect::<TableEntries>()
             },
         ),
     );

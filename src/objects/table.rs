@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 use compact_str::ToCompactString;
 use gc_arena::{Collect, Gc, Mutation, lock::RefLock};
 use indexmap::IndexMap;
@@ -33,7 +35,7 @@ impl<'gc> Table<'gc> {
         {
             return entries.array[key];
         }
-        entries.map.get(&key).cloned().unwrap_or(Value::Null)
+        entries.map.get(&key).copied().unwrap_or(Value::Null)
     }
 
     pub fn get_index(self, index: usize) -> Option<(Value<'gc>, Value<'gc>)> {
@@ -59,9 +61,9 @@ impl<'gc> Table<'gc> {
             && let Ok(k) = usize::try_from(k)
         {
             match k.cmp(&entries.array.len()) {
-                std::cmp::Ordering::Less => return entries.array[k] = value,
-                std::cmp::Ordering::Equal => return entries.array.push(value),
-                std::cmp::Ordering::Greater => (),
+                Ordering::Less => return entries.array[k] = value,
+                Ordering::Equal => return entries.array.push(value),
+                Ordering::Greater => (),
             }
         }
         if value.is_null() {
@@ -101,8 +103,8 @@ impl<'gc> Table<'gc> {
                     Value::Null,
                     |(k, v)| {
                         let t = Table::new(&ctx);
-                        t.set(ctx, 0, k);
-                        t.set(ctx, 1, v);
+                        t.set(ctx, 0_i64, k);
+                        t.set(ctx, 1_i64, v);
                         t.into()
                     },
                 )))
@@ -116,9 +118,10 @@ impl<'gc> MetaMethod<Context<'gc>> for Table<'gc> {
 
     fn meta_call(&self, ctx: Context<'gc>) -> Result<Self::ResultCall, Self::Error> {
         if let Some(metatable) = self.metatable() {
+            #[expect(clippy::wildcard_enum_match_arm)]
             match metatable.get(ctx, MetaName::Call) {
                 Value::Function(v) => Ok(v),
-                Value::Table(v) => v.meta_call(ctx),
+                Value::Table(v) => v.meta_call(ctx), // TODO: prevent infinite recursion
                 v => Err(v.meta_error(ctx, MetaName::Call, vec![])),
             }
         } else {
@@ -142,7 +145,7 @@ impl<'gc> MetaMethod<Context<'gc>> for Table<'gc> {
 
     fn meta_len(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
         call_metamethod!(ctx, MetaName::Len, self);
-        Ok((self.len() as i64).into_meta_result(ctx))
+        Ok(self.len().into_meta_result(ctx))
     }
 
     fn meta_bool(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
@@ -249,10 +252,11 @@ pub struct TableEntries<'gc> {
     map: IndexMap<Value<'gc>, Value<'gc>>,
 }
 
+// SAFETY: `IndexMap<Value<'gc>, Value<'gc>>` is safe to be traced by tracing all its entries.
 unsafe impl Collect for TableEntries<'_> {
     fn trace(&self, cc: &gc_arena::Collection) {
         self.array.trace(cc);
-        for (key, value) in self.map.iter() {
+        for (key, value) in &self.map {
             key.trace(cc);
             value.trace(cc);
         }

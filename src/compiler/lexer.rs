@@ -3,7 +3,7 @@
 //! This is basically a copy of the rustc_lexer.
 //! See: <https://github.com/rust-lang/rust/tree/master/compiler/rustc_lexer>
 
-use std::str::Chars;
+use std::{iter, str::Chars};
 
 use text_size::{TextRange, TextSize};
 
@@ -11,6 +11,8 @@ use super::token::{
     Token,
     TokenKind::{self, *},
 };
+
+const EOF_CHAR: char = '\0';
 
 /// Peekable iterator over a char sequence.
 ///
@@ -25,8 +27,6 @@ struct Cursor<'a> {
     #[cfg(debug_assertions)]
     prev: char,
 }
-
-const EOF_CHAR: char = '\0';
 
 impl<'a> Cursor<'a> {
     fn new(input: &'a str) -> Cursor<'a> {
@@ -112,12 +112,12 @@ impl<'a> Cursor<'a> {
 /// Creates an iterator that produces tokens from the input string.
 pub fn tokenize(input: &str) -> impl Iterator<Item = Token> + Clone + '_ {
     let mut cursor = Cursor::new(input);
-    std::iter::from_fn(move || {
+    iter::from_fn(move || {
         let token = cursor.advance_token();
-        if token.kind != TokenKind::Eof {
-            Some(token)
-        } else {
+        if token.kind == TokenKind::Eof {
             None
+        } else {
+            Some(token)
         }
     })
 }
@@ -308,7 +308,7 @@ impl Cursor<'_> {
 
     fn block_comment(&mut self) -> TokenKind {
         debug_assert!(self.prev() == '*');
-        let mut depth = 1usize;
+        let mut depth = 1_usize;
         while let Some(c) = self.bump() {
             match c {
                 '/' if self.eat('*') => {
@@ -350,6 +350,7 @@ impl Cursor<'_> {
         }
 
         let range = TextRange::new(start, self.pos());
+        #[expect(clippy::string_slice)]
         match &self.input[range] {
             "if" => If,
             "else" => Else,
@@ -418,7 +419,7 @@ impl Cursor<'_> {
         } else {
             // No base prefix, parse number in the usual way.
             self.eat_decimal_digits();
-        };
+        }
 
         match self.first() {
             // Don't be greedy if this is actually an
