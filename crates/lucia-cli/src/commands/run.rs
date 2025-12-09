@@ -1,6 +1,6 @@
 use std::fs;
 
-use lucia_lang::Lucia;
+use lucia_lang::Context as Lucia;
 
 use crate::{Context, args::RunCommand};
 
@@ -17,7 +17,7 @@ impl Context {
                 return Err(anyhow::Error::msg("compile error"));
             }
         };
-        lucia.execute(&code)?;
+        lucia.execute(code).unwrap();
         Ok(())
     }
 }

@@ -1,6 +1,6 @@
 //! The semantic information of Lucia program.
 
-use indexmap::{IndexMap, IndexSet};
+use ordermap::{OrderMap, OrderSet};
 use oxc_index::IndexVec;
 use rustc_hash::FxBuildHasher;
 use text_size::TextRange;
@@ -8,7 +8,6 @@ use text_size::TextRange;
 use super::{
     ast::FunctionKind,
     index::{FunctionId, ReferenceId, ScopeId, SymbolId},
-    interning::InternedString,
 };
 
 /// Semantic information of a Lucia program.
@@ -35,7 +34,7 @@ pub struct FunctionSemantic {
     /// The parent function it belongs in.
     pub parent_id: Option<FunctionId>,
     /// Symbols in a function.
-    pub symbols: IndexSet<SymbolId, FxBuildHasher>,
+    pub symbols: OrderSet<SymbolId, FxBuildHasher>,
 }
 
 impl FunctionSemantic {
@@ -43,7 +42,7 @@ impl FunctionSemantic {
         Self {
             kind,
             parent_id,
-            symbols: IndexSet::with_hasher(FxBuildHasher),
+            symbols: OrderSet::with_hasher(FxBuildHasher),
         }
     }
 }
@@ -60,7 +59,7 @@ pub struct Scope<S> {
     /// Symbol bindings in a scope.
     ///
     /// A binding is a mapping from an identifier name to its [`SymbolId`]
-    pub bindings: IndexMap<InternedString<S>, SymbolId, FxBuildHasher>,
+    pub bindings: OrderMap<S, SymbolId, FxBuildHasher>,
 }
 
 impl<S> Scope<S> {
@@ -69,7 +68,7 @@ impl<S> Scope<S> {
             kind,
             parent_id,
             function_id,
-            bindings: IndexMap::with_hasher(FxBuildHasher),
+            bindings: OrderMap::with_hasher(FxBuildHasher),
         }
     }
 }

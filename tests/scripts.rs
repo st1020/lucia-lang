@@ -3,7 +3,7 @@ use std::{
     io::{Write, stdout},
 };
 
-use lucia_lang::Lucia;
+use lucia_lang::Context;
 
 #[test]
 fn test_scripts() {
@@ -13,10 +13,14 @@ fn test_scripts() {
         let path = dir.expect("could not read dir entry").path();
         if path.extension().is_some_and(|ext| ext == "lucia") {
             let input = fs::read_to_string(&path).expect("could not read file contents");
+            if input.starts_with("// skip") {
+                let _ = writeln!(stdout(), "skipping file {path:?} due to skip directive");
+                continue;
+            }
             let _ = writeln!(stdout(), "running {:?}", path.file_name().unwrap());
-            let mut lucia = Lucia::new();
+            let mut lucia = Context::new();
             let code = lucia.compile(&input).unwrap();
-            if let Err(err) = lucia.execute(&code) {
+            if let Err(err) = lucia.execute(code) {
                 panic!("error encountered running: {err}");
             }
         } else {

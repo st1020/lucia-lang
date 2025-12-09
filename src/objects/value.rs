@@ -1,41 +1,20 @@
-use std::{fmt, num::NonZeroUsize};
+use std::{num::NonZeroUsize, rc::Rc};
 
-use compact_str::{CompactString, ToCompactString};
-use derive_more::{Display, From, IsVariant, TryInto};
-use gc_arena::{Collect, Gc, static_collect};
+use derive_more::{Display, From, IsVariant};
 
 use crate::{
     Context,
     compiler::value::{MetaMethod, MetaName},
-    errors::{Error, RuntimeError},
-    objects::{Bytes, Function, IntoValue, Str, Table, UserData},
+    errors::{Error, ErrorKind},
+    objects::{Bytes, Function, Str, Table, UserData, unexpected_type_error},
     utils::Float,
 };
 
 pub use crate::compiler::value::ValueType;
 
-static_collect!(ValueType);
-
-impl<'gc> IntoValue<'gc> for ValueType {
-    fn into_value(self, ctx: Context<'gc>) -> Value<'gc> {
-        self.name().into_value(ctx)
-    }
-}
-
-static_collect!(MetaName);
-
-impl<'gc> IntoValue<'gc> for MetaName {
-    fn into_value(self, ctx: Context<'gc>) -> Value<'gc> {
-        self.name().into_value(ctx)
-    }
-}
-
 /// Enum of all lucia values.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Collect, From, TryInto, Display, IsVariant,
-)]
-#[collect(no_drop)]
-pub enum Value<'gc> {
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default, From, Display, IsVariant)]
+pub enum Value {
     /// `null` - A null value.
     #[default]
     #[display("null")]
@@ -47,25 +26,19 @@ pub enum Value<'gc> {
     /// `float` - A 64-bit floating point number.
     Float(Float),
     /// `str` - A UTF-8 string.
-    Str(Str<'gc>),
+    Str(Str),
     /// `bytes` - A byte array.
-    Bytes(Bytes<'gc>),
+    Bytes(Bytes),
     /// `table` - A table.
-    Table(Table<'gc>),
+    Table(Table),
     /// `function` - A function.
-    Function(Function<'gc>),
+    Function(Function),
     /// `userdata` - An UserData.
-    UserData(UserData<'gc>),
+    UserData(UserData),
 }
 
-impl From<()> for Value<'_> {
-    fn from((): ()) -> Self {
-        Value::Null
-    }
-}
-
-impl<'gc> Value<'gc> {
-    pub fn metatable(self) -> Option<Table<'gc>> {
+impl Value {
+    pub fn metatable(self) -> Option<Table> {
         #[expect(clippy::wildcard_enum_match_arm)]
         match self {
             Self::Table(t) => t.metatable(),
@@ -75,18 +48,18 @@ impl<'gc> Value<'gc> {
     }
 
     #[expect(clippy::as_conversions)]
-    pub fn id(self) -> Option<NonZeroUsize> {
+    pub fn id(&self) -> Option<NonZeroUsize> {
         match self {
             Self::Null | Self::Bool(_) | Self::Int(_) | Self::Float(_) => None,
-            Self::Str(v) => NonZeroUsize::new(Gc::as_ptr(v.into_inner()) as usize),
-            Self::Bytes(v) => NonZeroUsize::new(Gc::as_ptr(v.into_inner()) as usize),
-            Self::Table(v) => NonZeroUsize::new(Gc::as_ptr(v.into_inner()) as usize),
+            Self::Str(v) => NonZeroUsize::new(Rc::as_ptr(v).cast::<()>() as usize),
+            Self::Bytes(v) => NonZeroUsize::new(Rc::as_ptr(v).cast::<()>() as usize),
+            Self::Table(v) => NonZeroUsize::new(Rc::as_ptr(v) as usize),
             Self::Function(v) => NonZeroUsize::new(v.const_ptr() as usize),
-            Self::UserData(v) => NonZeroUsize::new(Gc::as_ptr(v.into_inner()) as usize),
+            Self::UserData(v) => NonZeroUsize::new(Rc::as_ptr(v) as usize),
         }
     }
 
-    pub fn identical(self, other: Value<'gc>) -> bool {
+    pub fn identical(&self, other: &Value) -> bool {
         if let (Some(this), Some(other)) = (self.id(), other.id()) {
             this == other
         } else {
@@ -94,7 +67,7 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub const fn value_type(self) -> ValueType {
+    pub const fn value_type(&self) -> ValueType {
         match self {
             Self::Null => ValueType::Null,
             Self::Bool(_) => ValueType::Bool,
@@ -106,23 +79,6 @@ impl<'gc> Value<'gc> {
             Self::Function(_) => ValueType::Function,
             Self::UserData(_) => ValueType::UserData,
         }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Collect)]
-#[collect(no_drop)]
-pub enum MetaResult<'gc, const N: usize> {
-    Value(Value<'gc>),
-    Call(Function<'gc>, [Value<'gc>; N]),
-}
-
-pub(crate) trait IntoMetaResult<'gc, const N: usize> {
-    fn into_meta_result(self, ctx: Context<'gc>) -> MetaResult<'gc, N>;
-}
-
-impl<'gc, T: IntoValue<'gc>, const N: usize> IntoMetaResult<'gc, N> for T {
-    fn into_meta_result(self, ctx: Context<'gc>) -> MetaResult<'gc, N> {
-        MetaResult::Value(self.into_value(ctx))
     }
 }
 
@@ -145,16 +101,18 @@ macro_rules! value_enum_dispatch {
 macro_rules! value_enum_dispatch_meta_method {
     (1, $($name:ident),*) => {
         $(
-            fn $name(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
+            #[inline]
+            fn $name(self, ctx: &Context) -> Result<Self::Result1, Self::Error> {
                 value_enum_dispatch!(self, $name(ctx))
             }
         )*
     };
     (2, $($name:ident),*) => {
         $(
+            #[inline]
             fn $name(
-                &self,
-                ctx: Context<'gc>,
+                self,
+                ctx: &Context,
                 other: Self::Value,
             ) -> Result<Self::Result2, Self::Error> {
                 value_enum_dispatch!(self, $name(ctx, other))
@@ -163,9 +121,10 @@ macro_rules! value_enum_dispatch_meta_method {
     };
     (3, $($name:ident),*) => {
         $(
+            #[inline]
             fn $name(
-                &self,
-                ctx: Context<'gc>,
+                self,
+                ctx: &Context,
                 key: Self::Value,
                 value: Self::Value,
             ) -> Result<Self::Result3, Self::Error> {
@@ -175,19 +134,22 @@ macro_rules! value_enum_dispatch_meta_method {
     };
 }
 
-impl<'gc> MetaMethod<Context<'gc>> for Value<'gc> {
-    type Value = Value<'gc>;
-    type Error = Error<'gc>;
-    type ResultCall = Function<'gc>;
+impl MetaMethod<&Context> for Value {
+    type Value = Value;
+    type Error = Error;
+    type ResultCall = Function;
     type ResultIter = Self::ResultCall;
-    type Result1 = MetaResult<'gc, 1>;
-    type Result2 = MetaResult<'gc, 2>;
-    type Result3 = MetaResult<'gc, 3>;
+    type Result1 = MetaResult<1>;
+    type Result2 = MetaResult<2>;
+    type Result3 = MetaResult<3>;
 
-    fn meta_call(&self, ctx: Context<'gc>) -> Result<Self::ResultCall, Self::Error> {
+    #[inline]
+    fn meta_call(self, ctx: &Context) -> Result<Self::ResultCall, Self::Error> {
         value_enum_dispatch!(self, meta_call(ctx))
     }
-    fn meta_iter(&self, ctx: Context<'gc>) -> Result<Self::ResultIter, Self::Error> {
+
+    #[inline]
+    fn meta_iter(self, ctx: &Context) -> Result<Self::ResultIter, Self::Error> {
         value_enum_dispatch!(self, meta_iter(ctx))
     }
 
@@ -214,19 +176,15 @@ impl<'gc> MetaMethod<Context<'gc>> for Value<'gc> {
 
     value_enum_dispatch_meta_method!(3, meta_set_attr, meta_set_item);
 
-    fn meta_error(
-        &self,
-        _: Context<'gc>,
-        operator: MetaName,
-        args: Vec<Self::Value>,
-    ) -> Self::Error {
+    #[inline]
+    fn meta_error(self, _: &Context, operator: MetaName, args: Vec<Self::Value>) -> Self::Error {
         if args.is_empty() {
-            Error::new(RuntimeError::MetaUnOperator {
+            Error::new(ErrorKind::MetaUnOperator {
                 operator,
                 operand: self.value_type(),
             })
         } else {
-            Error::new(RuntimeError::MetaBinOperator {
+            Error::new(ErrorKind::MetaBinOperator {
                 operator,
                 operand: (self.value_type(), args[0].value_type()),
             })
@@ -234,56 +192,62 @@ impl<'gc> MetaMethod<Context<'gc>> for Value<'gc> {
     }
 }
 
-/// A [`Value`] that is not bound to the GC context.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
-pub enum ExternValue {
-    #[default]
-    Null,
+pub trait FromValue: Sized {
+    fn from_value(value: Value) -> Result<Self, Error>;
+}
+
+impl FromValue for Value {
+    fn from_value(value: Value) -> Result<Self, Error> {
+        Ok(value)
+    }
+}
+
+macro_rules! impl_from_value {
+    ($($e:ident($t:ty)),* $(,)?) => {
+        $(
+            impl FromValue for $t {
+                fn from_value(value: Value) -> Result<Self, Error> {
+                    if let Value::$e(v) = value {
+                        Ok(v)
+                    } else {
+                        Err(unexpected_type_error!(ValueType::$e, value))
+                    }
+                }
+            }
+        )*
+    };
+}
+impl_from_value! {
     Bool(bool),
     Int(i64),
     Float(Float),
-    Str(CompactString),
-    Bytes(Vec<u8>),
-    Table(*const ()),
-    Function(*const ()),
-    UserData(*const ()),
+    Str(Str),
+    Bytes(Bytes),
+    Table(Table),
+    Function(Function),
+    UserData(UserData),
 }
 
-impl From<Value<'_>> for ExternValue {
-    fn from(value: Value<'_>) -> Self {
-        match value {
-            Value::Null => ExternValue::Null,
-            Value::Bool(v) => ExternValue::Bool(v),
-            Value::Int(v) => ExternValue::Int(v),
-            Value::Float(v) => ExternValue::Float(v),
-            Value::Str(v) => ExternValue::Str(v.to_compact_string()),
-            Value::Bytes(v) => ExternValue::Bytes(v.to_vec()),
-            Value::Table(v) => ExternValue::Table(Gc::as_ptr(v.into_inner()).cast()),
-            Value::Function(v) => ExternValue::Function(v.const_ptr()),
-            Value::UserData(v) => ExternValue::UserData(Gc::as_ptr(v.into_inner()).cast()),
-        }
+#[derive(Debug, Clone)]
+pub enum MetaResult<const N: usize> {
+    Value(Value),
+    Call(Function, [Value; N]),
+}
+
+impl<T: Into<Value>, const N: usize> From<T> for MetaResult<N> {
+    fn from(value: T) -> Self {
+        MetaResult::Value(value.into())
     }
 }
 
-impl fmt::Display for ExternValue {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ExternValue::Null => write!(f, "null"),
-            ExternValue::Bool(v) => write!(f, "{v}"),
-            ExternValue::Int(v) => write!(f, "{v}"),
-            ExternValue::Float(v) => write!(f, "{v}"),
-            ExternValue::Str(v) => write!(f, "{v}"),
-            ExternValue::Bytes(v) => write!(f, "b\"{}\"", v.escape_ascii()),
-            ExternValue::Table(v) => write!(f, "<table {v:p}>"),
-            ExternValue::Function(v) => write!(f, "<function {v:p}>"),
-            ExternValue::UserData(v) => write!(f, "<userdata {v:p}>"),
-        }
+#[cfg(test)]
+mod tests {
+    use std::mem::size_of;
+
+    use super::*;
+
+    #[test]
+    fn value_size() {
+        assert!(size_of::<Value>() <= 2 * size_of::<usize>());
     }
 }
-
-// SAFETY: The pointers in `ExternValue` are not actually dereferenced at all, they are purely
-// informational.
-unsafe impl Send for ExternValue {}
-// SAFETY: The pointers in `ExternValue` are not actually dereferenced at all, they are purely
-// informational.
-unsafe impl Sync for ExternValue {}

@@ -29,8 +29,6 @@ pub enum OpCode {
     StoreLocal(usize),
     /// Stores `STACK.pop()` into the `global_names[namei]`.
     StoreGlobal(usize),
-    /// Stores `STACK.pop()` into the `upvalue_names[namei]`.
-    StoreUpvalue(usize),
 
     /// Imports the module `consts[consti]` and pushed it onto the stack.
     Import(usize),
@@ -68,7 +66,7 @@ pub enum OpCode {
     /// key = STACK.pop()
     /// table = STACK.pop()
     /// value = STACK.pop()
-    /// table::key = value
+    /// STACK.push(set_attr(table, key, value))
     /// ```
     SetAttr,
     /// Implements:
@@ -76,14 +74,14 @@ pub enum OpCode {
     /// key = STACK.pop()
     /// table = STACK.pop()
     /// value = STACK.pop()
-    /// table[key] = value
+    /// STACK.push(set_item(table, key, value))
     /// ```
     SetItem,
     /// Implements:
     /// ```lucia
     /// table = STACK.pop()
     /// metatable = STACK.pop()
-    /// table[#] = metatable
+    /// STACK.push(set_metatable(table, metatable))
     /// ```
     SetMeta,
 
@@ -175,10 +173,7 @@ impl OpCode {
     }
 
     pub fn is_store(self) -> bool {
-        matches!(
-            self,
-            Self::StoreLocal(_) | Self::StoreGlobal(_) | Self::StoreUpvalue(_)
-        )
+        matches!(self, Self::StoreLocal(_) | Self::StoreGlobal(_))
     }
 
     pub fn is_jump(self) -> bool {
@@ -207,7 +202,6 @@ impl fmt::Display for OpCode {
             Self::LoadConst(i) => write!(f, "{:WIDTH$}{}", "LoadConst", i),
             Self::StoreLocal(i) => write!(f, "{:WIDTH$}{}", "StoreLocal", i),
             Self::StoreGlobal(i) => write!(f, "{:WIDTH$}{}", "StoreGlobal", i),
-            Self::StoreUpvalue(i) => write!(f, "{:WIDTH$}{}", "StoreUpvalue", i),
             Self::Import(i) => write!(f, "{:WIDTH$}{}", "Import", i),
             Self::ImportFrom(i) => write!(f, "{:WIDTH$}{}", "ImportFrom", i),
             Self::ImportGlob => write!(f, "ImportGlob"),

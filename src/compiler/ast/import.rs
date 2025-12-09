@@ -18,7 +18,7 @@ pub enum ImportKind<S> {
 
 impl_locatable!(ImportItem);
 
-impl<S: AsRef<str>> fmt::Display for ImportKind<S> {
+impl<S: fmt::Display> fmt::Display for ImportKind<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ImportKind::Simple(alias) => {
@@ -42,7 +42,7 @@ pub struct ImportItem<S> {
     pub range: TextRange,
 }
 
-impl<S: AsRef<str>> fmt::Display for ImportItem<S> {
+impl<S: fmt::Display> fmt::Display for ImportItem<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.alias {
             Some(alias) => write!(f, "{} as {}", self.name, alias),

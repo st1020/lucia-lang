@@ -19,7 +19,7 @@ pub enum MemberKind<S> {
     DoubleColonMeta,
 }
 
-impl<S: AsRef<str>> fmt::Display for MemberKind<S> {
+impl<S: fmt::Display> fmt::Display for MemberKind<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             MemberKind::Bracket(expr) => write!(f, "[{expr}]"),

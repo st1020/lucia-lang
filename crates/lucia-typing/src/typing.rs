@@ -140,7 +140,7 @@ impl<S: Clone + Eq + Ord> ops::BitOr for Type<S> {
     }
 }
 
-impl<S: AsRef<str> + Eq + Ord> fmt::Display for Type<S> {
+impl<S: AsRef<str> + Eq + Ord + fmt::Display> fmt::Display for Type<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Type::Unknown => write!(f, "unknown"),
@@ -308,7 +308,7 @@ impl<S: AsRef<str> + Eq + Ord + Clone> TableType<S> {
     }
 }
 
-impl<S: AsRef<str> + Eq + Ord> fmt::Display for TableType<S> {
+impl<S: AsRef<str> + Eq + Ord + fmt::Display> fmt::Display for TableType<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut items = Vec::new();
         for (k, v) in &self.pairs {
@@ -352,7 +352,7 @@ impl<S: Clone + Eq + Ord> FunctionType<S> {
     }
 }
 
-impl<S: AsRef<str> + Eq + Ord> fmt::Display for FunctionType<S> {
+impl<S: AsRef<str> + Eq + Ord + fmt::Display> fmt::Display for FunctionType<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -392,7 +392,7 @@ impl<S: Eq + Ord> Ord for ParmaType<S> {
     }
 }
 
-impl<S: AsRef<str> + Eq + Ord> fmt::Display for ParmaType<S> {
+impl<S: AsRef<str> + Eq + Ord + fmt::Display> fmt::Display for ParmaType<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(name) = &self.name {
             write!(f, "{}: {}", name.as_ref(), self.ty)

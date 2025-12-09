@@ -1,125 +1,129 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, rc::Rc};
 
-use compact_str::ToCompactString;
-use gc_arena::{Collect, Gc, Mutation, lock::RefLock};
-use indexmap::IndexMap;
+use compact_str::{CompactString, ToCompactString};
+use derive_more::Display;
+use ordermap::{OrderMap, OrderSet};
 
 use crate::{
     Context,
     compiler::value::{MetaMethod, MetaName},
-    objects::{
-        Callback, CallbackReturn, Equal, Function, IntoMetaResult, IntoValue, MetaResult, Repr,
-        Value, call_metamethod, call_metamethod_error, define_object, impl_metamethod,
-    },
+    objects::{MetaResult, Value, call_metamethod, call_metamethod_error, impl_metamethod},
 };
 
-pub type TableInner<'gc> = RefLock<TableState<'gc>>;
+pub type Table = Rc<TableInner>;
 
-define_object!(Table, TableInner<'gc>, ptr, "table");
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default, Display)]
+#[display("<table {self:p}>")]
+pub struct TableInner {
+    pub entries: TableEntries,
+    pub metatable: Option<Table>,
+}
 
-impl<'gc> Table<'gc> {
-    pub fn new(mc: &Mutation<'gc>) -> Self {
-        Table::from(mc, TableState::default())
+impl TableInner {
+    pub fn new() -> Self {
+        TableInner::default()
     }
 
-    pub fn from(mc: &Mutation<'gc>, table_state: TableState<'gc>) -> Self {
-        Table(Gc::new(mc, RefLock::new(table_state)))
-    }
-
-    pub fn get<K: IntoValue<'gc>>(self, ctx: Context<'gc>, key: K) -> Value<'gc> {
-        let key = key.into_value(ctx);
-        let entries = &self.0.borrow().entries;
+    pub fn get<K: Into<Value>>(&self, key: K) -> Value {
+        let key = key.into();
         if let Value::Int(key) = key
             && let Ok(key) = usize::try_from(key)
-            && key < entries.array.len()
+            && key < self.entries.array.len()
         {
-            return entries.array[key];
+            return self.entries.array[key].clone();
         }
-        entries.map.get(&key).copied().unwrap_or(Value::Null)
+        self.entries.map.get(&key).cloned().unwrap_or(Value::Null)
     }
 
-    pub fn get_index(self, index: usize) -> Option<(Value<'gc>, Value<'gc>)> {
-        let entries = &self.0.borrow().entries;
-        if index < entries.array.len() {
-            entries
+    pub fn get_index(&self, index: usize) -> Option<(Value, Value)> {
+        if index < self.entries.array.len() {
+            self.entries
                 .array
                 .get(index)
-                .map(|v| (Value::Int(index.try_into().unwrap()), *v))
+                .map(|v| (Value::Int(index.try_into().unwrap()), v.clone()))
         } else {
-            entries
+            self.entries
                 .map
-                .get_index(index - entries.array.len())
-                .map(|(k, v)| (*k, *v))
+                .get_index(index - self.entries.array.len())
+                .map(|(k, v)| (k.clone(), v.clone()))
         }
     }
 
-    pub fn set<K: IntoValue<'gc>, V: IntoValue<'gc>>(self, ctx: Context<'gc>, key: K, value: V) {
-        let key = key.into_value(ctx);
-        let value = value.into_value(ctx);
-        let entries = &mut self.0.borrow_mut(&ctx).entries;
+    pub fn set<K: Into<Value>, V: Into<Value>>(&mut self, key: K, value: V) {
+        let key = key.into();
+        let value = value.into();
         if let Value::Int(k) = key
             && let Ok(k) = usize::try_from(k)
         {
-            match k.cmp(&entries.array.len()) {
-                Ordering::Less => return entries.array[k] = value,
-                Ordering::Equal => return entries.array.push(value),
+            match k.cmp(&self.entries.array.len()) {
+                Ordering::Less => return self.entries.array[k] = value,
+                Ordering::Equal => return self.entries.array.push(value),
                 Ordering::Greater => (),
             }
         }
         if value.is_null() {
-            entries.map.shift_remove(&key);
+            self.entries.map.remove(&key);
         } else {
-            entries.map.insert(key, value);
+            self.entries.map.insert(key, value);
         }
     }
 
-    pub fn len(self) -> usize {
-        let entries = &self.0.borrow().entries;
-        entries.array.len() + entries.map.len()
+    pub fn len(&self) -> usize {
+        self.entries.array.len() + self.entries.map.len()
     }
 
-    pub fn is_empty(self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    pub fn metatable(self) -> Option<Table<'gc>> {
-        self.0.borrow().metatable
+    pub fn metatable(&self) -> Option<Table> {
+        self.metatable.clone()
     }
 
-    pub fn set_metatable(self, mc: &Mutation<'gc>, metatable: Option<Table<'gc>>) {
-        self.0.borrow_mut(mc).metatable = metatable;
+    pub fn set_metatable(&mut self, metatable: Option<Table>) {
+        self.metatable = metatable;
     }
 
-    pub fn iter(self) -> TableIter<'gc> {
+    pub fn iter(&self) -> TableIter<'_> {
         TableIter { table: self, i: 0 }
     }
 
-    pub fn iter_callback(self, ctx: Context<'gc>) -> Callback<'gc> {
-        Callback::from_fn_with(
-            &ctx,
-            Gc::new(&ctx, RefLock::new(self.iter())),
-            |iter, ctx, _args| {
-                Ok(CallbackReturn::Return(iter.borrow_mut(&ctx).next().map_or(
-                    Value::Null,
-                    |(k, v)| {
-                        let t = Table::new(&ctx);
-                        t.set(ctx, 0_i64, k);
-                        t.set(ctx, 1_i64, v);
-                        t.into()
-                    },
-                )))
-            },
-        )
+    // pub fn iter_callback(&self, ctx: Context) -> Callback {
+    //     Callback::from_fn_with(
+    //         &ctx,
+    //         Gc::new(&ctx, RefLock::new(self.iter())),
+    //         |iter, ctx, _args| {
+    //             Ok(CallbackReturn::Return(iter.borrow_mut(&ctx).next().map_or(
+    //                 Value::Null,
+    //                 |(k, v)| {
+    //                     let t = Table::new(&ctx);
+    //                     t.set(ctx, 0_i64, k);
+    //                     t.set(ctx, 1_i64, v);
+    //                     t.into()
+    //                 },
+    //             )))
+    //         },
+    //     )
+    // }
+}
+
+impl<'a> IntoIterator for &'a TableInner {
+    type Item = (Value, Value);
+    type IntoIter = TableIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
     }
 }
 
-impl<'gc> MetaMethod<Context<'gc>> for Table<'gc> {
+impl MetaMethod<&Context> for Table {
     impl_metamethod!(Table);
 
-    fn meta_call(&self, ctx: Context<'gc>) -> Result<Self::ResultCall, Self::Error> {
+    #[inline]
+    fn meta_call(self, ctx: &Context) -> Result<Self::ResultCall, Self::Error> {
         if let Some(metatable) = self.metatable() {
             #[expect(clippy::wildcard_enum_match_arm)]
-            match metatable.get(ctx, MetaName::Call) {
+            match metatable.get(MetaName::Call) {
                 Value::Function(v) => Ok(v),
                 Value::Table(v) => v.meta_call(ctx), // TODO: prevent infinite recursion
                 v => Err(v.meta_error(ctx, MetaName::Call, vec![])),
@@ -129,41 +133,81 @@ impl<'gc> MetaMethod<Context<'gc>> for Table<'gc> {
         }
     }
 
-    fn meta_iter(&self, ctx: Context<'gc>) -> Result<Self::ResultIter, Self::Error> {
-        if let Some(metatable) = self.metatable() {
-            let t = metatable.get(ctx, MetaName::Iter);
-            if !t.is_null() {
-                return Ok(Function::Callback(Callback::from_fn_with(
-                    &ctx,
-                    (t.meta_call(ctx)?, *self),
-                    |(f, v), _ctx, _args| Ok(CallbackReturn::TailCall(*f, vec![(*v).into()])),
-                )));
-            }
-        }
-        Ok(Function::Callback(self.iter_callback(ctx)))
-    }
+    // fn meta_iter(&self, ctx: &Context) -> Result<Self::ResultIter, Self::Error> {
+    //     if let Some(metatable) = self.metatable() {
+    //         let t = metatable.get(MetaName::Iter);
+    //         if !t.is_null() {
+    //             return Ok(Function::Callback(Callback::from_fn_with(
+    //                 &ctx,
+    //                 (t.meta_call(ctx)?, *self),
+    //                 |(f, v), _ctx, _args| Ok(CallbackReturn::TailCall(*f, vec![(*v).into()])),
+    //             )));
+    //         }
+    //     }
+    //     Ok(Function::Callback(self.iter_callback(ctx)))
+    // }
 
-    fn meta_len(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
+    #[inline]
+    fn meta_len(self, ctx: &Context) -> Result<Self::Result1, Self::Error> {
         call_metamethod!(ctx, MetaName::Len, self);
-        Ok(self.len().into_meta_result(ctx))
+        Ok(self.len().into())
     }
 
-    fn meta_bool(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
+    #[inline]
+    fn meta_bool(self, ctx: &Context) -> Result<Self::Result1, Self::Error> {
         call_metamethod!(ctx, MetaName::Bool, self);
-        Ok((!self.is_empty()).into_meta_result(ctx))
+        Ok((!self.is_empty()).into())
     }
 
     call_metamethod_error!(1, meta_int, Int);
     call_metamethod_error!(1, meta_float, Float);
 
-    fn meta_str(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
+    #[inline]
+    fn meta_str(self, ctx: &Context) -> Result<Self::Result1, Self::Error> {
         call_metamethod!(ctx, MetaName::Str, self);
-        Ok(self.to_compact_string().into_meta_result(ctx))
+        Ok(self.to_compact_string().into())
     }
 
-    fn meta_repr(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
+    #[inline]
+    fn meta_repr(self, ctx: &Context) -> Result<Self::Result1, Self::Error> {
+        enum ValueOrStr {
+            Value(Value),
+            Str(&'static str),
+        }
+
         call_metamethod!(ctx, MetaName::Repr, self);
-        Ok(self.repr().into_meta_result(ctx))
+
+        let mut result = CompactString::new("");
+        let mut visited = OrderSet::new();
+        let mut stack = vec![ValueOrStr::Value(Value::Table(self))];
+        while let Some(current) = stack.pop() {
+            match current {
+                ValueOrStr::Value(Value::Table(t)) => {
+                    let id = Rc::as_ptr(&t).cast::<()>();
+                    if visited.contains(&id) {
+                        result.push_str("<table>");
+                        continue;
+                    }
+                    visited.insert(id);
+                    stack.push(ValueOrStr::Str("}"));
+                    for i in (0..t.len()).rev() {
+                        let Some((k, v)) = t.get_index(i) else {
+                            continue;
+                        };
+                        if i != t.len() - 1 {
+                            stack.push(ValueOrStr::Str(", "));
+                        }
+                        stack.push(ValueOrStr::Value(v));
+                        stack.push(ValueOrStr::Str(": "));
+                        stack.push(ValueOrStr::Value(k));
+                    }
+                    stack.push(ValueOrStr::Str("{"));
+                }
+                ValueOrStr::Value(v) => result.push_str(&v.to_compact_string()),
+                ValueOrStr::Str(s) => result.push_str(s),
+            }
+        }
+        Ok(result.into())
     }
 
     call_metamethod_error!(1, meta_neg, Neg);
@@ -173,109 +217,70 @@ impl<'gc> MetaMethod<Context<'gc>> for Table<'gc> {
     call_metamethod_error!(2, meta_div, Div);
     call_metamethod_error!(2, meta_rem, Rem);
 
-    fn meta_eq(&self, ctx: Context<'gc>, other: Self::Value) -> Result<Self::Result2, Self::Error> {
-        call_metamethod!(ctx, MetaName::Eq, self, other);
-        Ok(if let Value::Table(other) = other {
-            self.equal(&other)
-        } else {
-            false
-        }
-        .into_meta_result(ctx))
-    }
-
-    fn meta_ne(&self, ctx: Context<'gc>, other: Self::Value) -> Result<Self::Result2, Self::Error> {
-        call_metamethod!(ctx, MetaName::Ne, self, other);
-        Ok(if let Value::Table(other) = other {
-            self.not_equal(&other)
-        } else {
-            true
-        }
-        .into_meta_result(ctx))
-    }
-
+    impl_metamethod!(Table, eq_ne);
     call_metamethod_error!(2, meta_gt, Gt);
     call_metamethod_error!(2, meta_ge, Ge);
     call_metamethod_error!(2, meta_lt, Lt);
     call_metamethod_error!(2, meta_le, Le);
 
-    fn meta_get_attr(
-        &self,
-        ctx: Context<'gc>,
-        key: Self::Value,
-    ) -> Result<Self::Result2, Self::Error> {
+    #[inline]
+    fn meta_get_attr(self, ctx: &Context, key: Self::Value) -> Result<Self::Result2, Self::Error> {
         call_metamethod!(ctx, MetaName::GetAttr, self, key);
-        Ok(MetaResult::Value(self.get(ctx, key)))
+        Ok(MetaResult::Value(self.get(key)))
     }
 
-    fn meta_get_item(
-        &self,
-        ctx: Context<'gc>,
-        key: Self::Value,
-    ) -> Result<Self::Result2, Self::Error> {
+    #[inline]
+    fn meta_get_item(self, ctx: &Context, key: Self::Value) -> Result<Self::Result2, Self::Error> {
         call_metamethod!(ctx, MetaName::GetItem, self, key);
-        Ok(MetaResult::Value(self.get(ctx, key)))
+        Ok(MetaResult::Value(self.get(key)))
     }
 
+    #[inline]
     fn meta_set_attr(
-        &self,
-        ctx: Context<'gc>,
+        self,
+        ctx: &Context,
         key: Self::Value,
         value: Self::Value,
     ) -> Result<Self::Result3, Self::Error> {
         call_metamethod!(ctx, MetaName::SetAttr, self, key, value);
-        self.set(ctx, key, value);
-        Ok(MetaResult::Value(Value::Null))
+        let mut table = Rc::unwrap_or_clone(self);
+        table.set(key, value);
+        Ok(table.into())
     }
 
+    #[inline]
     fn meta_set_item(
-        &self,
-        ctx: Context<'gc>,
+        self,
+        ctx: &Context,
         key: Self::Value,
         value: Self::Value,
     ) -> Result<Self::Result3, Self::Error> {
         call_metamethod!(ctx, MetaName::SetItem, self, key, value);
-        self.set(ctx, key, value);
-        Ok(MetaResult::Value(Value::Null))
+        let mut table = Rc::unwrap_or_clone(self);
+        table.set(key, value);
+        Ok(table.into())
     }
 }
 
-#[derive(Debug, Default, Collect)]
-#[collect(no_drop)]
-pub struct TableState<'gc> {
-    pub entries: TableEntries<'gc>,
-    pub metatable: Option<Table<'gc>>,
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+pub struct TableEntries {
+    array: Vec<Value>,
+    map: OrderMap<Value, Value>,
 }
 
-#[derive(Debug, PartialEq, Eq, Default)]
-pub struct TableEntries<'gc> {
-    array: Vec<Value<'gc>>,
-    map: IndexMap<Value<'gc>, Value<'gc>>,
-}
-
-// SAFETY: `IndexMap<Value<'gc>, Value<'gc>>` is safe to be traced by tracing all its entries.
-unsafe impl Collect for TableEntries<'_> {
-    fn trace(&self, cc: &gc_arena::Collection) {
-        self.array.trace(cc);
-        for (key, value) in &self.map {
-            key.trace(cc);
-            value.trace(cc);
-        }
-    }
-}
-
-impl<'gc> FromIterator<Value<'gc>> for TableEntries<'gc> {
-    fn from_iter<T: IntoIterator<Item = Value<'gc>>>(iter: T) -> Self {
+impl FromIterator<Value> for TableEntries {
+    fn from_iter<T: IntoIterator<Item = Value>>(iter: T) -> Self {
         let array = Vec::from_iter(iter);
         TableEntries {
             array,
-            map: IndexMap::new(),
+            map: OrderMap::new(),
         }
     }
 }
 
-impl<'gc> FromIterator<(Value<'gc>, Value<'gc>)> for TableEntries<'gc> {
-    fn from_iter<T: IntoIterator<Item = (Value<'gc>, Value<'gc>)>>(iter: T) -> Self {
-        let map = IndexMap::from_iter(iter);
+impl FromIterator<(Value, Value)> for TableEntries {
+    fn from_iter<T: IntoIterator<Item = (Value, Value)>>(iter: T) -> Self {
+        let map = OrderMap::from_iter(iter);
         TableEntries {
             array: Vec::new(),
             map,
@@ -283,15 +288,14 @@ impl<'gc> FromIterator<(Value<'gc>, Value<'gc>)> for TableEntries<'gc> {
     }
 }
 
-#[derive(Debug, Collect)]
-#[collect(no_drop)]
-pub struct TableIter<'gc> {
-    table: Table<'gc>,
+#[derive(Debug)]
+pub struct TableIter<'a> {
+    table: &'a TableInner,
     i: usize,
 }
 
-impl<'gc> Iterator for TableIter<'gc> {
-    type Item = (Value<'gc>, Value<'gc>);
+impl Iterator for TableIter<'_> {
+    type Item = (Value, Value);
 
     fn next(&mut self) -> Option<Self::Item> {
         self.nth(0)
@@ -317,3 +321,33 @@ impl<'gc> Iterator for TableIter<'gc> {
 }
 
 impl ExactSizeIterator for TableIter<'_> {}
+
+impl From<TableInner> for Value {
+    fn from(value: TableInner) -> Self {
+        Value::Table(Table::new(value))
+    }
+}
+
+impl<T: Into<TableEntries>> From<T> for Value {
+    fn from(value: T) -> Self {
+        Value::Table(Table::new(TableInner {
+            entries: value.into(),
+            metatable: None,
+        }))
+    }
+}
+
+impl<T: Into<Value>> From<Vec<T>> for TableEntries {
+    fn from(value: Vec<T>) -> Self {
+        value.into_iter().map(Into::into).collect()
+    }
+}
+
+impl<K: Into<Value>, V: Into<Value>> From<Vec<(K, V)>> for TableEntries {
+    fn from(value: Vec<(K, V)>) -> Self {
+        value
+            .into_iter()
+            .map(|(k, v)| (k.into(), v.into()))
+            .collect()
+    }
+}

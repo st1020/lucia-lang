@@ -1,83 +1,64 @@
-use std::{collections::HashSet, ffi::OsStr, path::Path};
+use std::rc::Rc;
 
 use compact_str::{CompactString, ToCompactString, format_compact};
-use derive_more::{Deref, Display};
-use gc_arena::{Collect, Gc, Mutation};
-use rustc_hash::FxBuildHasher;
 
 use crate::{
     Context,
-    compiler::{
-        interning::StringInterner,
-        value::{MetaMethod, MetaName},
-    },
-    errors::{Error, RuntimeError},
-    objects::{IntoMetaResult, Value, define_object, impl_metamethod},
+    compiler::value::{MetaMethod, MetaName},
+    errors::{Error, ErrorKind},
+    objects::{FromValue, Value, ValueType, impl_metamethod, unexpected_type_error},
 };
 
-define_object!(Str, StrInner, str, inner, [u8], OsStr, Path);
+pub type Str = Rc<CompactString>;
 
-impl<'gc> Str<'gc> {
-    pub fn new(mc: &Mutation<'gc>, s: CompactString) -> Str<'gc> {
-        Str(Gc::new(mc, StrInner(s)))
-    }
-
-    pub fn as_str(&self) -> &str {
-        self.into_inner().as_ref()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Collect, Display, Deref)]
-#[collect(require_static)]
-#[deref(forward)]
-pub struct StrInner(CompactString);
-
-impl<'gc> MetaMethod<Context<'gc>> for Str<'gc> {
+impl MetaMethod<&Context> for Str {
     impl_metamethod!(Str);
 
-    fn meta_len(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
-        Ok(self.len().into_meta_result(ctx))
+    #[inline]
+    fn meta_len(self, _: &Context) -> Result<Self::Result1, Self::Error> {
+        Ok(self.len().into())
     }
 
-    fn meta_bool(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
-        Ok((!self.is_empty()).into_meta_result(ctx))
+    #[inline]
+    fn meta_bool(self, _: &Context) -> Result<Self::Result1, Self::Error> {
+        Ok((!self.is_empty()).into())
     }
 
-    fn meta_int(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
+    #[inline]
+    fn meta_int(self, _: &Context) -> Result<Self::Result1, Self::Error> {
         Ok(self
             .parse::<i64>()
             .map_err(|e| {
-                Error::new(RuntimeError::ParseError {
+                Error::new(ErrorKind::ParseError {
                     reason: e.to_string(),
                 })
             })?
-            .into_meta_result(ctx))
+            .into())
     }
 
-    fn meta_float(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
+    #[inline]
+    fn meta_float(self, _: &Context) -> Result<Self::Result1, Self::Error> {
         Ok(self
             .parse::<f64>()
             .map_err(|e| {
-                Error::new(RuntimeError::ParseError {
+                Error::new(ErrorKind::ParseError {
                     reason: e.to_string(),
                 })
             })?
-            .into_meta_result(ctx))
+            .into())
     }
 
     impl_metamethod!(Str, str);
 
-    fn meta_repr(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
-        Ok(format_compact!("{:?}", self.as_str()).into_meta_result(ctx))
+    #[inline]
+    fn meta_repr(self, _: &Context) -> Result<Self::Result1, Self::Error> {
+        Ok(format_compact!("{:?}", self.as_str()).into())
     }
 
-    fn meta_add(
-        &self,
-        ctx: Context<'gc>,
-        other: Self::Value,
-    ) -> Result<Self::Result2, Self::Error> {
+    #[inline]
+    fn meta_add(self, ctx: &Context, other: Self::Value) -> Result<Self::Result2, Self::Error> {
         if let Value::Str(other) = other {
-            Ok((self.to_compact_string() + other.as_ref()).into_meta_result(ctx))
+            Ok((self.to_compact_string() + other.as_ref()).into())
         } else {
             Err(self.meta_error(ctx, MetaName::Add, vec![other]))
         }
@@ -90,38 +71,52 @@ impl<'gc> MetaMethod<Context<'gc>> for Str<'gc> {
     impl_metamethod!(Str, compare, Le, meta_le, le);
 }
 
-pub struct StrInterner<'gc> {
-    context: Context<'gc>,
-    interner: HashSet<Str<'gc>, FxBuildHasher>, // TODO: use weak references?
-}
-
-impl<'gc> StrInterner<'gc> {
-    pub fn new(context: Context<'gc>) -> Self {
-        StrInterner {
-            context,
-            interner: HashSet::with_hasher(FxBuildHasher),
-        }
+impl From<CompactString> for Value {
+    fn from(value: CompactString) -> Value {
+        Value::Str(value.into())
     }
 }
 
-impl<'gc> StringInterner for StrInterner<'gc> {
-    type String = Str<'gc>;
+impl From<String> for Value {
+    fn from(value: String) -> Value {
+        Value::Str(value.to_compact_string().into())
+    }
+}
 
-    fn intern(&mut self, s: &str) -> Self::String {
-        if let Some(s) = self.interner.get(s) {
-            *s
+impl From<&str> for Value {
+    fn from(value: &str) -> Value {
+        Value::Str(value.to_compact_string().into())
+    }
+}
+
+impl From<ValueType> for Value {
+    fn from(value: ValueType) -> Self {
+        CompactString::const_new(value.name()).into()
+    }
+}
+
+impl From<MetaName> for Value {
+    fn from(value: MetaName) -> Self {
+        CompactString::const_new(value.name()).into()
+    }
+}
+
+impl FromValue for CompactString {
+    fn from_value(value: Value) -> Result<Self, Error> {
+        if let Value::Str(v) = value {
+            Ok(Rc::unwrap_or_clone(v))
         } else {
-            let s = Str::new(&self.context, s.into());
-            self.interner.insert(s);
-            s
+            Err(unexpected_type_error!(ValueType::Str, value))
         }
     }
 }
 
-// SAFETY: Str<'gc> is Collect, and HashSet is Collect when its elements are Collect, the
-// Context<'gc> does need to be traced.
-unsafe impl Collect for StrInterner<'_> {
-    fn trace(&self, cc: &gc_arena::Collection) {
-        self.interner.trace(cc);
+impl FromValue for String {
+    fn from_value(value: Value) -> Result<Self, Error> {
+        if let Value::Str(v) = value {
+            Ok(Rc::unwrap_or_clone(v).into())
+        } else {
+            Err(unexpected_type_error!(ValueType::Str, value))
+        }
     }
 }

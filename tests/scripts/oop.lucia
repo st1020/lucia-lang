@@ -20,18 +20,20 @@ glo Cat = do {
     fn meow(self) {
         self.meow_times += 1
         println("meow~")
+        return self
     }
 
     fn play(self) {
         self.play_times += 1
         println("Playing...")
+        return self
     }
 }
 
 cat = Cat::new()
-cat.meow()
-cat.play()
-cat.meow()
+cat = cat.meow()
+cat = cat.play()
+cat = cat.meow()
 
 assert(cat.meow_times == 2)
 assert(cat.play_times == 1)

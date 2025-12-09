@@ -1,69 +1,44 @@
-use std::fmt;
+use std::rc::Rc;
 
-use gc_arena::{
-    Collect, Gc, Mutation,
-    lock::{Lock, RefLock},
+use crate::{
+    compiler::code::{Code, UpvalueCapture},
+    frame::LuciaFrame,
+    objects::{Str, Value},
 };
 
-use crate::objects::{RuntimeCode, Value, define_object};
+pub type Closure = Rc<ClosureInner>;
 
-define_object!(Closure, ClosureInner<'gc>, ptr, "closure");
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ClosureInner {
+    pub code: Code<Str>,
+    pub upvalues: Vec<Value>,
+}
 
-impl<'gc> Closure<'gc> {
-    pub fn new(mc: &Mutation<'gc>, code: RuntimeCode<'gc>, closure: Option<Closure<'gc>>) -> Self {
+impl ClosureInner {
+    pub fn new(code: Code<Str>, frame: Option<&LuciaFrame>) -> Self {
         let mut upvalues = Vec::with_capacity(code.upvalue_names.len());
 
-        if let Some(closure) = closure {
-            let base_closure_upvalues = closure.upvalues.borrow();
-            for (_, base_closure_upvalue_id) in &code.upvalue_names {
-                upvalues.push(base_closure_upvalue_id.map_or_else(
-                    || UpValue::new(mc, Value::Null),
-                    |id| base_closure_upvalues[id],
-                ));
+        if let Some(frame) = frame {
+            let base_locals = &frame.locals;
+            let base_upvalues = &frame.closure.upvalues;
+            for (_, upvalue_capture) in &code.upvalue_names {
+                upvalues.push(match *upvalue_capture {
+                    UpvalueCapture::Local(i) => base_locals[i].clone(),
+                    UpvalueCapture::Upvalue(i) => base_upvalues[i].clone(),
+                });
             }
         } else {
             for _ in 0..code.upvalue_names.len() {
-                upvalues.push(UpValue::new(mc, Value::Null));
+                upvalues.push(Value::Null);
             }
         }
 
-        Closure(Gc::new(
-            mc,
-            ClosureInner {
-                upvalues: Gc::new(mc, RefLock::new(upvalues)),
-                code,
-            },
-        ))
+        Self { code, upvalues }
     }
 }
 
-#[derive(Debug, Collect)]
-#[collect(no_drop)]
-pub struct ClosureInner<'gc> {
-    pub code: RuntimeCode<'gc>,
-    pub upvalues: Gc<'gc, RefLock<Vec<UpValue<'gc>>>>,
-}
-
-#[derive(Debug, Clone, Copy, Collect)]
-#[collect(no_drop)]
-pub struct UpValue<'gc>(Gc<'gc, Lock<Value<'gc>>>);
-
-impl<'gc> UpValue<'gc> {
-    pub fn new(mc: &Mutation<'gc>, value: Value<'gc>) -> Self {
-        UpValue(Gc::new(mc, Lock::new(value)))
-    }
-
-    pub fn get(self) -> Value<'gc> {
-        self.0.get()
-    }
-
-    pub fn set(self, mc: &Mutation<'gc>, value: Value<'gc>) {
-        self.0.set(mc, value);
-    }
-}
-
-impl fmt::Display for UpValue<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.get())
+impl From<ClosureInner> for Value {
+    fn from(value: ClosureInner) -> Value {
+        Value::Function(Rc::new(value).into())
     }
 }

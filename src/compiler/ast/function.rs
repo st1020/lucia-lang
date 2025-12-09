@@ -23,7 +23,7 @@ pub struct Function<S> {
 
 impl_locatable!(Function);
 
-impl<S: AsRef<str>> fmt::Display for Function<S> {
+impl<S: fmt::Display> fmt::Display for Function<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let params_str = self
             .params

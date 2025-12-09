@@ -1,31 +1,31 @@
 #![allow(clippy::arbitrary_source_item_ordering)]
 
-use std::ops::RangeBounds;
+use std::{hash, marker::PhantomData, ops::RangeBounds, ptr, rc::Rc};
 
-use gc_arena::{Collect, Gc, Mutation};
+use derive_more::{Debug, Display};
 
 use crate::{
     Context,
-    errors::{Error, RuntimeError},
-    objects::{ArgumentRange, FromValue, Function, IntoValue, MetaResult, Value, define_object},
+    errors::{Error, ErrorKind},
+    objects::{ArgumentRange, FromValue, Function, MetaResult, Value},
 };
 
-pub type CallbackResult<'gc> = Result<CallbackReturn<'gc>, Error<'gc>>;
+pub type CallbackResult = Result<CallbackReturn, Error>;
 
-#[derive(Debug, PartialEq, Eq, Collect)]
-#[collect(no_drop)]
-pub enum CallbackReturn<'gc> {
-    Return(Value<'gc>),
-    TailCall(Function<'gc>, Vec<Value<'gc>>),
-    Call {
-        function: Function<'gc>,
-        args: Vec<Value<'gc>>,
-        then: Callback<'gc>,
-    },
+#[derive(Debug, PartialEq, Eq)]
+pub enum CallbackReturn {
+    Return(Value),
+    TailCall(Function, Vec<Value>),
 }
 
-impl<'gc, const N: usize> From<MetaResult<'gc, N>> for CallbackReturn<'gc> {
-    fn from(value: MetaResult<'gc, N>) -> Self {
+impl<T: Into<Value>> From<T> for CallbackReturn {
+    fn from(value: T) -> Self {
+        CallbackReturn::Return(value.into())
+    }
+}
+
+impl<const N: usize> From<MetaResult<N>> for CallbackReturn {
+    fn from(value: MetaResult<N>) -> Self {
         match value {
             MetaResult::Value(v) => CallbackReturn::Return(v),
             MetaResult::Call(f, args) => CallbackReturn::TailCall(f, Vec::from(args)),
@@ -33,243 +33,174 @@ impl<'gc, const N: usize> From<MetaResult<'gc, N>> for CallbackReturn<'gc> {
     }
 }
 
-pub trait IntoCallbackReturn<'gc> {
-    fn into_callback_return(self, ctx: Context<'gc>) -> CallbackReturn<'gc>;
+pub trait IntoCallbackResult {
+    fn into_callback_result(self) -> CallbackResult;
 }
 
-impl<'gc> IntoCallbackReturn<'gc> for CallbackReturn<'gc> {
-    fn into_callback_return(self, _ctx: Context<'gc>) -> CallbackReturn<'gc> {
-        self
+impl<T: Into<CallbackReturn>> IntoCallbackResult for T {
+    fn into_callback_result(self) -> CallbackResult {
+        Ok(self.into())
     }
 }
 
-impl<'gc, const N: usize> IntoCallbackReturn<'gc> for MetaResult<'gc, N> {
-    fn into_callback_return(self, _ctx: Context<'gc>) -> CallbackReturn<'gc> {
-        match self {
-            MetaResult::Value(v) => CallbackReturn::Return(v),
-            MetaResult::Call(f, args) => CallbackReturn::TailCall(f, Vec::from(args)),
-        }
+impl<T: Into<CallbackReturn>> IntoCallbackResult for Result<T, Error> {
+    fn into_callback_result(self) -> CallbackResult {
+        self.map(Into::into)
     }
 }
 
-impl<'gc, T: IntoValue<'gc>> IntoCallbackReturn<'gc> for T {
-    fn into_callback_return(self, ctx: Context<'gc>) -> CallbackReturn<'gc> {
-        CallbackReturn::Return(self.into_value(ctx))
+pub trait CallbackFn {
+    fn call(&self, ctx: &Context, args: &[Value]) -> CallbackResult;
+}
+
+pub type Callback = Rc<CallbackInner>;
+
+#[derive(Display, Debug)]
+#[display("<callback {self:p}>")]
+#[debug("{self}")]
+pub struct CallbackInner(Box<dyn CallbackFn>);
+
+impl PartialEq for CallbackInner {
+    fn eq(&self, other: &Self) -> bool {
+        ptr::eq(ptr::from_ref(&*self.0), ptr::from_ref(&*other.0))
     }
 }
 
-pub trait IntoCallbackResult<'gc> {
-    fn into_callback_result(self, ctx: Context<'gc>) -> CallbackResult<'gc>;
-}
+impl Eq for CallbackInner {}
 
-impl<'gc, T: IntoCallbackReturn<'gc>> IntoCallbackResult<'gc> for T {
-    fn into_callback_result(self, ctx: Context<'gc>) -> CallbackResult<'gc> {
-        Ok(self.into_callback_return(ctx))
+impl hash::Hash for CallbackInner {
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        ptr::from_ref(&*self.0).hash(state);
     }
 }
 
-impl<'gc, T: IntoCallbackReturn<'gc>> IntoCallbackResult<'gc> for Result<T, Error<'gc>> {
-    fn into_callback_result(self, ctx: Context<'gc>) -> CallbackResult<'gc> {
-        self.map(|x| x.into_callback_return(ctx))
-    }
-}
-
-pub trait CallbackFn<'gc>: Collect {
-    fn call(&self, ctx: Context<'gc>, args: &[Value<'gc>]) -> CallbackResult<'gc>;
-}
-
-define_object!(Callback, CallbackInner<'gc>, ptr, "callback");
-
-#[derive(Debug)]
-pub struct CallbackInner<'gc> {
-    call: unsafe fn(*const CallbackInner<'gc>, Context<'gc>, &[Value<'gc>]) -> CallbackResult<'gc>,
-}
-
-impl<'gc> Callback<'gc> {
-    pub fn new<C: CallbackFn<'gc> + 'gc>(mc: &Mutation<'gc>, callback: C) -> Self {
-        #[repr(C)]
-        struct HeaderCallback<'gc, C> {
-            header: CallbackInner<'gc>,
-            callback: C,
-        }
-
-        // SAFETY: We can't auto-implement `Collect` due to the function pointer lifetimes, but
-        // function pointers can't hold any data.
-        unsafe impl<C: Collect> Collect for HeaderCallback<'_, C> {
-            fn needs_trace() -> bool
-            where
-                Self: Sized,
-            {
-                C::needs_trace()
-            }
-
-            fn trace(&self, cc: &gc_arena::Collection) {
-                self.callback.trace(cc);
-            }
-        }
-
-        let hc = Gc::new(
-            mc,
-            HeaderCallback {
-                header: CallbackInner {
-                    // SAFETY: The pointer is valid and points to a `HeaderCallback`.
-                    call: |ptr, ctx, args| unsafe {
-                        let hc = ptr.cast::<HeaderCallback<C>>();
-                        ((*hc).callback).call(ctx, args)
-                    },
-                },
-                callback,
-            },
-        );
-
-        // SAFETY: `HeaderCallback` has the same layout as `CallbackInner` at the start.
-        Self(unsafe { Gc::cast::<CallbackInner>(hc) })
+impl CallbackInner {
+    pub fn new<F: CallbackFn + 'static>(f: F) -> Self {
+        Self(Box::new(f))
     }
 
-    pub fn from<F, T>(mc: &Mutation<'gc>, call: F) -> Callback<'gc>
+    pub fn from<F, T>(f: F) -> Self
     where
-        F: 'static + IntoCallback<'gc, T>,
+        F: IntoCallback<T> + 'static,
+        T: 'static,
     {
-        Self::from_fn(mc, move |ctx, args| call.call(ctx, args))
-    }
+        struct Shim<F, T>(F, PhantomData<T>);
 
-    /// Create a callback from a Rust function.
-    ///
-    /// The function must be `'static` because Rust closures cannot implement `Collect`. If you need
-    /// to associate GC data with this function, use [`Callback::from_fn_with`].
-    pub fn from_fn<F>(mc: &Mutation<'gc>, call: F) -> Callback<'gc>
-    where
-        F: 'static + Fn(Context<'gc>, &[Value<'gc>]) -> CallbackResult<'gc>,
-    {
-        Self::from_fn_with(mc, (), move |(), ctx, args| call(ctx, args))
-    }
-
-    /// Create a callback from a Rust function together with a GC object.
-    pub fn from_fn_with<R, F>(mc: &Mutation<'gc>, root: R, call: F) -> Callback<'gc>
-    where
-        R: 'gc + Collect,
-        F: 'static + Fn(&R, Context<'gc>, &[Value<'gc>]) -> CallbackResult<'gc>,
-    {
-        #[derive(Collect)]
-        #[collect(no_drop)]
-        struct RootCallback<R, F> {
-            root: R,
-            #[collect(require_static)]
-            call: F,
-        }
-
-        impl<'gc, R, F> CallbackFn<'gc> for RootCallback<R, F>
+        impl<F, T> CallbackFn for Shim<F, T>
         where
-            R: 'gc + Collect,
-            F: 'static + Fn(&R, Context<'gc>, &[Value<'gc>]) -> CallbackResult<'gc>,
+            F: IntoCallback<T>,
         {
-            fn call(&self, ctx: Context<'gc>, args: &[Value<'gc>]) -> CallbackResult<'gc> {
-                (self.call)(&self.root, ctx, args)
+            fn call(&self, ctx: &Context, args: &[Value]) -> CallbackResult {
+                self.0.call(ctx, args)
             }
         }
-
-        Callback::new(mc, RootCallback { root, call })
+        CallbackInner(Box::new(Shim(f, PhantomData)))
     }
 
-    pub fn call(self, ctx: Context<'gc>, args: &[Value<'gc>]) -> CallbackResult<'gc> {
-        // SAFETY: `self.0` is a valid pointer to `CallbackInner`.
-        unsafe { (self.0.call)(Gc::as_ptr(self.0), ctx, args) }
+    pub fn call(&self, ctx: &Context, args: &[Value]) -> CallbackResult {
+        self.0.call(ctx, args)
     }
 }
 
-pub trait IntoCallback<'gc, Marker> {
-    fn call(&self, ctx: Context<'gc>, args: &[Value<'gc>]) -> CallbackResult<'gc>;
+impl From<CallbackInner> for Value {
+    fn from(value: CallbackInner) -> Value {
+        Value::Function(Rc::new(value).into())
+    }
+}
+
+pub trait IntoCallback<Marker> {
+    fn call(&self, ctx: &Context, args: &[Value]) -> CallbackResult;
 }
 
 macro_rules! impl_into_callback {
     ($len:literal, $($idx:literal $t:ident),*) => {
-        impl<'gc, Func, Ret, $($t,)*> IntoCallback<'gc, fn($($t,)*) -> Ret> for Func
+        impl<Func, Ret, $($t,)*> IntoCallback<fn($($t,)*) -> Ret> for Func
         where
             Func: Fn($($t,)*) -> Ret,
-            Ret: IntoCallbackResult<'gc>,
-            $($t: FromValue<'gc>,)*
+            Ret: IntoCallbackResult,
+            $($t: FromValue,)*
         {
-            fn call(&self, ctx: Context<'gc>, args: &[Value<'gc>]) -> CallbackResult<'gc> {
+            fn call(&self, _ctx: &Context, args: &[Value]) -> CallbackResult {
                 let args_len = args.len();
                 let required = ArgumentRange::from($len);
                 if !required.contains(&args_len) {
                     return Err(Error::new(
-                        RuntimeError::CallArguments {
+                        ErrorKind::CallArguments {
                             required,
                             given: args_len,
                         },
                     ));
                 }
                 debug_assert!(args.len() == $len);
-                self($($t::from_value(args[$idx])?,)*).into_callback_result(ctx)
+                self($($t::from_value(args[$idx].clone())?,)*).into_callback_result()
             }
         }
 
         #[allow(unused_comparisons, clippy::allow_attributes)]
-        impl<'gc, Func, Ret, $($t,)*> IntoCallback<'gc, fn($($t,)* &[Value<'gc>]) -> Ret> for Func
+        impl<Func, Ret, $($t,)*> IntoCallback<fn($($t,)* &[Value]) -> Ret> for Func
         where
-            Func: Fn($($t,)* &[Value<'gc>]) -> Ret,
-            Ret: IntoCallbackResult<'gc>,
-            $($t: FromValue<'gc>,)*
+            Func: Fn($($t,)* &[Value]) -> Ret,
+            Ret: IntoCallbackResult,
+            $($t: FromValue,)*
         {
-            fn call(&self, ctx: Context<'gc>, args: &[Value<'gc>]) -> CallbackResult<'gc> {
+            fn call(&self, _ctx: &Context, args: &[Value]) -> CallbackResult {
                 let args_len = args.len();
                 let required = ArgumentRange::from(($len, None));
                 if !required.contains(&args_len) {
                     return Err(Error::new(
-                        RuntimeError::CallArguments {
+                        ErrorKind::CallArguments {
                             required,
                             given: args_len
                         },
                     ));
                 }
                 debug_assert!(args.len() >= $len);
-                self($($t::from_value(args[$idx])?,)* &args[$len..]).into_callback_result(ctx)
+                self($($t::from_value(args[$idx].clone())?,)* &args[$len..]).into_callback_result()
             }
         }
 
-        impl<'gc, Func, Ret, $($t,)*> IntoCallback<'gc, fn(Context<'gc>, $($t,)*) -> Ret> for Func
+        impl<Func, Ret, $($t,)*> IntoCallback<fn(Context, $($t,)*) -> Ret> for Func
         where
-            Func: Fn(Context<'gc>, $($t,)*) -> Ret,
-            Ret: IntoCallbackResult<'gc>,
-            $($t: FromValue<'gc>,)*
+            Func: Fn(&Context, $($t,)*) -> Ret,
+            Ret: IntoCallbackResult,
+            $($t: FromValue,)*
         {
-            fn call(&self, ctx: Context<'gc>, args: &[Value<'gc>]) -> CallbackResult<'gc> {
+            fn call(&self, ctx: &Context, args: &[Value]) -> CallbackResult {
                 let args_len = args.len();
                 let required = ArgumentRange::from($len);
                 if !required.contains(&args_len) {
                     return Err(Error::new(
-                        RuntimeError::CallArguments {
+                        ErrorKind::CallArguments {
                             required,
                             given: args_len,
                         },
                     ));
                 }
                 debug_assert!(args.len() == $len);
-                self(ctx, $($t::from_value(args[$idx])?,)*).into_callback_result(ctx)
+                self(ctx, $($t::from_value(args[$idx].clone())?,)*).into_callback_result()
             }
         }
 
         #[allow(unused_comparisons, clippy::allow_attributes)]
-        impl<'gc, Func, Ret, $($t,)*> IntoCallback<'gc, fn(Context<'gc>, $($t,)* &[Value<'gc>]) -> Ret> for Func
+        impl<Func, Ret, $($t,)*> IntoCallback<fn(Context, $($t,)* &[Value]) -> Ret> for Func
         where
-            Func: Fn(Context<'gc>, $($t,)* &[Value<'gc>]) -> Ret,
-            Ret: IntoCallbackResult<'gc>,
-            $($t: FromValue<'gc>,)*
+            Func: Fn(&Context, $($t,)* &[Value]) -> Ret,
+            Ret: IntoCallbackResult,
+            $($t: FromValue,)*
         {
-            fn call(&self, ctx: Context<'gc>, args: &[Value<'gc>]) -> CallbackResult<'gc> {
+            fn call(&self, ctx: &Context, args: &[Value]) -> CallbackResult {
                 let args_len = args.len();
                 let required = ArgumentRange::from(($len, None));
                 if !required.contains(&args_len) {
                     return Err(Error::new(
-                        RuntimeError::CallArguments {
+                        ErrorKind::CallArguments {
                             required,
                             given: args_len,
                         },
                     ));
                 }
                 debug_assert!(args.len() >= $len);
-                self(ctx, $($t::from_value(args[$idx])?,)* &args[$len..]).into_callback_result(ctx)
+                self(ctx, $($t::from_value(args[$idx].clone())?,)* &args[$len..]).into_callback_result()
             }
         }
     };
@@ -295,33 +226,25 @@ impl_into_callback!(16, 0 A, 1 B, 2 C, 3 D, 4 E, 5 F, 6 G, 7 H, 8 I, 9 J, 10 K, 
 
 #[cfg(test)]
 mod tests {
-    use gc_arena::{Arena, Rootable};
-
-    use crate::{context::State, objects::CallbackReturn};
+    use crate::{Context, objects::CallbackReturn};
 
     use super::*;
 
     #[test]
     fn test_dyn_callback() {
-        #[derive(Collect)]
-        #[collect(require_static)]
         struct CB;
 
-        impl<'gc> CallbackFn<'gc> for CB {
-            fn call(&self, _ctx: Context<'gc>, _args: &[Value<'gc>]) -> CallbackResult<'gc> {
+        impl CallbackFn for CB {
+            fn call(&self, _ctx: &Context, _args: &[Value]) -> CallbackResult {
                 Ok(CallbackReturn::Return(Value::Int(42)))
             }
         }
 
-        #[expect(clippy::redundant_closure)]
-        let arena = Arena::<Rootable![State<'_>]>::new(|mc| State::new(mc));
-        arena.mutate(|mc, state| {
-            let ctx = state.ctx(mc);
-            let dyn_callback = Callback::new(mc, CB);
-            assert_eq!(
-                dyn_callback.call(ctx, &[]),
-                Ok(CallbackReturn::Return(Value::Int(42)))
-            );
-        });
+        let context = Context::empty();
+        let dyn_callback = CallbackInner::new(CB);
+        assert_eq!(
+            dyn_callback.call(&context, &[]),
+            Ok(CallbackReturn::Return(Value::Int(42)))
+        );
     }
 }

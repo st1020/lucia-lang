@@ -1,57 +1,78 @@
 use std::{
     fmt,
     ops::{Bound, RangeBounds},
+    rc::Rc,
 };
 
-use derive_more::{From, IsVariant, TryInto};
-use gc_arena::{Collect, Gc};
+use derive_more::{Display, From, IsVariant};
 
 use crate::{
     Context,
     compiler::value::MetaMethod,
-    objects::{Callback, Closure, IntoMetaResult, impl_metamethod},
+    errors::Error,
+    objects::{
+        Callback, Closure, FromValue, Value, ValueType, impl_metamethod, unexpected_type_error,
+    },
 };
 
 /// Enum of lucia function (Closure / Callback).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Collect, From, TryInto, IsVariant)]
-#[collect(no_drop)]
-pub enum Function<'gc> {
-    Closure(Closure<'gc>),
-    Callback(Callback<'gc>),
+#[derive(Debug, Clone, PartialEq, Eq, Hash, From, IsVariant, Display)]
+#[display("<function {:p}>", self.const_ptr())]
+pub enum Function {
+    Closure(Closure),
+    Callback(Callback),
 }
 
-impl Function<'_> {
+impl Function {
     pub fn const_ptr(&self) -> *const () {
         match self {
-            Function::Closure(v) => Gc::as_ptr(v.into_inner()).cast::<()>(),
-            Function::Callback(v) => Gc::as_ptr(v.into_inner()).cast::<()>(),
+            Function::Closure(v) => Rc::as_ptr(v).cast::<()>(),
+            Function::Callback(v) => Rc::as_ptr(v).cast::<()>(),
         }
     }
 }
 
-impl fmt::Display for Function<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "<function {:p}>", self.const_ptr())
-    }
-}
-
-impl<'gc> MetaMethod<Context<'gc>> for Function<'gc> {
+impl MetaMethod<&Context> for Function {
     impl_metamethod!(Function);
 
-    fn meta_call(&self, _ctx: Context<'gc>) -> Result<Self::ResultCall, Self::Error> {
-        Ok(*self)
+    #[inline]
+    fn meta_call(self, _: &Context) -> Result<Self::ResultCall, Self::Error> {
+        Ok(self)
     }
 
-    fn meta_iter(&self, _ctx: Context<'gc>) -> Result<Self::ResultIter, Self::Error> {
-        Ok(*self)
+    #[inline]
+    fn meta_iter(self, _: &Context) -> Result<Self::ResultIter, Self::Error> {
+        Ok(self)
     }
 
     impl_metamethod!(Function, eq_ne);
 }
 
+macro_rules! impl_conversion {
+    ($($i:tt),*) => {
+        $(
+            impl From<$i> for Value {
+                fn from(value: $i) -> Value {
+                    Value::Function(value.into())
+                }
+            }
+
+            impl FromValue for $i {
+                fn from_value(value: Value) -> Result<Self, Error> {
+                    if let Value::Function(Function::$i(v)) = value {
+                        Ok(v)
+                    } else {
+                        Err(unexpected_type_error!(ValueType::Function, value))
+                    }
+                }
+            }
+        )*
+    };
+}
+impl_conversion!(Closure, Callback);
+
 /// The required number of arguments when calling a function.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Collect)]
-#[collect(require_static)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ArgumentRange {
     pub start: usize,
     pub end: Option<usize>,

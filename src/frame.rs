@@ -1,58 +1,43 @@
 use std::{cmp::Ordering, fmt};
 
-use gc_arena::Collect;
+use derive_more::Display;
 use itertools::Itertools;
 
 use crate::{
-    Context,
-    errors::{Error, RuntimeError},
-    objects::{Callback, Closure, IntoValue, Table, UpValue, Value},
+    errors::{Error, ErrorKind},
+    objects::{Callback, Closure, TableInner, Value},
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Collect)]
-#[collect[require_static]]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display)]
+#[display("{self:?}")]
 pub enum CallStatusKind {
     Normal,
-    IgnoreReturn,
     Try,
     TryOption,
     TryPanic,
 }
 
-impl fmt::Display for CallStatusKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self, f)
-    }
-}
-
-#[derive(Debug, Clone, Collect)]
-#[collect(no_drop)]
-pub enum Frame<'gc> {
+#[derive(Debug, Clone)]
+pub enum Frame {
     // An running Lucia frame.
-    Lucia(LuciaFrame<'gc>),
+    Lucia(LuciaFrame),
     // A callback that has been queued but not called yet.
     Callback {
-        callback: Callback<'gc>,
-        args: Vec<Value<'gc>>,
-    },
-    // A callback that will be called after the frame above it returns.
-    CallbackThen {
-        callback: Callback<'gc>,
-        arg: Value<'gc>,
+        callback: Callback,
+        args: Vec<Value>,
     },
 }
 
-#[derive(Debug, Clone, Collect)]
-#[collect(no_drop)]
-pub struct LuciaFrame<'gc> {
+#[derive(Debug, Clone)]
+pub struct LuciaFrame {
     pub pc: usize,
-    pub closure: Closure<'gc>,
-    pub locals: Vec<Value<'gc>>,
-    pub stack: Vec<Value<'gc>>,
+    pub closure: Closure,
+    pub locals: Vec<Value>,
+    pub stack: Vec<Value>,
     pub call_status: CallStatusKind,
 }
 
-impl fmt::Display for LuciaFrame<'_> {
+impl fmt::Display for LuciaFrame {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "pc: {}", self.pc)?;
         writeln!(
@@ -72,58 +57,47 @@ impl fmt::Display for LuciaFrame<'_> {
     }
 }
 
-impl<'gc> LuciaFrame<'gc> {
+impl LuciaFrame {
     const MAX_STACK_SIZE: usize = 256;
 
-    pub(crate) fn new(
-        ctx: Context<'gc>,
-        closure: Closure<'gc>,
-        mut args: Vec<Value<'gc>>,
-    ) -> Result<Self, Error<'gc>> {
-        let code = &closure.code;
-        let params_num = code.params.len();
-        let mut stack = Vec::with_capacity(code.stack_size.min(Self::MAX_STACK_SIZE));
+    pub(crate) fn new(closure: Closure, mut args: Vec<Value>) -> Result<Self, Error> {
+        let params_num = closure.code.params.len();
+        let has_variadic = closure.code.variadic.is_some();
+        let mut stack = Vec::with_capacity(closure.code.stack_size.min(Self::MAX_STACK_SIZE));
         match args.len().cmp(&params_num) {
             Ordering::Less => {
-                return Err(Error::new(RuntimeError::CallArguments {
-                    required: if code.variadic.is_none() {
-                        params_num.into()
-                    } else {
+                return Err(Error::new(ErrorKind::CallArguments {
+                    required: if has_variadic {
                         (params_num, None).into()
+                    } else {
+                        params_num.into()
                     },
                     given: args.len(),
                 }));
             }
             Ordering::Equal => {
                 stack.append(&mut args.clone());
-                if code.variadic.is_some() {
-                    stack.push(Value::Table(Table::new(&ctx)));
+                if has_variadic {
+                    stack.push(Value::Table(TableInner::new().into()));
                 }
             }
             Ordering::Greater => {
-                if code.variadic.is_none() {
-                    return Err(Error::new(RuntimeError::CallArguments {
+                if !has_variadic {
+                    return Err(Error::new(ErrorKind::CallArguments {
                         required: params_num.into(),
                         given: args.len(),
                     }));
                 }
                 let t = args.split_off(params_num);
                 stack.append(&mut args.clone());
-                stack.push(t.into_value(ctx));
-            }
-        }
-
-        let mut upvalues = closure.upvalues.borrow_mut(&ctx);
-        for (i, (_, base_closure_upvalue_id)) in code.upvalue_names.iter().enumerate() {
-            if base_closure_upvalue_id.is_none() {
-                upvalues[i] = UpValue::new(&ctx, Value::Null);
+                stack.push(t.into());
             }
         }
 
         Ok(LuciaFrame {
             pc: 0,
+            locals: vec![Value::Null; closure.code.local_names.len()],
             closure,
-            locals: vec![Value::Null; code.local_names.len()],
             stack,
             call_status: CallStatusKind::Normal,
         })

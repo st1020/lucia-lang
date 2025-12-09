@@ -16,14 +16,14 @@
 //! # Examples
 //!
 //! ```rust
-//! use lucia_lang::Lucia;
+//! use lucia_lang::Context;
 //! let input = r#"
 //! import std::io::{println}
 //! println("Hello World!")
 //! "#;
-//! let mut lucia = Lucia::new();
+//! let mut lucia = Context::new();
 //! let code = lucia.compile(input).unwrap();
-//! lucia.execute(&code).unwrap();
+//! lucia.execute(code).unwrap();
 //! ```
 
 // Pedantic warnings

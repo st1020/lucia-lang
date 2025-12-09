@@ -16,9 +16,9 @@ pub struct Ident<S> {
 
 impl_locatable!(Ident);
 
-impl<S: AsRef<str>> fmt::Display for Ident<S> {
+impl<S: fmt::Display> fmt::Display for Ident<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.name.as_ref())
+        write!(f, "{}", self.name)
     }
 }
 
@@ -32,7 +32,7 @@ pub struct TypedIdent<S> {
 
 impl_locatable!(TypedIdent);
 
-impl<S: AsRef<str>> fmt::Display for TypedIdent<S> {
+impl<S: fmt::Display> fmt::Display for TypedIdent<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(t) = &self.ty {
             write!(f, "{}: {}", self.ident, t)

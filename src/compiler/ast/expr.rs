@@ -119,7 +119,7 @@ pub enum ExprKind<S> {
     },
 }
 
-impl<S: AsRef<str>> fmt::Display for ExprKind<S> {
+impl<S: fmt::Display> fmt::Display for ExprKind<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ExprKind::Lit(lit) => write!(f, "{lit}"),
@@ -257,7 +257,7 @@ pub struct TableProperty<S> {
 
 impl_locatable!(TableProperty);
 
-impl<S: AsRef<str>> fmt::Display for TableProperty<S> {
+impl<S: fmt::Display> fmt::Display for TableProperty<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}: {}", self.key, self.value)
     }
@@ -283,7 +283,7 @@ pub struct MatchCase<S> {
 
 impl_locatable!(MatchCase);
 
-impl<S: AsRef<str>> fmt::Display for MatchCase<S> {
+impl<S: fmt::Display> fmt::Display for MatchCase<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} => {}", self.patterns.iter().join(" | "), self.body)
     }

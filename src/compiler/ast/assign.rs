@@ -18,16 +18,16 @@ impl_kind_display!(AssignLeft);
 pub enum AssignLeftKind<S> {
     Ident(Box<TypedIdent<S>>),
     Member {
-        table: Box<Expr<S>>,
+        ident: Box<Ident<S>>,
         property: MemberKind<S>,
     },
 }
 
-impl<S: AsRef<str>> fmt::Display for AssignLeftKind<S> {
+impl<S: fmt::Display> fmt::Display for AssignLeftKind<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             AssignLeftKind::Ident(ident) => write!(f, "{ident}"),
-            AssignLeftKind::Member { table, property } => write!(f, "{table}{property}"),
+            AssignLeftKind::Member { ident, property } => write!(f, "{ident}{property}"),
         }
     }
 }

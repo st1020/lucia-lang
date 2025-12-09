@@ -3,7 +3,6 @@ pub mod error;
 pub mod meta_ops;
 pub mod typing;
 
-use indexmap::IndexMap;
 use lucia_lang::compiler::{
     analyzer::analyze,
     ast::*,
@@ -14,6 +13,7 @@ use lucia_lang::compiler::{
     semantic::Semantic,
     value::ValueType,
 };
+use ordermap::OrderMap;
 use oxc_index::{IndexVec, index_vec};
 use rustc_hash::FxBuildHasher;
 
@@ -25,7 +25,7 @@ use crate::{
 };
 
 /// Check the type of the input source code.
-pub fn check_type_source<S: StringInterner<String: Eq + Ord>>(
+pub fn check_type_source<S: StringInterner<String: AsRef<str> + Ord>>(
     interner: S,
     input: &str,
 ) -> (Vec<CompilerError>, Vec<TypeError<S::String>>) {
@@ -52,7 +52,7 @@ struct TypeChecker<'a, S: Clone + Eq + Ord> {
     current_scope_id: ScopeId,
 
     function_types: IndexVec<FunctionId, Option<FunctionType<S>>>,
-    envs: IndexMap<ScopeId, Env<S>, FxBuildHasher>,
+    envs: OrderMap<ScopeId, Env<S>, FxBuildHasher>,
 
     errors: Vec<TypeError<S>>,
 }
@@ -64,7 +64,7 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
             current_function_id: FunctionId::new(0),
             current_scope_id: ScopeId::new(0),
             function_types: index_vec![None; semantic.functions.len()],
-            envs: IndexMap::with_hasher(FxBuildHasher),
+            envs: OrderMap::with_hasher(FxBuildHasher),
             errors: Vec::new(),
         }
     }
@@ -244,12 +244,16 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
                 }
                 self.set_symbol_type(&ident.ident, right_type)?;
             }
-            AssignLeftKind::Member { table, property } => {
+            AssignLeftKind::Member { ident, property } => {
                 let meta_method = match property {
                     MemberKind::Bracket(_) => MetaMethodType::get_item,
                     MemberKind::Dot(_) | MemberKind::DoubleColon(_) => MetaMethodType::get_attr,
                     MemberKind::BracketMeta | MemberKind::DotMeta | MemberKind::DoubleColonMeta => {
-                        match self.check_expr(table)? {
+                        match self
+                            .get_symbol_type(ident)
+                            .cloned()
+                            .unwrap_or(Type::Unknown)
+                        {
                             Type::Table(table) => {
                                 if let Some(metatable) = &table.metatable {
                                     right_type
@@ -270,7 +274,9 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
                 };
                 right_type.expect_is_subtype_of(&meta_method(
                     &MetaMethodType,
-                    self.check_expr(table)?,
+                    self.get_symbol_type(ident)
+                        .cloned()
+                        .unwrap_or(Type::Unknown),
                     self.check_member_property(property)?,
                 )?)?;
             }
@@ -544,7 +550,7 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
                         .get_symbol_type(&ident.ident)
                         .cloned()
                         .unwrap_or(Type::Unknown),
-                    AssignLeftKind::Member { table, property } => {
+                    AssignLeftKind::Member { ident, property } => {
                         let meta_method = match property {
                             MemberKind::Bracket(_) => MetaMethodType::get_item,
                             MemberKind::Dot(_) | MemberKind::DoubleColon(_) => {
@@ -553,7 +559,10 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
                             MemberKind::BracketMeta
                             | MemberKind::DotMeta
                             | MemberKind::DoubleColonMeta => {
-                                let table_type = self.check_expr(table)?;
+                                let table_type = self
+                                    .get_symbol_type(ident)
+                                    .cloned()
+                                    .unwrap_or(Type::Unknown);
                                 match table_type {
                                     Type::Table(table) => table
                                         .metatable
@@ -572,7 +581,9 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
                         };
                         meta_method(
                             &MetaMethodType,
-                            self.check_expr(table)?,
+                            self.get_symbol_type(ident)
+                                .cloned()
+                                .unwrap_or(Type::Unknown),
                             self.check_member_property(property)?,
                         )?
                     }

@@ -40,7 +40,7 @@ macro_rules! impl_locatable {
 
 macro_rules! impl_kind_display {
     ($name:ident) => {
-        impl<S: AsRef<str>> std::fmt::Display for $name<S> {
+        impl<S: fmt::Display> std::fmt::Display for $name<S> {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 write!(f, "{}", self.kind)
             }

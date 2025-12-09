@@ -4,7 +4,7 @@ use dashmap::DashMap;
 use lucia_lang::utils::Locatable;
 
 use tower_lsp_server::{
-    Client, ClientSocket, LanguageServer, LspService, jsonrpc::Result, lsp_types::*,
+    Client, ClientSocket, LanguageServer, LspService, jsonrpc::Result, ls_types::*,
 };
 
 use crate::{

@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use itertools::Itertools;
 
-pub trait Indent: Display {
+pub(crate) trait Indent: Display {
     fn indent(&self, indent: usize) -> String {
         format!("{self}")
             .split('\n')

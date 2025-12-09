@@ -1,39 +1,35 @@
 //! Errors of this crate.
 
-#![allow(clippy::needless_lifetimes)]
-
 use std::fmt;
 
-use gc_arena::Collect;
 use itertools::Itertools;
 use thiserror::Error;
 
 use crate::{
     compiler::{opcode::OpCode, value::MetaName},
     frame::Frame,
-    objects::{ArgumentRange, ExternValue, Value, ValueType},
+    objects::{ArgumentRange, Value, ValueType},
     thread::ThreadMode,
     utils::Indent,
 };
 
 /// Lucia error.
-#[derive(Debug, Clone, Collect, Error)]
-#[collect(no_drop)]
+#[derive(Debug, Clone, Error)]
 #[expect(clippy::error_impl_error)]
-pub struct Error<'gc> {
-    pub kind: ErrorKind<'gc>,
-    pub traceback: Option<Vec<Frame<'gc>>>,
+pub struct Error {
+    pub kind: ErrorKind,
+    pub traceback: Option<Vec<Frame>>,
 }
 
-impl PartialEq for Error<'_> {
+impl PartialEq for Error {
     fn eq(&self, other: &Self) -> bool {
         self.kind == other.kind
     }
 }
 
-impl Eq for Error<'_> {}
+impl Eq for Error {}
 
-impl fmt::Display for Error<'_> {
+impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Error: {}", self.kind)?;
         if let Some(traceback) = &self.traceback {
@@ -49,11 +45,6 @@ impl fmt::Display for Error<'_> {
                         writeln!(f, "    callback: {callback}")?;
                         writeln!(f, "    args: {}", args.iter().join(", "))?;
                     }
-                    Frame::CallbackThen { callback, arg } => {
-                        writeln!(f, "[{i}] callback-then frame")?;
-                        writeln!(f, "    callback: {callback}")?;
-                        writeln!(f, "    arg: {arg}")?;
-                    }
                 }
             }
             writeln!(f)?;
@@ -62,68 +53,31 @@ impl fmt::Display for Error<'_> {
     }
 }
 
-impl<'gc> Error<'gc> {
-    pub fn new<T: Into<ErrorKind<'gc>>>(kind: T) -> Self {
+impl Error {
+    pub fn new<T: Into<ErrorKind>>(kind: T) -> Self {
         Error {
             kind: kind.into(),
             traceback: None,
         }
     }
 
-    pub fn with_traceback<T: Into<ErrorKind<'gc>>>(kind: T, traceback: Vec<Frame<'gc>>) -> Self {
+    pub fn with_traceback<T: Into<ErrorKind>>(kind: T, traceback: Vec<Frame>) -> Self {
         Error {
             kind: kind.into(),
             traceback: Some(traceback),
         }
     }
-
-    pub fn into_extern(self) -> ExternError {
-        ExternError::from(self.kind)
-    }
 }
 
 /// Kind of all errors.
-#[derive(Debug, Clone, PartialEq, Eq, Collect, Error)]
-#[collect(no_drop)]
-pub enum ErrorKind<'gc> {
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum ErrorKind {
     #[error("{0}")]
-    LuciaError(LuciaError<'gc>),
-    #[error("{0}")]
-    RuntimeError(#[from] RuntimeError),
-}
-
-impl ErrorKind<'_> {
-    pub fn recoverable(&self) -> bool {
-        !matches!(
-            self,
-            ErrorKind::LuciaError(LuciaError::Panic(_))
-                | ErrorKind::RuntimeError(RuntimeError::BadThreadMode { .. })
-        )
-    }
-}
-
-impl<'gc> From<LuciaError<'gc>> for ErrorKind<'gc> {
-    fn from(value: LuciaError<'gc>) -> Self {
-        ErrorKind::LuciaError(value)
-    }
-}
-
-/// Kind of Lucia Error.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Collect, Error)]
-#[collect(no_drop)]
-pub enum LuciaError<'gc> {
-    #[error("{0}")]
-    Error(Value<'gc>),
+    LuciaError(Value),
     #[error("panic: {0}")]
-    Panic(Value<'gc>),
+    LuciaPanic(Value),
     #[error("assert: {0}")]
-    Assert(Value<'gc>),
-}
-
-/// Kind of Runtime Error.
-#[derive(Debug, Clone, PartialEq, Eq, Collect, Error)]
-#[collect(no_drop)]
-pub enum RuntimeError {
+    LuciaAssert(Value),
     #[error("bad frame mode (expected {expected}, found {found})")]
     BadThreadMode {
         expected: ThreadMode,
@@ -165,39 +119,11 @@ pub enum RuntimeError {
     ParseError { reason: String },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub enum ExternError {
-    #[error("{0}")]
-    LuciaError(#[from] ExternLuciaError),
-    #[error("{0}")]
-    RuntimeError(#[from] RuntimeError),
-}
-
-impl From<ErrorKind<'_>> for ExternError {
-    fn from(value: ErrorKind<'_>) -> Self {
-        match value {
-            ErrorKind::LuciaError(v) => ExternError::LuciaError(v.into()),
-            ErrorKind::RuntimeError(v) => ExternError::RuntimeError(v),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Error)]
-pub enum ExternLuciaError {
-    #[error("{0}")]
-    Error(ExternValue),
-    #[error("panic: {0}")]
-    Panic(ExternValue),
-    #[error("assert: {0}")]
-    Assert(ExternValue),
-}
-
-impl From<LuciaError<'_>> for ExternLuciaError {
-    fn from(value: LuciaError<'_>) -> Self {
-        match value {
-            LuciaError::Error(v) => ExternLuciaError::Error(v.into()),
-            LuciaError::Panic(v) => ExternLuciaError::Panic(v.into()),
-            LuciaError::Assert(v) => ExternLuciaError::Assert(v.into()),
-        }
+impl ErrorKind {
+    pub fn recoverable(&self) -> bool {
+        !matches!(
+            self,
+            ErrorKind::LuciaPanic(_) | ErrorKind::BadThreadMode { .. }
+        )
     }
 }

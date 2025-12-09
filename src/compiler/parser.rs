@@ -409,7 +409,7 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
             };
             let path_str = self
                 .interner
-                .intern(&path.iter().map(|ident| ident.name.as_ref()).join("::"));
+                .intern(&path.iter().map(|ident| &ident.name).join("::"));
             ExprKind::Import {
                 path,
                 path_str,
@@ -543,7 +543,13 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
                 table,
                 property,
                 safe,
-            } if safe.is_none() => AssignLeftKind::Member { table, property },
+            } if safe.is_none() => {
+                if let ExprKind::Ident(ident) = table.kind {
+                    AssignLeftKind::Member { ident, property }
+                } else {
+                    return None;
+                }
+            }
             _ => return None,
         };
         Some(AssignLeft {
@@ -953,8 +959,6 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
         } else if self.eat(TokenKind::Throw) {
             let argument = Box::new(self.parse_expr()?);
             ExprKind::Throw { argument }
-        } else if self.check(TokenKind::OpenBrace) {
-            ExprKind::Block(self.parse_block()?)
         } else {
             ExprKind::Lit(Box::new(self.parse_lit()?))
         };

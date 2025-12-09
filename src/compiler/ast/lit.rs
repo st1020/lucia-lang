@@ -33,7 +33,7 @@ pub enum LitKind<S> {
     Bytes(Vec<u8>),
 }
 
-impl<S: AsRef<str>> fmt::Display for LitKind<S> {
+impl<S: fmt::Display> fmt::Display for LitKind<S> {
     #[expect(clippy::use_debug)]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -41,7 +41,7 @@ impl<S: AsRef<str>> fmt::Display for LitKind<S> {
             LitKind::Bool(v) => write!(f, "{v}"),
             LitKind::Int(v) => write!(f, "{v}"),
             LitKind::Float(v) => write!(f, "{v}"),
-            LitKind::Str(v) => write!(f, "{:?}", v.as_ref()),
+            LitKind::Str(v) => write!(f, "{:?}", v.to_string()),
             LitKind::Bytes(v) => write!(f, "b\"{}\"", v.escape_ascii()),
         }
     }

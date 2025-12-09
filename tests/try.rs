@@ -1,5 +1,5 @@
 use lucia_lang::{
-    Lucia,
+    Context,
     compiler::{compile, interning::BasicInterner},
 };
 
@@ -12,9 +12,9 @@ fn b () {
 }
 res = try! b()
     "#;
-    let mut lucia = Lucia::new();
+    let mut lucia = Context::new();
     let code = lucia.compile(input).unwrap();
-    lucia.execute(&code).unwrap();
+    lucia.execute(code).unwrap();
 }
 
 #[test]

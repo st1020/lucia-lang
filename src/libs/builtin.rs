@@ -1,97 +1,82 @@
-use gc_arena::{Collect, Gc, lock::RefLock};
-
 use crate::{
     Context,
     compiler::value::MetaMethod,
-    errors::{Error, LuciaError},
-    objects::{Callback, CallbackReturn, Value},
+    errors::{Error, ErrorKind},
+    objects::{CallbackInner, Value},
 };
 
-pub fn load_builtin<'gc>(ctx: Context<'gc>) {
-    let builtins = ctx.state.builtins;
+pub fn load_builtin(context: &mut Context) {
+    let builtins = &mut context.builtins;
     builtins.set(
-        ctx,
         "id",
-        Callback::from(&ctx, |v: Value<'gc>| {
-            v.id().map(|x| i64::try_from(usize::from(x)).unwrap())
-        }),
+        CallbackInner::from(|v: Value| v.id().map(|x| i64::try_from(usize::from(x)).unwrap())),
     );
     builtins.set(
-        ctx,
         "type",
-        Callback::from(&ctx, |v: Value<'gc>| v.value_type().name()),
+        CallbackInner::from(|v: Value| v.value_type().name()),
     );
     builtins.set(
-        ctx,
         "assert",
-        Callback::from(&ctx, |v: bool, msg: &[Value<'gc>]| {
+        CallbackInner::from(|v: bool, msg: &[Value]| {
             if v {
                 Ok(v)
             } else {
-                Err(Error::new(LuciaError::Assert(
-                    msg.first().copied().unwrap_or(Value::Null),
+                Err(Error::new(ErrorKind::LuciaAssert(
+                    msg.first().cloned().unwrap_or(Value::Null),
                 )))
             }
         }),
     );
     builtins.set(
-        ctx,
         "len",
-        Callback::from(&ctx, |ctx, value: Value<'gc>| value.meta_len(ctx)),
+        CallbackInner::from(|ctx: &Context, value: Value| value.meta_len(ctx)),
     );
     builtins.set(
-        ctx,
         "bool",
-        Callback::from(&ctx, |ctx, value: Value<'gc>| value.meta_bool(ctx)),
+        CallbackInner::from(|ctx: &Context, value: Value| value.meta_bool(ctx)),
     );
     builtins.set(
-        ctx,
         "int",
-        Callback::from(&ctx, |ctx, value: Value<'gc>| value.meta_int(ctx)),
+        CallbackInner::from(|ctx: &Context, value: Value| value.meta_int(ctx)),
     );
     builtins.set(
-        ctx,
         "float",
-        Callback::from(&ctx, |ctx, value: Value<'gc>| value.meta_float(ctx)),
+        CallbackInner::from(|ctx: &Context, value: Value| value.meta_float(ctx)),
     );
     builtins.set(
-        ctx,
         "str",
-        Callback::from(&ctx, |ctx, value: Value<'gc>| value.meta_str(ctx)),
+        CallbackInner::from(|ctx: &Context, value: Value| value.meta_str(ctx)),
     );
     builtins.set(
-        ctx,
         "repr",
-        Callback::from(&ctx, |ctx, value: Value<'gc>| value.meta_repr(ctx)),
+        CallbackInner::from(|ctx: &Context, value: Value| value.meta_repr(ctx)),
     );
-    builtins.set(
-        ctx,
-        "range",
-        Callback::from(&ctx, |ctx: Context<'gc>, start: i64, end: i64| {
-            #[derive(Collect)]
-            #[collect[no_drop]]
-            struct RangeIter {
-                value: i64,
-                end: i64,
-            }
+    // builtins.set(
+    //     "range",
+    //     Callback::from(&|ctx: Context, start: i64, end: i64| {
+    //         #[derive(Collect)]
+    //         #[collect[no_drop]]
+    //         struct RangeIter {
+    //             value: i64,
+    //             end: i64,
+    //         }
 
-            Ok(CallbackReturn::Return(
-                Callback::from_fn_with(
-                    &ctx,
-                    Gc::new(&ctx, RefLock::new(RangeIter { value: start, end })),
-                    |range, ctx, _args| {
-                        let mut range = range.borrow_mut(&ctx);
-                        let value = range.value;
-                        Ok(CallbackReturn::Return(if value == range.end {
-                            Value::Null
-                        } else {
-                            range.value += 1;
-                            Value::Int(value)
-                        }))
-                    },
-                )
-                .into(),
-            ))
-        }),
-    );
+    //         Ok(CallbackReturn::Return(
+    //             Callback::from_fn_with(
+    //                 Gc::new(&RefLock::new(RangeIter { value: start, end })),
+    //                 |range, _args| {
+    //                     let mut range = range.borrow_mut(&ctx);
+    //                     let value = range.value;
+    //                     Ok(CallbackReturn::Return(if value == range.end {
+    //                         Value::Null
+    //                     } else {
+    //                         range.value += 1;
+    //                         Value::Int(value)
+    //                     }))
+    //                 },
+    //             )
+    //             .into(),
+    //         ))
+    //     }),
+    // );
 }

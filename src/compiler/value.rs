@@ -1,7 +1,8 @@
-use std::fmt;
+use derive_more::Display;
 
 /// The type of Value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display)]
+#[display("{}", self.name())]
 pub enum ValueType {
     Null,
     Bool,
@@ -30,14 +31,9 @@ impl ValueType {
     }
 }
 
-impl fmt::Display for ValueType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.name())
-    }
-}
-
 /// The name of a metamethod.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display)]
+#[display("{}", self.name())]
 pub enum MetaName {
     Call,
     Iter,
@@ -102,26 +98,23 @@ impl AsRef<str> for MetaName {
     }
 }
 
-impl fmt::Display for MetaName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.name())
-    }
-}
-
 macro_rules! metamethod_default {
     (1, $name:ident, $meta_name:ident) => {
-        fn $name(&self, ctx: Context) -> Result<Self::Result1, Self::Error> {
+        fn $name(self, ctx: Context) -> Result<Self::Result1, Self::Error> {
             Err(self.meta_error(ctx, MetaName::$meta_name, vec![]))
         }
     };
     (2, $name:ident, $meta_name:ident) => {
-        fn $name(&self, ctx: Context, other: Self::Value) -> Result<Self::Result2, Self::Error> {
+        fn $name(self, ctx: Context, other: Self::Value) -> Result<Self::Result2, Self::Error> {
             Err(self.meta_error(ctx, MetaName::$meta_name, vec![other]))
         }
     };
 }
 
-pub trait MetaMethod<Context> {
+pub trait MetaMethod<Context>
+where
+    Self: Sized,
+{
     type Value;
     type Error;
     type ResultCall;
@@ -130,10 +123,10 @@ pub trait MetaMethod<Context> {
     type Result2;
     type Result3;
 
-    fn meta_call(&self, ctx: Context) -> Result<Self::ResultCall, Self::Error> {
+    fn meta_call(self, ctx: Context) -> Result<Self::ResultCall, Self::Error> {
         Err(self.meta_error(ctx, MetaName::Call, vec![]))
     }
-    fn meta_iter(&self, ctx: Context) -> Result<Self::ResultIter, Self::Error> {
+    fn meta_iter(self, ctx: Context) -> Result<Self::ResultIter, Self::Error> {
         Err(self.meta_error(ctx, MetaName::Iter, vec![]))
     }
     metamethod_default!(1, meta_len, Len);
@@ -158,14 +151,14 @@ pub trait MetaMethod<Context> {
     metamethod_default!(2, meta_lt, Lt);
     metamethod_default!(2, meta_le, Le);
 
-    fn meta_get_attr(&self, ctx: Context, key: Self::Value) -> Result<Self::Result2, Self::Error> {
+    fn meta_get_attr(self, ctx: Context, key: Self::Value) -> Result<Self::Result2, Self::Error> {
         Err(self.meta_error(ctx, MetaName::GetAttr, vec![key]))
     }
-    fn meta_get_item(&self, ctx: Context, key: Self::Value) -> Result<Self::Result2, Self::Error> {
+    fn meta_get_item(self, ctx: Context, key: Self::Value) -> Result<Self::Result2, Self::Error> {
         Err(self.meta_error(ctx, MetaName::GetItem, vec![key]))
     }
     fn meta_set_attr(
-        &self,
+        self,
         ctx: Context,
         key: Self::Value,
         value: Self::Value,
@@ -173,7 +166,7 @@ pub trait MetaMethod<Context> {
         Err(self.meta_error(ctx, MetaName::SetAttr, vec![key, value]))
     }
     fn meta_set_item(
-        &self,
+        self,
         ctx: Context,
         key: Self::Value,
         value: Self::Value,
@@ -181,5 +174,5 @@ pub trait MetaMethod<Context> {
         Err(self.meta_error(ctx, MetaName::SetItem, vec![key, value]))
     }
 
-    fn meta_error(&self, ctx: Context, operator: MetaName, args: Vec<Self::Value>) -> Self::Error;
+    fn meta_error(self, ctx: Context, operator: MetaName, args: Vec<Self::Value>) -> Self::Error;
 }

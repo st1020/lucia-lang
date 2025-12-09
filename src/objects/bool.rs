@@ -1,22 +1,21 @@
-use crate::{
-    Context,
-    compiler::value::MetaMethod,
-    objects::{IntoMetaResult, impl_metamethod},
-};
+use crate::{Context, compiler::value::MetaMethod, objects::impl_metamethod};
 
-impl<'gc> MetaMethod<Context<'gc>> for bool {
+impl MetaMethod<&Context> for bool {
     impl_metamethod!(Bool);
 
-    fn meta_bool(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
-        Ok(self.into_meta_result(ctx))
+    #[inline]
+    fn meta_bool(self, _: &Context) -> Result<Self::Result1, Self::Error> {
+        Ok(self.into())
     }
 
-    fn meta_int(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
-        Ok(i32::from(*self).into_meta_result(ctx))
+    #[inline]
+    fn meta_int(self, _: &Context) -> Result<Self::Result1, Self::Error> {
+        Ok(i32::from(self).into())
     }
 
-    fn meta_float(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
-        Ok((if *self { 1.0 } else { 0.0 }).into_meta_result(ctx))
+    #[inline]
+    fn meta_float(self, _: &Context) -> Result<Self::Result1, Self::Error> {
+        Ok((if self { 1.0 } else { 0.0 }).into())
     }
 
     impl_metamethod!(Bool, str);

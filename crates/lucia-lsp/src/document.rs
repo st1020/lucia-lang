@@ -1,3 +1,5 @@
+use std::{fmt::Display, hash::Hash};
+
 use lucia_lang::compiler::{
     analyzer::analyze,
     ast::Program,
@@ -19,7 +21,7 @@ pub struct Document<S> {
     pub semantic: Semantic<S>,
 }
 
-impl<S: AsRef<str> + Clone> Document<S> {
+impl<S: Clone + Eq + Hash + Display> Document<S> {
     pub fn build<I: StringInterner<String = S>>(
         text: &str,
         interner: I,

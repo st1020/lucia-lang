@@ -20,12 +20,10 @@ itertools = "0.14"
 derive_more = { version = "2", features = ["full"] }
 oxc_index = { version = "4", features = ["nonmax"] }
 sorted-vec = "0.8"
-indexmap = "2"
+ordermap = "1"
 rustc-hash = "2"
 archery = "1"
 rpds = "1"
-# Runtime
-gc-arena = "0.5"
 # Error
 thiserror = "2"
 anyhow = "1"
@@ -39,11 +37,11 @@ dashmap = "6"
 ropey = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
-tower-lsp-server = { version = "0.22", features = ["proposed"] }
+tower-lsp-server = { version = "0.23", features = ["proposed"] }
 # CLI
 clap = { version = "4", features = ["derive"] }
 # Testing
-criterion = "0.7"
+criterion = "0.8"
 
 [package]
 name = "lucia-lang"
@@ -66,9 +64,8 @@ itertools.workspace = true
 derive_more.workspace = true
 oxc_index.workspace = true
 sorted-vec.workspace = true
-indexmap.workspace = true
+ordermap.workspace = true
 rustc-hash.workspace = true
-gc-arena.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
@@ -85,3 +82,7 @@ harness = false
 [profile.release]
 opt-level = 3
 lto = true
+
+[profile.profiling]
+inherits = "release"
+debug = true

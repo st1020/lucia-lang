@@ -16,7 +16,7 @@ pub struct Block<S> {
 
 impl_locatable!(Block);
 
-impl<S: AsRef<str>> fmt::Display for Block<S> {
+impl<S: fmt::Display> fmt::Display for Block<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "{{")?;
         for stmt in &self.body {

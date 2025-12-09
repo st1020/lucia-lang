@@ -30,7 +30,7 @@ pub enum PatternKind<S> {
     },
 }
 
-impl<S: AsRef<str>> fmt::Display for PatternKind<S> {
+impl<S: fmt::Display> fmt::Display for PatternKind<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             PatternKind::Lit(lit) => write!(f, "{lit}"),
@@ -61,7 +61,7 @@ pub struct TablePatternPair<S> {
 
 impl_locatable!(TablePatternPair);
 
-impl<S: AsRef<str>> fmt::Display for TablePatternPair<S> {
+impl<S: fmt::Display> fmt::Display for TablePatternPair<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}: {}", self.key, self.value)
     }

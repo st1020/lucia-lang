@@ -3,24 +3,28 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 use crate::{
     Context,
     compiler::value::MetaMethod,
-    objects::{IntoMetaResult, impl_metamethod},
+    errors::Error,
+    objects::{FromValue, Value, ValueType, impl_metamethod, unexpected_type_error},
     utils::Float,
 };
 
-impl<'gc> MetaMethod<Context<'gc>> for Float {
+impl MetaMethod<&Context> for Float {
     impl_metamethod!(Float);
 
-    fn meta_bool(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
-        Ok((self.0 != 0.0).into_meta_result(ctx))
+    #[inline]
+    fn meta_bool(self, _: &Context) -> Result<Self::Result1, Self::Error> {
+        Ok((self.0 != 0.0).into())
     }
 
     #[expect(clippy::as_conversions, clippy::cast_possible_truncation)]
-    fn meta_int(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
-        Ok((self.0 as i64).into_meta_result(ctx))
+    #[inline]
+    fn meta_int(self, _: &Context) -> Result<Self::Result1, Self::Error> {
+        Ok((self.0 as i64).into())
     }
 
-    fn meta_float(&self, ctx: Context<'gc>) -> Result<Self::Result1, Self::Error> {
-        Ok(self.into_meta_result(ctx))
+    #[inline]
+    fn meta_float(self, _: &Context) -> Result<Self::Result1, Self::Error> {
+        Ok(self.into())
     }
 
     impl_metamethod!(Float, str);
@@ -39,3 +43,27 @@ impl<'gc> MetaMethod<Context<'gc>> for Float {
     impl_metamethod!(Float, compare, Lt, meta_lt, lt);
     impl_metamethod!(Float, compare, Le, meta_le, le);
 }
+
+macro_rules! impl_conversion {
+    ($($i:ty),*) => {
+        $(
+            impl From<$i> for Value {
+                fn from(value: $i) -> Value {
+                    Value::Float(Float(f64::from(value)))
+                }
+            }
+
+            #[allow(clippy::cast_possible_truncation, clippy::allow_attributes)]
+            impl FromValue for $i {
+                fn from_value(value: Value) -> Result<Self, Error> {
+                    if let Value::Float(v) = value {
+                        Ok(v.0 as $i)
+                    } else {
+                        Err(unexpected_type_error!(ValueType::Float, value))
+                    }
+                }
+            }
+        )*
+    };
+}
+impl_conversion!(f32, f64);

@@ -6,7 +6,6 @@ use derive_more::{
     Add, AddAssign, Debug, Display, Div, DivAssign, From, FromStr, Mul, MulAssign, Neg, Rem,
     RemAssign, Sub, SubAssign,
 };
-use gc_arena::Collect;
 
 // canonical raw float bit
 const CANONICAL_NAN_BITS: u64 = 0x7ff8_0000_0000_0000_u64;
@@ -16,7 +15,6 @@ const CANONICAL_ZERO_BITS: u64 = 0x0_u64;
 #[derive(
     Clone,
     Copy,
-    Collect,
     From,
     FromStr,
     Display,
@@ -33,7 +31,6 @@ const CANONICAL_ZERO_BITS: u64 = 0x0_u64;
     DivAssign,
     RemAssign,
 )]
-#[collect(require_static)]
 #[from(forward)]
 #[debug("{_0}")]
 #[mul(forward)]

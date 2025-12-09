@@ -1,12 +1,13 @@
 //! The string interner.
 
-use std::{borrow::Borrow, cmp::Ordering, collections::HashSet, fmt, hash, rc::Rc};
+use std::{borrow::Borrow, collections::HashSet, fmt::Display, hash::Hash, rc::Rc};
 
+use compact_str::CompactString;
 use rustc_hash::FxBuildHasher;
 
 /// The string interner.
 pub trait StringInterner {
-    type String: AsRef<str> + Clone;
+    type String: Clone + Eq + Hash + Display;
 
     fn intern(&mut self, s: &str) -> Self::String;
 }
@@ -19,59 +20,15 @@ impl<S: StringInterner> StringInterner for &mut S {
     }
 }
 
-/// An interned string.
-///
-/// Usually used in a interned string must be used as a key in a hash map.
-#[derive(Debug, Clone, Copy)]
-pub struct InternedString<S>(pub S);
+/// No-op string interner.
+#[derive(Debug, Default)]
+pub struct NoopInterner;
 
-impl<S: AsRef<str>> PartialEq for InternedString<S> {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.as_ref() == other.0.as_ref()
-    }
-}
+impl StringInterner for NoopInterner {
+    type String = String;
 
-impl<S: AsRef<str>> Eq for InternedString<S> {}
-
-impl<S: AsRef<str>> PartialOrd for InternedString<S> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl<S: AsRef<str>> Ord for InternedString<S> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.0.as_ref().cmp(other.0.as_ref())
-    }
-}
-
-impl<S: AsRef<str>> hash::Hash for InternedString<S> {
-    fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        self.0.as_ref().hash(state);
-    }
-}
-
-impl<S> From<S> for InternedString<S> {
-    fn from(value: S) -> Self {
-        InternedString(value)
-    }
-}
-
-impl<S: AsRef<str>> AsRef<str> for InternedString<S> {
-    fn as_ref(&self) -> &str {
-        self.0.as_ref()
-    }
-}
-
-impl<S: AsRef<str>> Borrow<str> for InternedString<S> {
-    fn borrow(&self) -> &str {
-        self.as_ref()
-    }
-}
-
-impl<S: AsRef<str>> fmt::Display for InternedString<S> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.0.as_ref())
+    fn intern(&mut self, s: &str) -> Self::String {
+        s.to_owned()
     }
 }
 
@@ -88,6 +45,33 @@ impl StringInterner for BasicInterner {
         } else {
             let s = Rc::from(Box::from(s));
             self.0.insert(Rc::clone(&s));
+            s
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct RcCompactStringWrapper(Rc<CompactString>);
+
+impl Borrow<str> for RcCompactStringWrapper {
+    fn borrow(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+/// A CompactString interner.
+#[derive(Debug, Default)]
+pub struct CompactInterner(HashSet<RcCompactStringWrapper, FxBuildHasher>);
+
+impl StringInterner for CompactInterner {
+    type String = Rc<CompactString>;
+
+    fn intern(&mut self, s: &str) -> Self::String {
+        if let Some(s) = self.0.get(s) {
+            s.clone().0
+        } else {
+            let s = Rc::new(CompactString::from(s));
+            self.0.insert(RcCompactStringWrapper(Rc::clone(&s)));
             s
         }
     }

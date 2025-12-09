@@ -5,5 +5,5 @@ mod format;
 mod locatable;
 
 pub use float::*;
-pub use format::*;
+pub(crate) use format::*;
 pub use locatable::*;

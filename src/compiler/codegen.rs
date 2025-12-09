@@ -1,14 +1,14 @@
 //! The Code Generator.
 
-use std::iter;
+use std::{hash::Hash, iter};
 
-use indexmap::{IndexMap, IndexSet};
+use ordermap::{OrderMap, OrderSet};
 use oxc_index::{IndexVec, index_vec};
 use rustc_hash::FxBuildHasher;
 
 use super::{
     ast::*,
-    code::{Code, ConstValue},
+    code::{Code, ConstValue, UpvalueCapture},
     error::CompilerError,
     index::{FunctionId, SymbolId},
     opcode::{JumpTarget, OpCode},
@@ -74,7 +74,7 @@ impl<S> From<usize> for ConstValue<S> {
     }
 }
 
-impl<S: AsRef<str>> From<LitKind<S>> for ConstValue<S> {
+impl<S> From<LitKind<S>> for ConstValue<S> {
     fn from(value: LitKind<S>) -> Self {
         match value {
             LitKind::Null => ConstValue::Null,
@@ -90,10 +90,10 @@ impl<S: AsRef<str>> From<LitKind<S>> for ConstValue<S> {
 #[derive(Debug, Clone)]
 struct Context<S> {
     code: Vec<OpCode>,
-    consts: IndexSet<ConstValue<S>, FxBuildHasher>,
-    local_names: IndexMap<SymbolId, S, FxBuildHasher>,
-    global_names: IndexMap<SymbolId, S, FxBuildHasher>,
-    upvalue_names: IndexMap<SymbolId, (S, Option<usize>), FxBuildHasher>,
+    consts: OrderSet<ConstValue<S>, FxBuildHasher>,
+    local_names: OrderMap<SymbolId, S, FxBuildHasher>,
+    global_names: OrderMap<SymbolId, S, FxBuildHasher>,
+    upvalue_names: OrderMap<SymbolId, (S, UpvalueCapture), FxBuildHasher>,
 
     jump_target_count: usize,
     need_clear_stack_count: usize,
@@ -101,16 +101,16 @@ struct Context<S> {
     break_stack: Vec<JumpTarget>,
 }
 
-impl<S: AsRef<str>> Context<S> {
+impl<S: Eq + Hash> Context<S> {
     fn new() -> Self {
-        let mut consts = IndexSet::with_hasher(FxBuildHasher);
+        let mut consts = OrderSet::with_hasher(FxBuildHasher);
         consts.insert(ConstValue::Null);
         Self {
             code: Vec::new(),
             consts,
-            local_names: IndexMap::with_hasher(FxBuildHasher),
-            global_names: IndexMap::with_hasher(FxBuildHasher),
-            upvalue_names: IndexMap::with_hasher(FxBuildHasher),
+            local_names: OrderMap::with_hasher(FxBuildHasher),
+            global_names: OrderMap::with_hasher(FxBuildHasher),
+            upvalue_names: OrderMap::with_hasher(FxBuildHasher),
             jump_target_count: 0,
             need_clear_stack_count: 0,
             continue_stack: Vec::new(),
@@ -120,7 +120,7 @@ impl<S: AsRef<str>> Context<S> {
 }
 
 /// Generate code.
-pub fn gen_code<S: AsRef<str> + Clone>(
+pub fn gen_code<S: Clone + Eq + Hash>(
     program: &Program<S>,
     semantic: &Semantic<S>,
 ) -> (Code<S>, Vec<CompilerError>) {
@@ -135,7 +135,7 @@ struct CodeGenerator<'a, S> {
     errors: Vec<CompilerError>,
 }
 
-impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
+impl<'a, S: Clone + Eq + Hash> CodeGenerator<'a, S> {
     fn new(semantic: &'a Semantic<S>) -> Self {
         Self {
             semantic,
@@ -203,12 +203,13 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
                 OpCode::LoadLocal(index)
             }
             SymbolKind::Upvalue => {
-                let index = self
-                    .context()
-                    .upvalue_names
-                    .get_index_of(&symbol_id)
-                    .unwrap();
-                OpCode::LoadUpvalue(index)
+                if let Some(index) = self.context().local_names.get_index_of(&symbol_id) {
+                    OpCode::LoadLocal(index)
+                } else if let Some(index) = self.context().upvalue_names.get_index_of(&symbol_id) {
+                    OpCode::LoadUpvalue(index)
+                } else {
+                    panic!("upvalue symbol not found in local or upvalue names");
+                }
             }
             SymbolKind::Global => {
                 let index = self
@@ -226,17 +227,12 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
         let symbol_id =
             self.semantic.references[ident.reference_id.get().copied().unwrap()].symbol_id;
         let opcode = match self.semantic.symbols[symbol_id].kind {
-            SymbolKind::Local => {
+            SymbolKind::Local | SymbolKind::Upvalue => {
+                // Upvalue is stored as local variable. Because upvalue can't be assigned in closure
+                // which captures it. It can only be assigned in the closure where it is declared.
+                // In that closure, it is just a normal local variable.
                 let index = self.context().local_names.get_index_of(&symbol_id).unwrap();
                 OpCode::StoreLocal(index)
-            }
-            SymbolKind::Upvalue => {
-                let index = self
-                    .context()
-                    .upvalue_names
-                    .get_index_of(&symbol_id)
-                    .unwrap();
-                OpCode::StoreUpvalue(index)
             }
             SymbolKind::Global => {
                 let index = self
@@ -270,15 +266,33 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
                         .insert(symbol_id, symbol.name.clone());
                 }
                 SymbolKind::Upvalue => {
-                    let base_closure_upvalue_id =
-                        self.function_semantic().parent_id.and_then(|parent_id| {
-                            self.contexts[parent_id]
-                                .upvalue_names
-                                .get_index_of(&symbol_id)
-                        });
-                    self.context()
-                        .upvalue_names
-                        .insert(symbol_id, (symbol.name.clone(), base_closure_upvalue_id));
+                    let capture = if let Some(parent_id) = self.function_semantic().parent_id {
+                        let base_closure_local_id = self.contexts[parent_id]
+                            .local_names
+                            .get_index_of(&symbol_id)
+                            .map(UpvalueCapture::Local);
+                        let base_closure_upvalue_id = self.contexts[parent_id]
+                            .upvalue_names
+                            .get_index_of(&symbol_id)
+                            .map(UpvalueCapture::Upvalue);
+                        base_closure_local_id.or(base_closure_upvalue_id)
+                    } else {
+                        None
+                    };
+                    if let Some(capture) = capture {
+                        self.context()
+                            .upvalue_names
+                            .insert(symbol_id, (symbol.name.clone(), capture));
+                    } else {
+                        // If the current closure has no parent, or the symbol can not be found in
+                        // the parent closure, it means the upvalue symbol is declared in current
+                        // closure. So we just create a local variable for it.
+                        // For child closure which use the upvalue symbol, it can capture it from
+                        // the local variable.
+                        self.context()
+                            .local_names
+                            .insert(symbol_id, symbol.name.clone());
+                    }
                 }
                 SymbolKind::Global => {
                     self.context()
@@ -384,7 +398,7 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
                 | OpCode::LoadGlobal(_)
                 | OpCode::LoadUpvalue(_)
                 | OpCode::LoadConst(_) => new_depth += 1,
-                OpCode::StoreLocal(_) | OpCode::StoreGlobal(_) | OpCode::StoreUpvalue(_) => {
+                OpCode::StoreLocal(_) | OpCode::StoreGlobal(_) => {
                     new_depth -= 1;
                 }
                 OpCode::Import(_) => new_depth += 1,
@@ -394,8 +408,8 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
                 OpCode::BuildList(i) => new_depth = new_depth - i + 1,
                 OpCode::GetAttr | OpCode::GetItem => new_depth -= 1,
                 OpCode::GetMeta => (),
-                OpCode::SetAttr | OpCode::SetItem => new_depth -= 3,
-                OpCode::SetMeta => new_depth -= 2,
+                OpCode::SetAttr | OpCode::SetItem => new_depth -= 2,
+                OpCode::SetMeta => new_depth -= 1,
                 OpCode::Neg | OpCode::Not => (),
                 OpCode::Add
                 | OpCode::Sub
@@ -530,7 +544,7 @@ impl<'a, S: AsRef<str> + Clone> CodeGenerator<'a, S> {
     }
 }
 
-impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
+impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
     type Return = Result<(), CompilerError>;
 
     fn visit_program(&mut self, _program: &Program<S>) -> Self::Return {
@@ -916,11 +930,11 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
                         self.push_code(OpCode::from(*operator));
                         self.store(&ident.ident);
                     }
-                    AssignLeftKind::Member { table, property } => match property {
+                    AssignLeftKind::Member { ident, property } => match property {
                         MemberKind::Bracket(_)
                         | MemberKind::Dot(_)
                         | MemberKind::DoubleColon(_) => {
-                            self.visit_expr(table)?;
+                            self.visit_ident(ident)?;
                             self.visit_member_property(property)?;
                             self.push_code(OpCode::Copy(2));
                             self.push_code(OpCode::Copy(2));
@@ -930,17 +944,19 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
                             self.push_code(OpCode::Swap(3));
                             self.push_code(OpCode::Swap(2));
                             self.push_code(property.set_opcode());
+                            self.store(ident);
                         }
                         MemberKind::BracketMeta
                         | MemberKind::DotMeta
                         | MemberKind::DoubleColonMeta => {
-                            self.visit_expr(table)?;
+                            self.visit_ident(ident)?;
                             self.push_code(OpCode::Copy(1));
                             self.push_code(property.get_opcode());
                             self.visit_expr(right)?;
                             self.push_code(OpCode::from(*operator));
                             self.push_code(OpCode::Swap(2));
                             self.push_code(property.set_opcode());
+                            self.store(ident);
                         }
                     },
                 }
@@ -975,10 +991,11 @@ impl<S: AsRef<str> + Clone> Visit<S> for CodeGenerator<'_, S> {
     fn visit_assign_left(&mut self, assign_left: &AssignLeft<S>) -> Self::Return {
         match &assign_left.kind {
             AssignLeftKind::Ident(ident) => self.store(&ident.ident),
-            AssignLeftKind::Member { table, property } => {
-                self.visit_expr(table)?;
+            AssignLeftKind::Member { ident, property } => {
+                self.visit_ident(ident)?;
                 self.visit_member_property(property)?;
                 self.push_code(property.set_opcode());
+                self.store(ident);
             }
         }
         Ok(())

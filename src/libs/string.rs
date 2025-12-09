@@ -1,164 +1,113 @@
 use compact_str::ToCompactString;
 
-use crate::{
-    Context,
-    objects::{Callback, IntoValue, Str, Table, TableEntries, Value},
-};
+use crate::objects::{CallbackInner, Str, Table, TableEntries, TableInner, Value};
 
-pub fn string_lib<'gc>(ctx: Context<'gc>) -> Table<'gc> {
-    let t = Table::new(&ctx);
+pub fn string_lib() -> Table {
+    let mut t = TableInner::new();
     t.set(
-        ctx,
         "get",
-        Callback::from(&ctx, |s: Str<'gc>, i: usize| {
-            s.chars().nth(i).map(|x| x.to_compact_string())
-        }),
+        CallbackInner::from(|s: Str, i: usize| s.chars().nth(i).map(|x| x.to_compact_string())),
     );
     t.set(
-        ctx,
         "chars",
-        Callback::from(&ctx, |ctx: Context<'gc>, s: Str<'gc>| {
+        CallbackInner::from(|s: Str| {
             s.chars()
-                .map(|x| x.to_compact_string().into_value(ctx))
+                .map(|x| Value::from(x.to_compact_string()))
                 .collect::<TableEntries>()
         }),
     );
     t.set(
-        ctx,
         "lines",
-        Callback::from(&ctx, |ctx: Context<'gc>, s: Str<'gc>| {
-            s.lines()
-                .map(|x| x.to_compact_string().into_value(ctx))
-                .collect::<TableEntries>()
-        }),
+        CallbackInner::from(|s: Str| s.lines().map(Value::from).collect::<TableEntries>()),
     );
     t.set(
-        ctx,
         "contains",
-        Callback::from(&ctx, |s1: Str<'gc>, s2: Str<'gc>| s1.contains(s2.as_str())),
+        CallbackInner::from(|s1: Str, s2: Str| s1.contains(s2.as_str())),
     );
     t.set(
-        ctx,
         "starts_with",
-        Callback::from(&ctx, |s1: Str<'gc>, s2: Str<'gc>| {
-            s1.starts_with(s2.as_str())
-        }),
+        CallbackInner::from(|s1: Str, s2: Str| s1.starts_with(s2.as_str())),
     );
     t.set(
-        ctx,
         "ends_with",
-        Callback::from(&ctx, |s1: Str<'gc>, s2: Str<'gc>| s1.ends_with(s2.as_str())),
+        CallbackInner::from(|s1: Str, s2: Str| s1.ends_with(s2.as_str())),
     );
     t.set(
-        ctx,
         "find",
-        Callback::from(&ctx, |s1: Str<'gc>, s2: Str<'gc>| {
+        CallbackInner::from(|s1: Str, s2: Str| {
             (s1.find(s2.as_str())).map(|x| Value::Int(x.try_into().unwrap()))
         }),
     );
     t.set(
-        ctx,
         "split",
-        Callback::from(&ctx, |ctx: Context<'gc>, s: Str<'gc>, pat: Str<'gc>| {
+        CallbackInner::from(|s: Str, pat: Str| {
             s.split(pat.as_str())
-                .map(|x| x.to_compact_string().into_value(ctx))
+                .map(Value::from)
                 .collect::<TableEntries>()
         }),
     );
     t.set(
-        ctx,
         "splitn",
-        Callback::from(
-            &ctx,
-            |ctx: Context<'gc>, s: Str<'gc>, pat: Str<'gc>, count: usize| {
-                s.splitn(count, pat.as_str())
-                    .map(|x| x.to_compact_string().into_value(ctx))
-                    .collect::<TableEntries>()
-            },
-        ),
+        CallbackInner::from(|s: Str, pat: Str, count: usize| {
+            s.splitn(count, pat.as_str())
+                .map(Value::from)
+                .collect::<TableEntries>()
+        }),
     );
     t.set(
-        ctx,
         "trim",
-        Callback::from(&ctx, |s: Str<'gc>| s.trim().to_compact_string()),
+        CallbackInner::from(|s: Str| s.trim().to_compact_string()),
     );
     t.set(
-        ctx,
         "trim_start",
-        Callback::from(&ctx, |s: Str<'gc>| s.trim_start().to_compact_string()),
+        CallbackInner::from(|s: Str| s.trim_start().to_compact_string()),
     );
     t.set(
-        ctx,
         "trim_end",
-        Callback::from(&ctx, |s: Str<'gc>| s.trim_end().to_compact_string()),
+        CallbackInner::from(|s: Str| s.trim_end().to_compact_string()),
     );
     t.set(
-        ctx,
         "strip_prefix",
-        Callback::from(&ctx, |s1: Str<'gc>, s2: Str<'gc>| {
+        CallbackInner::from(|s1: Str, s2: Str| {
             s1.strip_prefix(s2.as_str()).map(|x| x.to_compact_string())
         }),
     );
     t.set(
-        ctx,
         "strip_suffix",
-        Callback::from(&ctx, |s1: Str<'gc>, s2: Str<'gc>| {
+        CallbackInner::from(|s1: Str, s2: Str| {
             s1.strip_suffix(s2.as_str()).map(|x| x.to_compact_string())
         }),
     );
+    t.set("is_ascii", CallbackInner::from(|s: Str| s.is_ascii()));
     t.set(
-        ctx,
-        "is_ascii",
-        Callback::from(&ctx, |s: Str<'gc>| s.is_ascii()),
+        "replace",
+        CallbackInner::from(|s: Str, from: Str, to: Str| s.replace(from.as_str(), to.as_str())),
     );
     t.set(
-        ctx,
-        "replace",
-        Callback::from(&ctx, |s: Str<'gc>, from: Str<'gc>, to: Str<'gc>| {
-            s.replace(from.as_str(), to.as_str()).to_compact_string()
+        "replacen",
+        CallbackInner::from(|s: Str, from: Str, to: Str, count: usize| {
+            s.replacen(from.as_str(), to.as_str(), count)
         }),
     );
     t.set(
-        ctx,
-        "replace",
-        Callback::from(
-            &ctx,
-            |s: Str<'gc>, from: Str<'gc>, to: Str<'gc>, count: usize| {
-                s.replacen(from.as_str(), to.as_str(), count)
-                    .to_compact_string()
-            },
-        ),
-    );
-    t.set(
-        ctx,
         "to_lowercase",
-        Callback::from(&ctx, |s: Str<'gc>| s.to_lowercase().to_compact_string()),
+        CallbackInner::from(|s: Str| s.to_lowercase()),
     );
     t.set(
-        ctx,
         "to_uppercase",
-        Callback::from(&ctx, |s: Str<'gc>| s.to_uppercase().to_compact_string()),
+        CallbackInner::from(|s: Str| s.to_uppercase()),
     );
     t.set(
-        ctx,
         "to_ascii_lowercase",
-        Callback::from(&ctx, |s: Str<'gc>| {
-            s.to_ascii_lowercase().to_compact_string()
-        }),
+        CallbackInner::from(|s: Str| s.to_ascii_lowercase()),
     );
     t.set(
-        ctx,
         "to_ascii_uppercase",
-        Callback::from(&ctx, |s: Str<'gc>| {
-            s.to_ascii_uppercase().to_compact_string()
-        }),
+        CallbackInner::from(|s: Str| s.to_ascii_uppercase()),
     );
     t.set(
-        ctx,
         "repeat",
-        Callback::from(&ctx, |s: Str<'gc>, i: usize| {
-            s.repeat(i).to_compact_string()
-        }),
+        CallbackInner::from(|s: Str, i: usize| s.repeat(i)),
     );
-    t
+    t.into()
 }

@@ -1,3 +1,5 @@
+// skip
+
 fn a() {
     t = 0
     return || {

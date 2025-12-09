@@ -34,7 +34,7 @@ pub enum TyKind<S> {
     Union(Vec<Ty<S>>),
 }
 
-impl<S: AsRef<str>> fmt::Display for TyKind<S> {
+impl<S: fmt::Display> fmt::Display for TyKind<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             TyKind::Lit(lit) => write!(f, "{lit}"),
@@ -82,7 +82,7 @@ pub struct TableTyPair<S> {
 
 impl_locatable!(TableTyPair);
 
-impl<S: AsRef<str>> fmt::Display for TableTyPair<S> {
+impl<S: fmt::Display> fmt::Display for TableTyPair<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}: {}", self.key, self.value)
     }
@@ -98,7 +98,7 @@ pub struct TableTyOther<S> {
 
 impl_locatable!(TableTyOther);
 
-impl<S: AsRef<str>> fmt::Display for TableTyOther<S> {
+impl<S: fmt::Display> fmt::Display for TableTyOther<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[{}]: {}", self.key, self.value)
     }
