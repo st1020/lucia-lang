@@ -49,7 +49,7 @@ macro_rules! impl_conversion {
         $(
             impl From<$i> for Value {
                 fn from(value: $i) -> Value {
-                    Value::Float(Float(f64::from(value)))
+                    Value::Float(f64::from(value).into())
                 }
             }
 

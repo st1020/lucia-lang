@@ -17,7 +17,14 @@ unicode-ident = "1"
 rustc-literal-escaper = "0.0.5"
 # Data Structure
 itertools = "0.14"
-derive_more = { version = "2", features = ["full"] }
+derive_more = { version = "2", features = [
+    "from",
+    "debug",
+    "display",
+    "deref",
+    "is_variant",
+] }
+ordered-float = "5"
 oxc_index = { version = "4", features = ["nonmax"] }
 sorted-vec = "0.8"
 ordermap = "1"
@@ -62,6 +69,7 @@ unicode-ident.workspace = true
 rustc-literal-escaper.workspace = true
 itertools.workspace = true
 derive_more.workspace = true
+ordered-float.workspace = true
 oxc_index.workspace = true
 sorted-vec.workspace = true
 ordermap.workspace = true

@@ -12,8 +12,6 @@ use itertools::Itertools;
 use rustc_literal_escaper::{unescape_byte_str, unescape_str};
 use text_size::{TextRange, TextSize};
 
-use crate::utils::Float;
-
 use super::{
     ast::*,
     error::CompilerError,
@@ -1057,7 +1055,7 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
                 let mut s = text.to_owned();
                 s.retain(|c| c != '_');
                 s.parse::<f64>()
-                    .map(|f| LitKind::Float(Float(f)))
+                    .map(|f| LitKind::Float(f.into()))
                     .map_err(|error| CompilerError::ParseFloatError { error, range })?
             }
             TokenKind::Str => {
