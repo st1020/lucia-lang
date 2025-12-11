@@ -29,7 +29,6 @@ pub enum TyKind<S> {
         params: Vec<Ty<S>>,
         variadic: Option<Box<Ty<S>>>,
         returns: Option<Box<Ty<S>>>,
-        throws: Option<Box<Ty<S>>>,
     },
     Union(Vec<Ty<S>>),
 }
@@ -50,7 +49,6 @@ impl<S: fmt::Display> fmt::Display for TyKind<S> {
                 params,
                 variadic,
                 returns,
-                throws,
             } => {
                 let params_str = params
                     .iter()
@@ -61,11 +59,7 @@ impl<S: fmt::Display> fmt::Display for TyKind<S> {
                     .as_ref()
                     .map(|returns| format!(" -> {returns}"))
                     .unwrap_or_default();
-                let throws_str = throws
-                    .as_ref()
-                    .map(|throws| format!(" throw {throws}"))
-                    .unwrap_or_default();
-                write!(f, "fn({params_str}){returns_str}{throws_str}")
+                write!(f, "fn({params_str}){returns_str}")
             }
             TyKind::Union(union) => write!(f, "{}", union.iter().join(" | ")),
         }

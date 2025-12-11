@@ -1,0 +1,19 @@
+glo effect division_by_zero(value)
+
+fn div(a, b) {
+    if b == 0 {
+        value = division_by_zero(a)
+        return value + 1
+    }
+    return a / b
+}
+
+a = try div(1, 0) with division_by_zero(resume, value) {
+    resume(42) + 1
+}
+assert(a == 44)
+
+b = try div(4, 2) with division_by_zero(resume, value) {
+    resume(42) + 1
+}
+assert(b == 2)

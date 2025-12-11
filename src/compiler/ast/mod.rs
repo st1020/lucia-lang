@@ -4,6 +4,7 @@
 
 mod assign;
 mod block;
+mod effect;
 mod expr;
 mod function;
 mod ident;
@@ -11,12 +12,14 @@ mod import;
 mod lit;
 mod member;
 mod operator;
+mod params;
 mod pattern;
 mod program;
 mod ty;
 
 pub use assign::*;
 pub use block::*;
+pub use effect::*;
 pub use expr::*;
 pub use function::*;
 pub use ident::*;
@@ -24,6 +27,7 @@ pub use import::*;
 pub use lit::*;
 pub use member::*;
 pub use operator::*;
+pub use params::*;
 pub use pattern::*;
 pub use program::*;
 pub use ty::*;
@@ -59,6 +63,7 @@ pub trait Visit<S> {
     fn visit_block(&mut self, block: &Block<S>) -> Self::Return;
     fn visit_expr(&mut self, expr: &Expr<S>) -> Self::Return;
     fn visit_assign_left(&mut self, assign_left: &AssignLeft<S>) -> Self::Return;
+    fn visit_params(&mut self, params: &Params<S>) -> Self::Return;
     fn visit_pattern(&mut self, pattern: &Pattern<S>) -> Self::Return;
     fn visit_member_property(&mut self, property: &MemberKind<S>) -> Self::Return;
     fn visit_lit(&mut self, lit: &Lit<S>) -> Self::Return;

@@ -1,88 +1,23 @@
 //! Errors of this crate.
 
-use std::fmt;
-
-use itertools::Itertools;
+use compact_str::CompactString;
 use thiserror::Error;
 
 use crate::{
     compiler::{opcode::OpCode, value::MetaName},
-    frame::Frame,
-    objects::{ArgumentRange, Value, ValueType},
-    thread::ThreadMode,
-    utils::Indent,
+    objects::{ArgumentRange, Effect, Value, ValueType},
 };
 
-/// Lucia error.
-#[derive(Debug, Clone, Error)]
-#[expect(clippy::error_impl_error)]
-pub struct Error {
-    pub kind: ErrorKind,
-    pub traceback: Option<Vec<Frame>>,
-}
-
-impl PartialEq for Error {
-    fn eq(&self, other: &Self) -> bool {
-        self.kind == other.kind
-    }
-}
-
-impl Eq for Error {}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Error: {}", self.kind)?;
-        if let Some(traceback) = &self.traceback {
-            writeln!(f, "Traceback:")?;
-            for (i, frame) in traceback.iter().rev().enumerate() {
-                match frame {
-                    Frame::Lucia(frame) => {
-                        writeln!(f, "[{i}] lucia frame")?;
-                        writeln!(f, "{}", frame.indent(4))?;
-                    }
-                    Frame::Callback { callback, args } => {
-                        writeln!(f, "[{i}] callback frame")?;
-                        writeln!(f, "    callback: {callback}")?;
-                        writeln!(f, "    args: {}", args.iter().join(", "))?;
-                    }
-                }
-            }
-            writeln!(f)?;
-        }
-        Ok(())
-    }
-}
-
-impl Error {
-    pub fn new<T: Into<ErrorKind>>(kind: T) -> Self {
-        Error {
-            kind: kind.into(),
-            traceback: None,
-        }
-    }
-
-    pub fn with_traceback<T: Into<ErrorKind>>(kind: T, traceback: Vec<Frame>) -> Self {
-        Error {
-            kind: kind.into(),
-            traceback: Some(traceback),
-        }
-    }
-}
-
 /// Kind of all errors.
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub enum ErrorKind {
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Error)]
+#[expect(clippy::error_impl_error)]
+pub enum Error {
     #[error("{0}")]
     LuciaError(Value),
     #[error("panic: {0}")]
     LuciaPanic(Value),
     #[error("assert: {0}")]
     LuciaAssert(Value),
-    #[error("bad frame mode (expected {expected}, found {found})")]
-    BadThreadMode {
-        expected: ThreadMode,
-        found: ThreadMode,
-    },
     #[error("unexpected type error (expected {expected}, found {found})")]
     UnexpectedType {
         expected: ValueType,
@@ -116,14 +51,7 @@ pub enum ErrorKind {
     #[error("divide by zero: can not divide {value} by zero")]
     DivideByZero { value: i64 },
     #[error("parse error: {reason}")]
-    ParseError { reason: String },
-}
-
-impl ErrorKind {
-    pub fn recoverable(&self) -> bool {
-        !matches!(
-            self,
-            ErrorKind::LuciaPanic(_) | ErrorKind::BadThreadMode { .. }
-        )
-    }
+    ParseError { reason: CompactString },
+    #[error("unhandled effect: {effect} with arguments {args:?}")]
+    UnhandledEffect { effect: Effect, args: Vec<Value> },
 }

@@ -21,8 +21,6 @@ use super::{
     value::ValueType,
 };
 
-type ParseParamsResult<S> = Result<(Vec<TypedIdent<S>>, Option<Box<TypedIdent<S>>>), CompilerError>;
-
 /// Parse the token iter into AST.
 pub fn parse<S: StringInterner>(
     interner: S,
@@ -294,10 +292,8 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
         let function = Box::new(Function {
             name: None,
             kind: FunctionKind::Function,
-            params: Vec::new(),
-            variadic: None,
+            params: Box::new(Params::empty()),
             returns: None,
-            throws: None,
             body,
             range,
             function_id: OnceLock::new(),
@@ -413,6 +409,13 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
                 path_str,
                 kind,
             }
+        } else if self.check(TokenKind::Effect) {
+            let (effect, name) = self.parse_effect_stmt()?;
+            ExprKind::Effect {
+                glo: None,
+                name,
+                effect,
+            }
         } else if let Some(glo_range) = self.eat_range(TokenKind::Glo) {
             if self.eat(TokenKind::Fn) {
                 let name = Box::new(self.parse_ident()?);
@@ -421,6 +424,13 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
                     glo: Some(glo_range),
                     name: Some(name),
                     function,
+                }
+            } else if self.check(TokenKind::Effect) {
+                let (effect, name) = self.parse_effect_stmt()?;
+                ExprKind::Effect {
+                    glo: Some(glo_range),
+                    name,
+                    effect,
                 }
             } else {
                 let left = Box::new(self.parse_typed_ident()?);
@@ -528,6 +538,25 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
         Ok(Expr { kind, range })
     }
 
+    #[expect(clippy::type_complexity)]
+    fn parse_effect_stmt(
+        &mut self,
+    ) -> Result<(Box<Effect<S::String>>, Box<Ident<S::String>>), CompilerError> {
+        let start = self.start_range();
+        self.expect(TokenKind::Effect)?;
+        let name = Box::new(self.parse_ident()?);
+        let params = self.parse_params()?;
+        let returns = self.parse_returns()?;
+        let range = self.end_range(start);
+        let effect = Box::new(Effect {
+            name: name.name.clone(),
+            params,
+            returns,
+            range,
+        });
+        Ok((effect, name))
+    }
+
     #[expect(clippy::unused_self)]
     fn expr_to_assign_left(&self, expr: Expr<S::String>) -> Option<AssignLeft<S::String>> {
         #[expect(clippy::wildcard_enum_match_arm)]
@@ -561,14 +590,11 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
         name: Option<S::String>,
         start: TextSize,
     ) -> Result<Function<S::String>, CompilerError> {
-        let (params, variadic) = self.parse_params()?;
         Ok(Function {
             name,
             kind: FunctionKind::Function,
-            params,
-            variadic,
+            params: self.parse_params()?,
             returns: self.parse_returns()?,
-            throws: self.parse_throws()?,
             body: self.parse_block()?,
             range: self.end_range(start),
             function_id: OnceLock::new(),
@@ -679,16 +705,25 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
                 argument,
             }
         } else if let Some(try_range) = self.eat_range(TokenKind::Try) {
-            let call_kind = if self.eat(TokenKind::Question) {
-                CallKind::TryOption
-            } else if self.eat(TokenKind::Exclamation) {
-                CallKind::TryPanic
-            } else {
-                CallKind::Try
-            };
             let mut expr = self.parse_expr_primary(allow_trailing_lambda)?;
-            return if let ExprKind::Call { kind, .. } = &mut expr.kind {
-                *kind = call_kind;
+            return if let ExprKind::Call { handlers, .. } = &mut expr.kind {
+                loop {
+                    let start = self.start_range();
+                    self.expect(TokenKind::With)?;
+                    let effect = Box::new(self.parse_ident()?);
+                    let params = self.parse_params()?;
+                    let body = self.parse_block()?;
+                    let range = self.end_range(start);
+                    handlers.push(EffectHandler {
+                        effect,
+                        params,
+                        body,
+                        range,
+                    });
+                    if !self.check(TokenKind::With) {
+                        break;
+                    }
+                }
                 Ok(expr)
             } else {
                 Err(CompilerError::UnexpectedToken {
@@ -757,10 +792,8 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
                     Some(Box::new(Function {
                         name: None,
                         kind: FunctionKind::Closure,
-                        params: Vec::new(),
-                        variadic: None,
+                        params: Box::new(Params::empty()),
                         returns: None,
-                        throws: None,
                         body,
                         range,
                         function_id: OnceLock::new(),
@@ -771,8 +804,8 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
                 ExprKind::Call {
                     callee: Box::new(expr),
                     arguments,
-                    kind: CallKind::None,
                     trailing_lambda,
+                    handlers: Vec::new(),
                 }
             } else if allow_trailing_lambda && self.check(TokenKind::OpenBrace) {
                 let body = self.parse_block()?;
@@ -780,10 +813,8 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
                 let trailing_lambda = Some(Box::new(Function {
                     name: None,
                     kind: FunctionKind::Closure,
-                    params: Vec::new(),
-                    variadic: None,
+                    params: Box::new(Params::empty()),
                     returns: None,
-                    throws: None,
                     body,
                     range,
                     function_id: OnceLock::new(),
@@ -791,8 +822,8 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
                 ExprKind::Call {
                     callee: Box::new(expr),
                     arguments: Vec::new(),
-                    kind: CallKind::None,
                     trailing_lambda,
+                    handlers: Vec::new(),
                 }
             } else {
                 let safe = self.eat_range(TokenKind::Question);
@@ -871,14 +902,11 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
                 function,
             }
         } else if self.check(TokenKind::VBar) {
-            let (params, variadic) = self.parse_closure_params()?;
             let function = Box::new(Function {
                 name: None,
                 kind: FunctionKind::Closure,
-                params,
-                variadic,
+                params: self.parse_closure_params()?,
                 returns: self.parse_returns()?,
-                throws: self.parse_throws()?,
                 body: self.parse_block()?,
                 range: self.end_range(start),
                 function_id: OnceLock::new(),
@@ -892,11 +920,9 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
             let function = Box::new(Function {
                 name: None,
                 kind: FunctionKind::Do,
-                params: Vec::new(),
-                variadic: None,
+                params: Box::new(Params::empty()),
                 body: self.parse_block()?,
                 returns: None,
-                throws: None,
                 range: self.end_range(start),
                 function_id: OnceLock::new(),
             });
@@ -954,9 +980,6 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
         } else if self.eat(TokenKind::Return) {
             let argument = Box::new(self.parse_expr()?);
             ExprKind::Return { argument }
-        } else if self.eat(TokenKind::Throw) {
-            let argument = Box::new(self.parse_expr()?);
-            ExprKind::Throw { argument }
         } else {
             ExprKind::Lit(Box::new(self.parse_lit()?))
         };
@@ -986,9 +1009,9 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
         Ok(Expr { kind, range })
     }
 
-    fn parse_params(&mut self) -> ParseParamsResult<S::String> {
+    fn parse_params(&mut self) -> Result<Box<Params<S::String>>, CompilerError> {
         self.expect(TokenKind::OpenParen)?;
-        self.parse_items_until_with_last(
+        let (params, variadic) = self.parse_items_until_with_last(
             Parser::parse_typed_ident,
             TokenKind::Ellipsis,
             |p| {
@@ -996,12 +1019,13 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
                 Ok(Box::new(p.parse_typed_ident()?))
             },
             TokenKind::CloseParen,
-        )
+        )?;
+        Ok(Box::new(Params { params, variadic }))
     }
 
-    fn parse_closure_params(&mut self) -> ParseParamsResult<S::String> {
+    fn parse_closure_params(&mut self) -> Result<Box<Params<S::String>>, CompilerError> {
         self.expect(TokenKind::VBar)?;
-        self.parse_items_until_with_last(
+        let (params, variadic) = self.parse_items_until_with_last(
             Parser::parse_atom_typed_ident,
             TokenKind::Ellipsis,
             |p| {
@@ -1009,19 +1033,12 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
                 Ok(Box::new(p.parse_atom_typed_ident()?))
             },
             TokenKind::VBar,
-        )
+        )?;
+        Ok(Box::new(Params { params, variadic }))
     }
 
     fn parse_returns(&mut self) -> Result<Option<Box<Ty<S::String>>>, CompilerError> {
         Ok(if self.eat(TokenKind::Arrow) {
-            Some(Box::new(self.parse_type()?))
-        } else {
-            None
-        })
-    }
-
-    fn parse_throws(&mut self) -> Result<Option<Box<Ty<S::String>>>, CompilerError> {
-        Ok(if self.eat(TokenKind::Throw) {
             Some(Box::new(self.parse_type()?))
         } else {
             None
@@ -1271,16 +1288,10 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
             } else {
                 None
             };
-            let throws = if self.eat(TokenKind::Throw) {
-                Some(Box::new(self.parse_type()?))
-            } else {
-                None
-            };
             TyKind::Function {
                 params,
                 variadic,
                 returns,
-                throws,
             }
         } else {
             TyKind::Lit(Box::new(self.parse_lit()?))

@@ -84,11 +84,11 @@
 pub mod compiler;
 pub mod context;
 pub mod errors;
+pub mod executor;
 pub mod frame;
 pub mod fuel;
 pub mod libs;
 pub mod objects;
-pub mod thread;
 pub mod utils;
 mod vm;
 

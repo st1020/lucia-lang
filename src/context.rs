@@ -1,10 +1,13 @@
+use std::{panic, rc::Rc};
+
 use crate::{
     compiler::{code::Code, compile, error::CompilerError, interning::CompactInterner},
     errors::Error,
+    executor::ExecutorInner,
+    frame::Frame,
     fuel::Fuel,
     libs,
     objects::{Closure, ClosureInner, Str, TableInner, Value},
-    thread::ThreadState,
 };
 
 #[derive(Debug, Clone)]
@@ -47,21 +50,22 @@ impl Context {
     pub fn execute(&mut self, code: Code<Str>) -> Result<Value, Error> {
         const FUEL_PER_GC: i32 = 4096;
 
-        let closure = Closure::new(ClosureInner::new(code, None));
-        let mut thread = ThreadState::new();
-        thread.start(closure.into(), Vec::new())?;
+        let closure = Closure::new(ClosureInner::new(Rc::new(code), None));
+        let mut executor = ExecutorInner::new();
+        executor.start(closure.into(), Vec::new());
 
         loop {
             let mut fuel = Fuel::with(FUEL_PER_GC);
-            if thread.step(self, &mut fuel)? {
+            if executor.step(self, &mut fuel) {
                 break;
             }
         }
 
-        if let Some(err) = thread.error {
-            Err(err)
-        } else {
-            Ok(thread.return_value)
+        match executor.frames.pop() {
+            Some(Frame::Result { value }) => Ok(value),
+            Some(Frame::Error { error }) => Err(error),
+            Some(Frame::Effect { effect, args }) => Err(Error::UnhandledEffect { effect, args }),
+            _ => panic!("executor finished without result"),
         }
     }
 }

@@ -5,7 +5,7 @@ use compact_str::{CompactString, ToCompactString, format_compact};
 use crate::{
     Context,
     compiler::value::{MetaMethod, MetaName},
-    errors::{Error, ErrorKind},
+    errors::Error,
     objects::{FromValue, Value, ValueType, impl_metamethod, unexpected_type_error},
 };
 
@@ -28,10 +28,8 @@ impl MetaMethod<&Context> for Str {
     fn meta_int(self, _: &Context) -> Result<Self::Result1, Self::Error> {
         Ok(self
             .parse::<i64>()
-            .map_err(|e| {
-                Error::new(ErrorKind::ParseError {
-                    reason: e.to_string(),
-                })
+            .map_err(|e| Error::ParseError {
+                reason: e.to_compact_string(),
             })?
             .into())
     }
@@ -40,10 +38,8 @@ impl MetaMethod<&Context> for Str {
     fn meta_float(self, _: &Context) -> Result<Self::Result1, Self::Error> {
         Ok(self
             .parse::<f64>()
-            .map_err(|e| {
-                Error::new(ErrorKind::ParseError {
-                    reason: e.to_string(),
-                })
+            .map_err(|e| Error::ParseError {
+                reason: e.to_compact_string(),
             })?
             .into())
     }

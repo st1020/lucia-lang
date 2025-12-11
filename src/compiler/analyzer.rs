@@ -243,12 +243,7 @@ impl<S: Clone + Eq + Hash> Visit<S> for SemanticAnalyzer<S> {
         };
         self.enter_scope(scope_kind, &function.body.scope_id);
 
-        for param in &function.params {
-            self.declare_symbol_and_write_reference(&param.ident, SymbolKind::Local);
-        }
-        if let Some(variadic) = &function.variadic {
-            self.declare_symbol_and_write_reference(&variadic.ident, SymbolKind::Local);
-        }
+        self.visit_params(&function.params);
         self.visit_exprs(&function.body.body);
 
         self.leave_scope();
@@ -281,6 +276,17 @@ impl<S: Clone + Eq + Hash> Visit<S> for SemanticAnalyzer<S> {
                     }
                 }
                 self.visit_function(function);
+            }
+            ExprKind::Effect {
+                glo,
+                name,
+                effect: _,
+            } => {
+                if glo.is_some() {
+                    self.declare_symbol_and_write_reference(name, SymbolKind::Global);
+                } else {
+                    self.declare_write_reference(name);
+                }
             }
             ExprKind::Table { properties } => {
                 for property in properties {
@@ -317,15 +323,24 @@ impl<S: Clone + Eq + Hash> Visit<S> for SemanticAnalyzer<S> {
             ExprKind::Call {
                 callee,
                 arguments,
-                kind: _,
                 trailing_lambda,
+                handlers,
             } => {
+                for handler in handlers {
+                    self.declare_read_reference(&handler.effect);
+                }
                 self.visit_expr(callee);
                 for argument in arguments {
                     self.visit_expr(argument);
                 }
                 if let Some(trailing_lambda) = trailing_lambda {
                     self.visit_function(trailing_lambda);
+                }
+                for handler in handlers {
+                    self.enter_scope(ScopeKind::Block, &handler.body.scope_id);
+                    self.visit_params(&handler.params);
+                    self.visit_exprs(&handler.body.body);
+                    self.leave_scope();
                 }
             }
             ExprKind::If {
@@ -366,7 +381,6 @@ impl<S: Clone + Eq + Hash> Visit<S> for SemanticAnalyzer<S> {
             }
             ExprKind::Break | ExprKind::Continue => (),
             ExprKind::Return { argument } => self.visit_expr(argument),
-            ExprKind::Throw { argument } => self.visit_expr(argument),
             ExprKind::Import {
                 path,
                 path_str: _,
@@ -424,6 +438,15 @@ impl<S: Clone + Eq + Hash> Visit<S> for SemanticAnalyzer<S> {
                 self.declare_write_reference(ident);
                 self.visit_member_property(property);
             }
+        }
+    }
+
+    fn visit_params(&mut self, params: &Params<S>) -> Self::Return {
+        for param in &params.params {
+            self.declare_symbol_and_write_reference(&param.ident, SymbolKind::Local);
+        }
+        if let Some(variadic) = &params.variadic {
+            self.declare_symbol_and_write_reference(&variadic.ident, SymbolKind::Local);
         }
     }
 

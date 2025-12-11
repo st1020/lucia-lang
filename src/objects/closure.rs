@@ -10,12 +10,12 @@ pub type Closure = Rc<ClosureInner>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ClosureInner {
-    pub code: Code<Str>,
+    pub code: Rc<Code<Str>>,
     pub upvalues: Vec<Value>,
 }
 
 impl ClosureInner {
-    pub fn new(code: Code<Str>, frame: Option<&LuciaFrame>) -> Self {
+    pub fn new(code: Rc<Code<Str>>, frame: Option<&LuciaFrame>) -> Self {
         let mut upvalues = Vec::with_capacity(code.upvalue_names.len());
 
         if let Some(frame) = frame {

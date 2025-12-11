@@ -5,8 +5,8 @@ use derive_more::{Display, From, IsVariant};
 use crate::{
     Context,
     compiler::value::{MetaMethod, MetaName},
-    errors::{Error, ErrorKind},
-    objects::{Bytes, Function, Str, Table, UserData, unexpected_type_error},
+    errors::Error,
+    objects::{Bytes, Effect, Function, Str, Table, UserData, unexpected_type_error},
     utils::Float,
 };
 
@@ -33,6 +33,8 @@ pub enum Value {
     Table(Table),
     /// `function` - A function.
     Function(Function),
+    /// `effect` - An effect.
+    Effect(Effect),
     /// `userdata` - An UserData.
     UserData(UserData),
 }
@@ -55,6 +57,7 @@ impl Value {
             Self::Bytes(v) => NonZeroUsize::new(Rc::as_ptr(v).cast::<()>() as usize),
             Self::Table(v) => NonZeroUsize::new(Rc::as_ptr(v) as usize),
             Self::Function(v) => NonZeroUsize::new(v.const_ptr() as usize),
+            Self::Effect(v) => NonZeroUsize::new(Rc::as_ptr(v) as usize),
             Self::UserData(v) => NonZeroUsize::new(Rc::as_ptr(v) as usize),
         }
     }
@@ -77,6 +80,7 @@ impl Value {
             Self::Bytes(_) => ValueType::Bytes,
             Self::Table(_) => ValueType::Table,
             Self::Function(_) => ValueType::Function,
+            Self::Effect(_) => ValueType::Effect,
             Self::UserData(_) => ValueType::UserData,
         }
     }
@@ -93,6 +97,7 @@ macro_rules! value_enum_dispatch {
             Value::Bytes(v) => v.$path($($arg),*),
             Value::Table(v) => v.$path($($arg),*),
             Value::Function(v) => v.$path($($arg),*),
+            Value::Effect(v) => v.$path($($arg),*),
             Value::UserData(v) => v.$path($($arg),*),
         }
     };
@@ -179,15 +184,15 @@ impl MetaMethod<&Context> for Value {
     #[inline]
     fn meta_error(self, _: &Context, operator: MetaName, args: Vec<Self::Value>) -> Self::Error {
         if args.is_empty() {
-            Error::new(ErrorKind::MetaUnOperator {
+            Error::MetaUnOperator {
                 operator,
                 operand: self.value_type(),
-            })
+            }
         } else {
-            Error::new(ErrorKind::MetaBinOperator {
+            Error::MetaBinOperator {
                 operator,
                 operand: (self.value_type(), args[0].value_type()),
-            })
+            }
         }
     }
 }
@@ -231,7 +236,8 @@ impl_from_value! {
 #[derive(Debug, Clone)]
 pub enum MetaResult<const N: usize> {
     Value(Value),
-    Call(Function, [Value; N]),
+    TailCall(Function, [Value; N]),
+    TailEffect(Effect, Vec<Value>),
 }
 
 impl<T: Into<Value>, const N: usize> From<T> for MetaResult<N> {

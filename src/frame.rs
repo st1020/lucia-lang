@@ -1,40 +1,47 @@
 use std::{cmp::Ordering, fmt};
 
-use derive_more::Display;
 use itertools::Itertools;
+use ordermap::OrderMap;
 
 use crate::{
-    errors::{Error, ErrorKind},
-    objects::{Callback, Closure, TableInner, Value},
+    compiler::code::CodeParamsInfo,
+    errors::Error,
+    objects::{Callback, Closure, Effect, TableInner, Value},
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display)]
-#[display("{self:?}")]
-pub enum CallStatusKind {
-    Normal,
-    Try,
-    TryOption,
-    TryPanic,
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct EffectHandlerInfo {
+    pub jump_target: usize,
+    pub stack_size: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Frame {
-    // An running Lucia frame.
+    /// A running Lucia frame.
     Lucia(LuciaFrame),
-    // A callback that has been queued but not called yet.
+    /// A callback that has been queued but not called yet.
     Callback {
         callback: Callback,
         args: Vec<Value>,
     },
+    /// The result of the continuation.
+    /// Must be the top frame.
+    Result { value: Value },
+    /// An error that has occurred.
+    /// Must be the top frame of the stack.
+    Error { error: Error },
+    /// An effect that has been performed but not handled.
+    /// Must be the top frame.
+    Effect { effect: Effect, args: Vec<Value> },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LuciaFrame {
     pub pc: usize,
     pub closure: Closure,
     pub locals: Vec<Value>,
     pub stack: Vec<Value>,
-    pub call_status: CallStatusKind,
+    pub effect_handlers: OrderMap<Effect, EffectHandlerInfo>,
 }
 
 impl fmt::Display for LuciaFrame {
@@ -52,7 +59,14 @@ impl fmt::Display for LuciaFrame {
                 .join(", ")
         )?;
         writeln!(f, "stack: [{}]", self.stack.iter().join(", "))?;
-        write!(f, "call_status: {}", self.call_status)?;
+        writeln!(
+            f,
+            "effect_handlers: [{}]",
+            self.effect_handlers
+                .iter()
+                .map(|(effect, jump_target)| format!("{effect} -> {jump_target:?}"))
+                .join(", ")
+        )?;
         Ok(())
     }
 }
@@ -60,46 +74,58 @@ impl fmt::Display for LuciaFrame {
 impl LuciaFrame {
     const MAX_STACK_SIZE: usize = 256;
 
-    pub(crate) fn new(closure: Closure, mut args: Vec<Value>) -> Result<Self, Error> {
-        let params_num = closure.code.params.len();
-        let has_variadic = closure.code.variadic.is_some();
+    pub(crate) fn new(closure: Closure, args: &[Value]) -> Result<Self, Error> {
         let mut stack = Vec::with_capacity(closure.code.stack_size.min(Self::MAX_STACK_SIZE));
-        match args.len().cmp(&params_num) {
-            Ordering::Less => {
-                return Err(Error::new(ErrorKind::CallArguments {
-                    required: if has_variadic {
-                        (params_num, None).into()
-                    } else {
-                        params_num.into()
-                    },
-                    given: args.len(),
-                }));
-            }
-            Ordering::Equal => {
-                stack.append(&mut args.clone());
-                if has_variadic {
-                    stack.push(Value::Table(TableInner::new().into()));
-                }
-            }
-            Ordering::Greater => {
-                if !has_variadic {
-                    return Err(Error::new(ErrorKind::CallArguments {
-                        required: params_num.into(),
-                        given: args.len(),
-                    }));
-                }
-                let t = args.split_off(params_num);
-                stack.append(&mut args.clone());
-                stack.push(t.into());
-            }
-        }
-
+        closure
+            .code
+            .params
+            .info()
+            .parse_args_to_stack(&mut stack, args)?;
         Ok(LuciaFrame {
             pc: 0,
             locals: vec![Value::Null; closure.code.local_names.len()],
-            closure,
             stack,
-            call_status: CallStatusKind::Normal,
+            closure,
+            effect_handlers: OrderMap::new(),
         })
+    }
+}
+
+impl CodeParamsInfo {
+    pub(crate) fn parse_args_to_stack(
+        &self,
+        stack: &mut Vec<Value>,
+        args: &[Value],
+    ) -> Result<(), Error> {
+        match args.len().cmp(&self.params_count) {
+            Ordering::Less => Err(Error::CallArguments {
+                required: if self.has_variadic {
+                    (self.params_count, None).into()
+                } else {
+                    self.params_count.into()
+                },
+                given: args.len(),
+            }),
+            Ordering::Equal => {
+                stack.extend_from_slice(args);
+                if self.has_variadic {
+                    stack.push(Value::Table(TableInner::new().into()));
+                }
+                Ok(())
+            }
+            Ordering::Greater => {
+                if self.has_variadic {
+                    let (params, variadic) = args.split_at(self.params_count);
+                    stack.extend_from_slice(params);
+                    stack.push(variadic.into());
+                    Ok(())
+                } else {
+                    Err(Error::CallArguments {
+                        required: self.params_count.into(),
+                        given: args.len(),
+                    })
+                }
+            }
+        }
     }
 }

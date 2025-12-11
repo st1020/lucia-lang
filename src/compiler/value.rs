@@ -12,6 +12,7 @@ pub enum ValueType {
     Bytes,
     Table,
     Function,
+    Effect,
     UserData,
 }
 
@@ -26,6 +27,7 @@ impl ValueType {
             ValueType::Bytes => "bytes",
             ValueType::Table => "table",
             ValueType::Function => "function",
+            ValueType::Effect => "effect",
             ValueType::UserData => "userdata",
         }
     }

@@ -37,7 +37,6 @@ impl IntoSemanticTokenType for TokenKind {
             | TokenKind::Break
             | TokenKind::Continue
             | TokenKind::Return
-            | TokenKind::Throw
             | TokenKind::Glo
             | TokenKind::Import
             | TokenKind::As
@@ -46,7 +45,9 @@ impl IntoSemanticTokenType for TokenKind {
             | TokenKind::And
             | TokenKind::Or
             | TokenKind::Try
+            | TokenKind::With
             | TokenKind::Fn
+            | TokenKind::Effect
             | TokenKind::Do
             | TokenKind::Null
             | TokenKind::True

@@ -11,7 +11,8 @@ use crate::{
     compiler::value::MetaMethod,
     errors::Error,
     objects::{
-        Callback, Closure, FromValue, Value, ValueType, impl_metamethod, unexpected_type_error,
+        Callback, Closure, Continuation, FromValue, Value, ValueType, impl_metamethod,
+        unexpected_type_error,
     },
 };
 
@@ -21,6 +22,7 @@ use crate::{
 pub enum Function {
     Closure(Closure),
     Callback(Callback),
+    Continuation(Continuation),
 }
 
 impl Function {
@@ -28,6 +30,7 @@ impl Function {
         match self {
             Function::Closure(v) => Rc::as_ptr(v).cast::<()>(),
             Function::Callback(v) => Rc::as_ptr(v).cast::<()>(),
+            Function::Continuation(v) => Rc::as_ptr(v).cast::<()>(),
         }
     }
 }
@@ -44,6 +47,9 @@ impl MetaMethod<&Context> for Function {
     fn meta_iter(self, _: &Context) -> Result<Self::ResultIter, Self::Error> {
         Ok(self)
     }
+
+    impl_metamethod!(Function, str);
+    impl_metamethod!(Function, repr);
 
     impl_metamethod!(Function, eq_ne);
 }
@@ -69,7 +75,7 @@ macro_rules! impl_conversion {
         )*
     };
 }
-impl_conversion!(Closure, Callback);
+impl_conversion!(Closure, Callback, Continuation);
 
 /// The required number of arguments when calling a function.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

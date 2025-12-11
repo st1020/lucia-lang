@@ -343,10 +343,26 @@ impl<T: Into<Value>> From<Vec<T>> for TableEntries {
     }
 }
 
+impl<T: Into<Value> + Clone> From<&[T]> for TableEntries {
+    fn from(value: &[T]) -> Self {
+        value.iter().cloned().map(Into::into).collect()
+    }
+}
+
 impl<K: Into<Value>, V: Into<Value>> From<Vec<(K, V)>> for TableEntries {
     fn from(value: Vec<(K, V)>) -> Self {
         value
             .into_iter()
+            .map(|(k, v)| (k.into(), v.into()))
+            .collect()
+    }
+}
+
+impl<K: Into<Value> + Clone, V: Into<Value> + Clone> From<&[(K, V)]> for TableEntries {
+    fn from(value: &[(K, V)]) -> Self {
+        value
+            .iter()
+            .cloned()
             .map(|(k, v)| (k.into(), v.into()))
             .collect()
     }

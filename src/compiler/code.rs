@@ -1,6 +1,6 @@
 //! The Code that runs in LVM.
 
-use std::fmt;
+use std::{fmt, rc::Rc};
 
 use itertools::Itertools;
 
@@ -8,6 +8,49 @@ use crate::utils::Float;
 
 pub use super::ast::FunctionKind;
 use super::opcode::OpCode;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CodeParams<S> {
+    /// Name of parameters.
+    pub params: Vec<S>,
+    /// Name of variadic parameter.
+    pub variadic: Option<S>,
+}
+
+impl<S> CodeParams<S> {
+    pub fn info(&self) -> CodeParamsInfo {
+        CodeParamsInfo {
+            params_count: self.params.len(),
+            has_variadic: self.variadic.is_some(),
+        }
+    }
+}
+
+impl<S: fmt::Display> fmt::Display for CodeParams<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            self.params
+                .iter()
+                .map(ToString::to_string)
+                .chain(
+                    self.variadic
+                        .iter()
+                        .map(|variadic| format!("...{variadic}")),
+                )
+                .join(", ")
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CodeParamsInfo {
+    /// Number of parameters.
+    pub params_count: usize,
+    /// Whether has variadic parameter.
+    pub has_variadic: bool,
+}
 
 // The upvalue may be captured from local variable or upvalue of parent closure.
 // For deeper closure which use the upvalue from non-direct parent closure, like:
@@ -33,10 +76,8 @@ pub enum UpvalueCapture {
 pub struct Code<S> {
     /// Function name.
     pub name: Option<S>,
-    /// Name of parameters.
-    pub params: Vec<S>,
-    /// Name of variadic parameter.
-    pub variadic: Option<S>,
+    /// Function parameters.
+    pub params: CodeParams<S>,
     /// Function kind.
     pub kind: FunctionKind,
     /// Bytecode, a list of OpCodes.
@@ -60,11 +101,7 @@ impl<S: fmt::Display> fmt::Display for Code<S> {
         if let Some(name) = &self.name {
             writeln!(f, "name: {name}")?;
         }
-        if let Some(v) = &self.variadic {
-            writeln!(f, "params: ({}, ...{})", self.params.iter().join(", "), v)?;
-        } else {
-            writeln!(f, "params: ({})", self.params.iter().join(", "))?;
-        }
+        writeln!(f, "params: ({})", self.params)?;
         writeln!(f, "kind: {}", self.kind)?;
         writeln!(f, "stack_size: {}", self.stack_size)?;
         writeln!(f, "consts: {}", self.consts.iter().join(", "))?;
@@ -110,6 +147,21 @@ impl<S: fmt::Display> fmt::Display for Code<S> {
 
 /// The const value.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct EffectConst<S> {
+    /// The effect name.
+    pub name: S,
+    /// Effect parameters.
+    pub params: CodeParams<S>,
+}
+
+impl<S: fmt::Display> fmt::Display for EffectConst<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "effect {}({})", self.name, self.params)
+    }
+}
+
+/// The const value.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ConstValue<S> {
     /// "null"
     Null,
@@ -124,7 +176,9 @@ pub enum ConstValue<S> {
     /// "b"abc""
     Bytes(Vec<u8>),
     /// A function code.
-    Code(Box<Code<S>>),
+    Code(Rc<Code<S>>),
+    /// An effect.
+    Effect(Rc<EffectConst<S>>),
 }
 
 impl<S: fmt::Display> fmt::Display for ConstValue<S> {
@@ -137,6 +191,7 @@ impl<S: fmt::Display> fmt::Display for ConstValue<S> {
             Self::Str(v) => write!(f, "{v}"),
             Self::Bytes(v) => write!(f, "b\"{}\"", v.escape_ascii()),
             Self::Code(_) => write!(f, "<code>"),
+            Self::Effect(v) => write!(f, "{v}"),
         }
     }
 }

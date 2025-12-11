@@ -1,3 +1,5 @@
+// skip
+
 fn div(a: int, b: int) -> int throw str {
     if b == 0 {
         throw "division by zero"

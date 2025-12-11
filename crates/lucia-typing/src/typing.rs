@@ -101,7 +101,6 @@ impl<S: Clone + Eq + Ord> Type<S> {
                     }
                 }
                 function1.returns.is_subtype_of(&function2.returns)
-                    && function1.throws.is_subtype_of(&function2.throws)
             }
             (ty, Type::Union(union)) => union.iter().any(|x| ty.is_subtype_of(x)),
             (t1, t2) => t1 == t2,
@@ -187,7 +186,6 @@ impl<S: AsRef<str> + Clone + Eq + Ord> From<TyKind<S>> for Type<S> {
                 params,
                 variadic,
                 returns,
-                throws,
             } => FunctionType {
                 params: params
                     .into_iter()
@@ -195,7 +193,6 @@ impl<S: AsRef<str> + Clone + Eq + Ord> From<TyKind<S>> for Type<S> {
                     .collect(),
                 variadic: ParmaType::from(variadic.map(|x| x.kind.into()).unwrap_or(Type::NULL)),
                 returns: returns.map(|x| x.kind.into()).unwrap_or(Type::NULL),
-                throws: throws.map(|x| x.kind.into()).unwrap_or(Type::NULL),
             }
             .into(),
             TyKind::Union(t) => Type::Union(SortedSet::from_unsorted(
@@ -330,7 +327,6 @@ pub struct FunctionType<S: Eq + Ord> {
     pub params: Vec<ParmaType<S>>,
     pub variadic: ParmaType<S>,
     pub returns: Type<S>,
-    pub throws: Type<S>,
 }
 
 impl<S: Clone + Eq + Ord> FunctionType<S> {
@@ -341,7 +337,6 @@ impl<S: Clone + Eq + Ord> FunctionType<S> {
             ty: Type::Any,
         },
         returns: Type::Any,
-        throws: Type::Any,
     };
 
     pub fn check_args(&self, args: &[Type<S>]) -> Result<(), TypeError<S>> {
@@ -356,11 +351,10 @@ impl<S: AsRef<str> + Eq + Ord + fmt::Display> fmt::Display for FunctionType<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "fn({}, ...{}) -> {} throw {}",
+            "fn({}, ...{}) -> {}",
             self.params.iter().join(", "),
             self.variadic,
             self.returns,
-            self.throws,
         )
     }
 }

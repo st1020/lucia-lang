@@ -1,7 +1,7 @@
 use crate::{
     Context,
     compiler::value::{MetaMethod, MetaName},
-    errors::{Error, ErrorKind},
+    errors::Error,
     objects::{FromValue, Value, ValueType, impl_metamethod, unexpected_type_error},
 };
 
@@ -36,7 +36,7 @@ impl MetaMethod<&Context> for i64 {
     fn meta_div(self, ctx: &Context, other: Self::Value) -> Result<Self::Result2, Self::Error> {
         if let Value::Int(other) = other {
             if other == 0 {
-                return Err(Error::new(ErrorKind::DivideByZero { value: self }));
+                return Err(Error::DivideByZero { value: self });
             }
             Ok(self.wrapping_div(other).into())
         } else {
@@ -48,7 +48,7 @@ impl MetaMethod<&Context> for i64 {
     fn meta_rem(self, ctx: &Context, other: Self::Value) -> Result<Self::Result2, Self::Error> {
         if let Value::Int(other) = other {
             if other == 0 {
-                return Err(Error::new(ErrorKind::DivideByZero { value: self }));
+                return Err(Error::DivideByZero { value: self });
             }
             Ok(self.wrapping_rem(other).into())
         } else {

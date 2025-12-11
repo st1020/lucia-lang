@@ -1,14 +1,16 @@
 //! The Code Generator.
 
-use std::{hash::Hash, iter};
+use std::{hash::Hash, iter, rc::Rc};
 
 use ordermap::{OrderMap, OrderSet};
 use oxc_index::{IndexVec, index_vec};
 use rustc_hash::FxBuildHasher;
 
+use crate::compiler::code::CodeParams;
+
 use super::{
     ast::*,
-    code::{Code, ConstValue, UpvalueCapture},
+    code::{Code, ConstValue, EffectConst, UpvalueCapture},
     error::CompilerError,
     index::{FunctionId, SymbolId},
     opcode::{JumpTarget, OpCode},
@@ -83,6 +85,15 @@ impl<S> From<LitKind<S>> for ConstValue<S> {
             LitKind::Float(v) => ConstValue::Float(v),
             LitKind::Str(v) => ConstValue::Str(v),
             LitKind::Bytes(v) => ConstValue::Bytes(v),
+        }
+    }
+}
+
+impl<S> From<Params<S>> for CodeParams<S> {
+    fn from(value: Params<S>) -> Self {
+        CodeParams {
+            params: value.params.into_iter().map(|x| x.ident.name).collect(),
+            variadic: value.variadic.map(|x| x.ident.name),
         }
     }
 }
@@ -301,12 +312,7 @@ impl<'a, S: Clone + Eq + Hash> CodeGenerator<'a, S> {
                 }
             }
         }
-        if let Some(variadic) = &function.variadic {
-            self.store(&variadic.ident);
-        }
-        for param in function.params.iter().rev() {
-            self.store(&param.ident);
-        }
+        self.visit_params(&function.params).unwrap();
         self.visit_block(&function.body).unwrap();
         if function.kind == FunctionKind::Do {
             self.push_code(OpCode::Pop);
@@ -338,7 +344,8 @@ impl<'a, S: Clone + Eq + Hash> CodeGenerator<'a, S> {
             | OpCode::JumpPopIfNull(JumpTarget(v))
             | OpCode::PopJumpIfFalse(JumpTarget(v))
             | OpCode::JumpIfTrueOrPop(JumpTarget(v))
-            | OpCode::JumpIfFalseOrPop(JumpTarget(v)) = opcode
+            | OpCode::JumpIfFalseOrPop(JumpTarget(v))
+            | OpCode::RegisterHandler(JumpTarget(v)) = opcode
             {
                 *v = jump_target_table[*v];
             }
@@ -346,16 +353,11 @@ impl<'a, S: Clone + Eq + Hash> CodeGenerator<'a, S> {
 
         let stack_size = Self::get_stack_size(
             self.code(),
-            function.params.len() + usize::from(function.variadic.is_some()),
+            function.params.params.len() + usize::from(function.params.variadic.is_some()),
         );
         let code = Code {
             name: function.name.clone(),
-            params: function
-                .params
-                .iter()
-                .map(|x| x.ident.name.clone())
-                .collect(),
-            variadic: function.variadic.as_ref().map(|x| x.ident.name.clone()),
+            params: (*function.params.clone()).into(),
             kind: function.kind,
             code: self.code().clone(),
             consts: self.context().consts.iter().cloned().collect(),
@@ -443,11 +445,8 @@ impl<'a, S: Clone + Eq + Hash> CodeGenerator<'a, S> {
                     stack.push((i, new_depth));
                     new_depth -= 1;
                 }
-                OpCode::Call(i)
-                | OpCode::TryCall(i)
-                | OpCode::TryOptionCall(i)
-                | OpCode::TryPanicCall(i) => new_depth -= i,
-                OpCode::Return | OpCode::Throw => {
+                OpCode::Call(i) => new_depth -= i,
+                OpCode::Return => {
                     debug_assert_eq!(new_depth, 1);
                     continue;
                 }
@@ -456,6 +455,8 @@ impl<'a, S: Clone + Eq + Hash> CodeGenerator<'a, S> {
                     continue;
                 }
                 OpCode::LoadLocals => new_depth += 1,
+                OpCode::RegisterHandler(JumpTarget(_)) => new_depth -= 2,
+                OpCode::UnregisterHandler(_) => (),
                 OpCode::JumpTarget(_) => unreachable!(),
             }
             stack.push((offset + 1, new_depth));
@@ -553,7 +554,7 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
 
     fn visit_function(&mut self, function: &Function<S>) -> Self::Return {
         let code = self.gen_function_code(function);
-        self.push_load_const(ConstValue::Code(Box::new(code)));
+        self.push_load_const(ConstValue::Code(Rc::new(code)));
         if function.kind == FunctionKind::Do {
             self.push_code(OpCode::Call(0));
         }
@@ -591,6 +592,18 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
                     self.store(name);
                     self.push_load_const(ConstValue::Null);
                 }
+            }
+            ExprKind::Effect {
+                glo: _,
+                name,
+                effect,
+            } => {
+                self.push_load_const(ConstValue::Effect(Rc::new(EffectConst {
+                    name: effect.name.clone(),
+                    params: (*effect.params.clone()).into(),
+                })));
+                self.store(name);
+                self.push_load_const(ConstValue::Null);
             }
             ExprKind::Table { properties } => {
                 for TableProperty { key, value, .. } in properties {
@@ -656,11 +669,23 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
             ExprKind::Call {
                 callee,
                 arguments,
-                kind,
                 trailing_lambda,
+                handlers,
             } => {
+                let end_label = self.get_jump_target();
+                let mut handler_labels = Vec::new();
+                for handler in handlers {
+                    let handler_label = self.get_jump_target();
+                    self.push_load_const(ConstValue::Effect(Rc::new(EffectConst {
+                        name: handler.effect.name.clone(),
+                        params: (*handler.params.clone()).into(),
+                    })));
+                    self.load(&handler.effect);
+                    self.push_code(OpCode::RegisterHandler(handler_label));
+                    handler_labels.push(handler_label);
+                }
+
                 let mut argument_count = arguments.len();
-                let safe_label = self.get_jump_target();
                 #[expect(clippy::wildcard_enum_match_arm)]
                 match &callee.kind {
                     ExprKind::Member {
@@ -669,6 +694,7 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
                         safe,
                     } => {
                         self.visit_expr(table)?;
+                        let safe_label = self.get_jump_target();
                         if safe.is_some() {
                             self.push_code(OpCode::JumpPopIfNull(safe_label));
                         }
@@ -688,6 +714,7 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
                                 self.push_code(property.get_opcode());
                             }
                         }
+                        self.push_code(OpCode::JumpTarget(safe_label));
                     }
                     _ => self.visit_expr(callee)?,
                 }
@@ -698,13 +725,20 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
                     self.visit_function(trailing_lambda)?;
                     argument_count += 1;
                 }
-                self.push_code(match kind {
-                    CallKind::None => OpCode::Call(argument_count),
-                    CallKind::Try => OpCode::TryCall(argument_count),
-                    CallKind::TryOption => OpCode::TryOptionCall(argument_count),
-                    CallKind::TryPanic => OpCode::TryPanicCall(argument_count),
-                });
-                self.push_code(OpCode::JumpTarget(safe_label));
+                self.push_code(OpCode::Call(argument_count));
+
+                if !handlers.is_empty() {
+                    self.push_code(OpCode::UnregisterHandler(handlers.len()));
+                    self.push_code(OpCode::Jump(end_label));
+                    for (handler, jump_target) in handlers.iter().zip(handler_labels) {
+                        self.push_code(OpCode::JumpTarget(jump_target));
+                        self.push_code(OpCode::UnregisterHandler(handlers.len()));
+                        self.visit_params(&handler.params)?;
+                        self.visit_block(&handler.body)?;
+                        self.push_code(OpCode::Jump(end_label));
+                    }
+                    self.push_code(OpCode::JumpTarget(end_label));
+                }
             }
             ExprKind::If {
                 test,
@@ -854,15 +888,11 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
                 for _ in 0..self.context().need_clear_stack_count {
                     self.push_code(OpCode::Pop);
                 }
-                if let ExprKind::Call { kind, .. } = argument.kind {
+                if let ExprKind::Call { .. } = argument.kind {
                     self.visit_expr(argument)?;
-                    if kind == CallKind::None {
-                        let code_len = self.code().len();
-                        if let OpCode::Call(i) = self.code()[code_len - 2] {
-                            self.code()[code_len - 2] = OpCode::ReturnCall(i);
-                        } else {
-                            self.push_code(OpCode::Return);
-                        }
+                    let code_len = self.code().len();
+                    if let OpCode::Call(i) = self.code()[code_len - 2] {
+                        self.code()[code_len - 2] = OpCode::ReturnCall(i);
                     } else {
                         self.push_code(OpCode::Return);
                     }
@@ -870,17 +900,6 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
                     self.visit_expr(argument)?;
                     self.push_code(OpCode::Return);
                 }
-                self.push_load_const(ConstValue::Null);
-            }
-            ExprKind::Throw { argument } => {
-                if self.function_semantic().kind == FunctionKind::Do {
-                    return Err(CompilerError::ThrowOutsideFunction { range: expr.range });
-                }
-                for _ in 0..self.context().need_clear_stack_count {
-                    self.push_code(OpCode::Pop);
-                }
-                self.visit_expr(argument)?;
-                self.push_code(OpCode::Throw);
                 self.push_load_const(ConstValue::Null);
             }
             ExprKind::Import {
@@ -997,6 +1016,16 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
                 self.push_code(property.set_opcode());
                 self.store(ident);
             }
+        }
+        Ok(())
+    }
+
+    fn visit_params(&mut self, params: &Params<S>) -> Self::Return {
+        if let Some(variadic) = &params.variadic {
+            self.store(&variadic.ident);
+        }
+        for param in params.params.iter().rev() {
+            self.store(&param.ident);
         }
         Ok(())
     }

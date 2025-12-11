@@ -9,13 +9,13 @@ use crate::{
         opcode::{JumpTarget, OpCode},
         value::MetaMethod,
     },
-    errors::{Error, ErrorKind},
-    frame::{CallStatusKind, Frame},
-    objects::{ClosureInner, MetaResult, TableEntries, TableInner, Value},
-    thread::ThreadState,
+    errors::Error,
+    executor::ExecutorInner,
+    frame::{EffectHandlerInfo, Frame},
+    objects::{ClosureInner, EffectInner, MetaResult, TableEntries, TableInner, Value},
 };
 
-impl ThreadState {
+impl ExecutorInner {
     /// Run this stack frame.
     pub(crate) fn run_vm(
         &mut self,
@@ -31,30 +31,28 @@ impl ThreadState {
 
         macro_rules! operator_error {
             ($operator:expr, $arg1:expr) => {
-                Error::with_traceback(
-                    ErrorKind::UnOperator {
-                        operator: $operator,
-                        operand: $arg1.value_type(),
-                    },
-                    self.traceback(),
-                )
+                Error::UnOperator {
+                    operator: $operator,
+                    operand: $arg1.value_type(),
+                }
             };
             ($operator:expr, $arg1:expr, $arg2:expr) => {
-                Error::with_traceback(
-                    ErrorKind::BinOperator {
-                        operator: $operator,
-                        operand: ($arg1.value_type(), $arg2.value_type()),
-                    },
-                    self.traceback(),
-                )
+                Error::BinOperator {
+                    operator: $operator,
+                    operand: ($arg1.value_type(), $arg2.value_type()),
+                }
             };
         }
         macro_rules! call_metamethod {
             ($meta_result:expr) => {
                 match $meta_result? {
                     MetaResult::Value(v) => frame.stack.push(v),
-                    MetaResult::Call(callee, args) => {
-                        self.call_function(callee, args.to_vec(), CallStatusKind::Normal)?;
+                    MetaResult::TailCall(callee, args) => {
+                        self.call_function(callee, args.to_vec());
+                        break;
+                    }
+                    MetaResult::TailEffect(effect, args) => {
+                        self.perform_effect(effect, args);
                         break;
                     }
                 }
@@ -80,14 +78,6 @@ impl ThreadState {
                 let table = frame.stack.pop().unwrap();
                 let value = frame.stack.pop().unwrap();
                 call_metamethod!(table.$name(ctx, key, value))
-            }};
-        }
-        macro_rules! call {
-            ($i:expr, $call_status:expr) => {{
-                let args = frame.stack.split_off(frame.stack.len() - $i);
-                let callee = frame.stack.pop().unwrap();
-                self.call_function(callee.meta_call(ctx)?, args, $call_status)?;
-                break;
             }};
         }
 
@@ -127,7 +117,10 @@ impl ThreadState {
                         ConstValue::Float(v) => Value::Float(*v),
                         ConstValue::Str(v) => Value::Str(Rc::clone(v)),
                         ConstValue::Bytes(v) => Value::Bytes(Rc::new(v.clone().into())),
-                        ConstValue::Code(v) => ClosureInner::new(*v.clone(), Some(frame)).into(),
+                        ConstValue::Code(code) => {
+                            ClosureInner::new(Rc::clone(code), Some(frame)).into()
+                        }
+                        ConstValue::Effect(effect) => EffectInner::new(Rc::clone(effect)).into(),
                     });
                 }
                 OpCode::StoreLocal(i) => {
@@ -318,25 +311,22 @@ impl ThreadState {
                         _ => return Err(operator_error!(opcode, value)),
                     }
                 }
-                OpCode::Call(i) => call!(i, CallStatusKind::Normal),
-                OpCode::TryCall(i) => call!(i, CallStatusKind::Try),
-                OpCode::TryOptionCall(i) => call!(i, CallStatusKind::TryOption),
-                OpCode::TryPanicCall(i) => call!(i, CallStatusKind::TryPanic),
+                OpCode::Call(i) => {
+                    let args = frame.stack.split_off(frame.stack.len() - i);
+                    let callee = frame.stack.pop().unwrap();
+                    self.call_function(callee.meta_call(ctx)?, args);
+                    break;
+                }
                 OpCode::Return => {
                     debug_assert_eq!(frame.stack.len(), 1);
                     let value = frame.stack.pop().unwrap();
                     self.return_upper(value);
                     break;
                 }
-                OpCode::Throw => {
-                    debug_assert_eq!(frame.stack.len(), 1);
-                    let value = frame.stack.pop().unwrap();
-                    return Err(Error::new(ErrorKind::LuciaError(value)));
-                }
                 OpCode::ReturnCall(i) => {
                     let args = frame.stack.split_off(frame.stack.len() - i);
                     let callee = frame.stack.pop().unwrap();
-                    self.tail_call(callee.meta_call(ctx)?, args)?;
+                    self.tail_call(callee.meta_call(ctx)?, args);
                     break;
                 }
                 OpCode::LoadLocals => {
@@ -345,6 +335,31 @@ impl ThreadState {
                         table.set(Rc::clone(&code.local_names[i]), frame.locals[i].clone());
                     }
                     frame.stack.push(table.into());
+                }
+                OpCode::RegisterHandler(JumpTarget(i)) => {
+                    let effect = frame.stack.pop().unwrap();
+                    let expected_effect = frame.stack.pop().unwrap();
+                    match (effect, expected_effect) {
+                        (Value::Effect(effect), Value::Effect(expected_effect))
+                            if effect.match_effect_handler(&expected_effect) =>
+                        {
+                            frame.effect_handlers.insert(
+                                effect,
+                                EffectHandlerInfo {
+                                    jump_target: i,
+                                    stack_size: frame.stack.len(),
+                                },
+                            );
+                        }
+                        (effect, expected_effect) => {
+                            return Err(operator_error!(opcode, expected_effect, effect));
+                        }
+                    }
+                }
+                OpCode::UnregisterHandler(i) => {
+                    frame
+                        .effect_handlers
+                        .truncate(frame.effect_handlers.len() - i);
                 }
                 OpCode::JumpTarget(_) => panic!("unexpected opcode: JumpTarget"),
             }

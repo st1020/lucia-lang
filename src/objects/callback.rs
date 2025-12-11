@@ -6,8 +6,8 @@ use derive_more::{Debug, Display};
 
 use crate::{
     Context,
-    errors::{Error, ErrorKind},
-    objects::{ArgumentRange, FromValue, Function, MetaResult, Value},
+    errors::Error,
+    objects::{ArgumentRange, Effect, FromValue, Function, MetaResult, Value},
 };
 
 pub type CallbackResult = Result<CallbackReturn, Error>;
@@ -16,6 +16,7 @@ pub type CallbackResult = Result<CallbackReturn, Error>;
 pub enum CallbackReturn {
     Return(Value),
     TailCall(Function, Vec<Value>),
+    TailEffect(Effect, Vec<Value>),
 }
 
 impl<T: Into<Value>> From<T> for CallbackReturn {
@@ -28,7 +29,8 @@ impl<const N: usize> From<MetaResult<N>> for CallbackReturn {
     fn from(value: MetaResult<N>) -> Self {
         match value {
             MetaResult::Value(v) => CallbackReturn::Return(v),
-            MetaResult::Call(f, args) => CallbackReturn::TailCall(f, Vec::from(args)),
+            MetaResult::TailCall(f, args) => CallbackReturn::TailCall(f, Vec::from(args)),
+            MetaResult::TailEffect(e, args) => CallbackReturn::TailEffect(e, args),
         }
     }
 }
@@ -124,12 +126,10 @@ macro_rules! impl_into_callback {
                 let args_len = args.len();
                 let required = ArgumentRange::from($len);
                 if !required.contains(&args_len) {
-                    return Err(Error::new(
-                        ErrorKind::CallArguments {
-                            required,
-                            given: args_len,
-                        },
-                    ));
+                    return Err(Error::CallArguments {
+                        required,
+                        given: args_len,
+                    });
                 }
                 debug_assert!(args.len() == $len);
                 self($($t::from_value(args[$idx].clone())?,)*).into_callback_result()
@@ -147,12 +147,10 @@ macro_rules! impl_into_callback {
                 let args_len = args.len();
                 let required = ArgumentRange::from(($len, None));
                 if !required.contains(&args_len) {
-                    return Err(Error::new(
-                        ErrorKind::CallArguments {
-                            required,
-                            given: args_len
-                        },
-                    ));
+                    return Err(Error::CallArguments {
+                        required,
+                        given: args_len
+                    });
                 }
                 debug_assert!(args.len() >= $len);
                 self($($t::from_value(args[$idx].clone())?,)* &args[$len..]).into_callback_result()
@@ -169,12 +167,10 @@ macro_rules! impl_into_callback {
                 let args_len = args.len();
                 let required = ArgumentRange::from($len);
                 if !required.contains(&args_len) {
-                    return Err(Error::new(
-                        ErrorKind::CallArguments {
-                            required,
-                            given: args_len,
-                        },
-                    ));
+                    return Err(Error::CallArguments {
+                        required,
+                        given: args_len,
+                    });
                 }
                 debug_assert!(args.len() == $len);
                 self(ctx, $($t::from_value(args[$idx].clone())?,)*).into_callback_result()
@@ -192,12 +188,10 @@ macro_rules! impl_into_callback {
                 let args_len = args.len();
                 let required = ArgumentRange::from(($len, None));
                 if !required.contains(&args_len) {
-                    return Err(Error::new(
-                        ErrorKind::CallArguments {
-                            required,
-                            given: args_len,
-                        },
-                    ));
+                    return Err(Error::CallArguments {
+                        required,
+                        given: args_len,
+                    });
                 }
                 debug_assert!(args.len() >= $len);
                 self(ctx, $($t::from_value(args[$idx].clone())?,)* &args[$len..]).into_callback_result()

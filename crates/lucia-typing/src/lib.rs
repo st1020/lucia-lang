@@ -155,6 +155,7 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
 
         let param_types = function
             .params
+            .params
             .iter()
             .map(|param| ParmaType {
                 name: Some(param.ident.name.clone()),
@@ -166,6 +167,7 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
             })
             .collect::<Vec<_>>();
         let variadic_type = function
+            .params
             .variadic
             .as_ref()
             .map(|t| ParmaType {
@@ -182,16 +184,11 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
             .as_ref()
             .map(|t| t.kind.clone().into())
             .unwrap_or(Type::Any);
-        let throws_type = function
-            .throws
-            .as_ref()
-            .map(|t| t.kind.clone().into())
-            .unwrap_or(Type::Any);
 
-        for (param, t) in function.params.iter().zip(param_types.iter()) {
+        for (param, t) in function.params.params.iter().zip(param_types.iter()) {
             self.set_symbol_type(&param.ident, t.clone().ty)?;
         }
-        if let Some(variadic) = &function.variadic {
+        if let Some(variadic) = &function.params.variadic {
             self.set_symbol_type(
                 &variadic.ident,
                 TableType::list(variadic_type.ty.clone()).into(),
@@ -202,7 +199,6 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
             params: param_types,
             variadic: variadic_type,
             returns: returns_type,
-            throws: throws_type,
         };
         self.function_types[self.current_function_id] = Some(function_type.clone());
 
@@ -306,6 +302,7 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
                     ty
                 }
             }
+            ExprKind::Effect { .. } => todo!(),
             ExprKind::Table { properties } => {
                 let mut pairs = Vec::new();
                 for property in properties {
@@ -419,8 +416,8 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
             ExprKind::Call {
                 callee,
                 arguments,
-                kind,
                 trailing_lambda: _,
+                handlers: _,
             } => {
                 // TODO: check trailing lambda
                 let function_type = MetaMethodType.call(self.check_expr(callee)?)?;
@@ -438,19 +435,7 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
                 for argument_type in argument_types.iter().skip(function_type.params.len()) {
                     argument_type.expect_is_subtype_of(&function_type.variadic.ty)?;
                 }
-                match kind {
-                    CallKind::None | CallKind::TryPanic => function_type.returns.clone(),
-                    CallKind::Try => TableType {
-                        pairs: vec![
-                            (LitKind::Int(0), function_type.returns.clone() | Type::NULL),
-                            (LitKind::Int(1), function_type.throws.clone() | Type::NULL),
-                        ],
-                        others: None,
-                        metatable: None,
-                    }
-                    .into(),
-                    CallKind::TryOption => function_type.returns.clone() | Type::NULL,
-                }
+                function_type.returns.clone()
             }
             ExprKind::If {
                 test,
@@ -510,15 +495,6 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
                         .as_ref()
                         .unwrap()
                         .returns,
-                )?;
-                Type::NULL
-            }
-            ExprKind::Throw { argument } => {
-                self.check_expr(argument)?.expect_is_subtype_of(
-                    &self.function_types[self.current_function_id]
-                        .as_ref()
-                        .unwrap()
-                        .throws,
                 )?;
                 Type::NULL
             }

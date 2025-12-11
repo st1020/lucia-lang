@@ -18,15 +18,15 @@ macro_rules! impl_metamethod {
             args: Vec<Self::Value>,
         ) -> Self::Error {
             if args.len() == 0 {
-                $crate::errors::Error::new($crate::errors::ErrorKind::MetaUnOperator {
+                $crate::errors::Error::MetaUnOperator {
                     operator,
                     operand: $crate::objects::ValueType::$type,
-                })
+                }
             } else {
-                $crate::errors::Error::new($crate::errors::ErrorKind::MetaBinOperator {
+                $crate::errors::Error::MetaBinOperator {
                     operator,
                     operand: ($crate::objects::ValueType::$type, args[0].value_type()),
-                })
+                }
             }
         }
     };
@@ -101,7 +101,7 @@ macro_rules! call_metamethod {
         if let Some(metatable) = $self.metatable() {
             let metamethod = metatable.get($meta_name);
             if !metamethod.is_null() {
-                return Ok($crate::objects::MetaResult::Call(
+                return Ok($crate::objects::MetaResult::TailCall(
                     metamethod.meta_call($ctx)?,
                     [$self.clone().into(), $($arg.into()),*],
                 ));
@@ -164,10 +164,10 @@ macro_rules! call_metamethod_error {
 
 macro_rules! unexpected_type_error {
     ($expected:expr, $found:expr) => {
-        $crate::errors::Error::new($crate::errors::ErrorKind::UnexpectedType {
+        $crate::errors::Error::UnexpectedType {
             expected: $expected,
             found: $found.value_type(),
-        })
+        }
     };
 }
 

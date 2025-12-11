@@ -145,20 +145,23 @@ pub enum OpCode {
 
     /// Pops numbers of item for function arguments, then pop an callable value and call it.
     Call(usize),
-    /// Call with a shortcut for propagating errors. Implements `try`.
-    TryCall(usize),
-    /// Call with a shortcut for propagating errors. Implements `try?`.
-    TryOptionCall(usize),
-    /// Call with a shortcut for propagating errors. Implements `try!`.
-    TryPanicCall(usize),
     /// Returns with `STACK[-1]` to the caller of the function.
     Return,
-    /// Throws with `STACK[-1]` as an error.
-    Throw,
     /// Works as `Call(usize); Return;`, this is for tail call optimization.
     ReturnCall(usize),
     /// Pushes a table of local names onto the stack.
     LoadLocals,
+
+    /// Registers an effect handler of an effect.
+    /// ```lucia
+    /// effect = STACK.pop()
+    /// expected_effect = STACK.pop()
+    /// ```
+    /// If `expected_effect` dose not match `effect`, a runtime error is thrown. Registers the
+    /// effect handler of `effect`, when the effect is performed, jumps to `JumpTarget`.
+    RegisterHandler(JumpTarget), // TODO: Zero cost effect handling, use jump table instead.
+    /// Unregister the top effect handlers.
+    UnregisterHandler(usize),
 
     /// A jump target, only used during code generation.
     JumpTarget(JumpTarget),
@@ -240,13 +243,15 @@ impl fmt::Display for OpCode {
                 write!(f, "{:WIDTH$}{}", "JumpIfFalseOrPop", i)
             }
             Self::Call(i) => write!(f, "{:WIDTH$}{}", "Call", i),
-            Self::TryCall(i) => write!(f, "{:WIDTH$}{}", "TryCall", i),
-            Self::TryOptionCall(i) => write!(f, "{:WIDTH$}{}", "TryOptionCall", i),
-            Self::TryPanicCall(i) => write!(f, "{:WIDTH$}{}", "TryPanicCall", i),
             Self::Return => write!(f, "Return"),
-            Self::Throw => write!(f, "Throw"),
             Self::ReturnCall(i) => write!(f, "{:WIDTH$}{}", "ReturnCall", i),
             Self::LoadLocals => write!(f, "LoadLocals"),
+            Self::RegisterHandler(JumpTarget(i)) => {
+                write!(f, "{:WIDTH$}{}", "RegisterEffectHandler", i)
+            }
+            Self::UnregisterHandler(i) => {
+                write!(f, "{:WIDTH$}{}", "UnregisterEffectHandler", i)
+            }
             Self::JumpTarget(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "JumpTarget", i),
         }
     }

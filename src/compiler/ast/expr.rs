@@ -32,6 +32,11 @@ pub enum ExprKind<S> {
         name: Option<Box<Ident<S>>>,
         function: Box<Function<S>>,
     },
+    Effect {
+        glo: Option<TextRange>,
+        name: Box<Ident<S>>,
+        effect: Box<Effect<S>>,
+    },
     Table {
         properties: Vec<TableProperty<S>>,
     },
@@ -59,8 +64,8 @@ pub enum ExprKind<S> {
     Call {
         callee: Box<Expr<S>>,
         arguments: Vec<Expr<S>>,
-        kind: CallKind,
         trailing_lambda: Option<Box<Function<S>>>,
+        handlers: Vec<EffectHandler<S>>,
     },
     If {
         test: Box<Expr<S>>,
@@ -86,9 +91,6 @@ pub enum ExprKind<S> {
     Break,
     Continue,
     Return {
-        argument: Box<Expr<S>>,
-    },
-    Throw {
         argument: Box<Expr<S>>,
     },
     Import {
@@ -148,6 +150,13 @@ impl<S: fmt::Display> fmt::Display for ExprKind<S> {
                     function
                 )
             }
+            ExprKind::Effect { glo, name, effect } => {
+                write!(
+                    f,
+                    "{}effect {name}{effect}",
+                    if glo.is_some() { "glo " } else { "" },
+                )
+            }
             ExprKind::Table { properties } => {
                 if properties.is_empty() {
                     write!(f, "{{}}")
@@ -181,21 +190,24 @@ impl<S: fmt::Display> fmt::Display for ExprKind<S> {
             ExprKind::Call {
                 callee,
                 arguments,
-                kind,
                 trailing_lambda,
+                handlers,
             } => {
-                match kind {
-                    CallKind::None => (),
-                    CallKind::Try => write!(f, "try ")?,
-                    CallKind::TryOption => write!(f, "try? ")?,
-                    CallKind::TryPanic => write!(f, "try! ")?,
-                }
-                write!(f, "{callee}({})", arguments.iter().join(", "))?;
-                if let Some(trailing_lambda) = trailing_lambda {
-                    write!(f, " {}", trailing_lambda.body)
-                } else {
-                    Ok(())
-                }
+                write!(
+                    f,
+                    "{}{}({}){}{}",
+                    if handlers.is_empty() { "" } else { "try " },
+                    callee,
+                    arguments.iter().join(", "),
+                    trailing_lambda
+                        .as_ref()
+                        .map_or(String::new(), |v| format!(" {}", v.body)),
+                    if handlers.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" {}", handlers.iter().join("\n").indent(4))
+                    }
+                )
             }
             ExprKind::If {
                 test,
@@ -221,7 +233,6 @@ impl<S: fmt::Display> fmt::Display for ExprKind<S> {
             ExprKind::Break => write!(f, "break"),
             ExprKind::Continue => write!(f, "continue"),
             ExprKind::Return { argument } => write!(f, "return {argument}"),
-            ExprKind::Throw { argument } => write!(f, "throw {argument}"),
             ExprKind::Import {
                 path,
                 path_str: _,
@@ -261,15 +272,6 @@ impl<S: fmt::Display> fmt::Display for TableProperty<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}: {}", self.key, self.value)
     }
-}
-
-/// Kind of call expression.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CallKind {
-    None,
-    Try,
-    TryOption,
-    TryPanic,
 }
 
 /// A match case.

@@ -1,7 +1,7 @@
 use crate::{
     Context,
     compiler::value::MetaMethod,
-    errors::{Error, ErrorKind},
+    errors::Error,
     objects::{CallbackInner, Value},
 };
 
@@ -21,9 +21,9 @@ pub fn load_builtin(context: &mut Context) {
             if v {
                 Ok(v)
             } else {
-                Err(Error::new(ErrorKind::LuciaAssert(
+                Err(Error::LuciaAssert(
                     msg.first().cloned().unwrap_or(Value::Null),
-                )))
+                ))
             }
         }),
     );

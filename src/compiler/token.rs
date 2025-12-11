@@ -76,8 +76,6 @@ pub enum TokenKind {
     Continue,
     /// "return"
     Return,
-    /// "throw"
-    Throw,
     /// "glo"
     Glo,
     /// "import"
@@ -94,10 +92,14 @@ pub enum TokenKind {
     Or,
     /// "try"
     Try,
+    /// "with"
+    With,
     /// "fn"
     Fn,
     /// "do"
     Do,
+    /// "effect"
+    Effect,
     /// "null"
     Null,
     /// "true"
