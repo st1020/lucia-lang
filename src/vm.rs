@@ -338,30 +338,29 @@ impl ExecutorInner {
                 }
                 OpCode::RegisterHandler(JumpTarget(i)) => {
                     let effect = frame.stack.pop().unwrap();
+                    if let Value::Effect(effect) = effect {
+                        frame.effect_handlers.insert(
+                            effect,
+                            EffectHandlerInfo {
+                                jump_target: i,
+                                stack_size: frame.stack.len(),
+                            },
+                        );
+                    } else {
+                        return Err(operator_error!(opcode, effect));
+                    }
+                }
+                OpCode::CheckEffect => {
                     let expected_effect = frame.stack.pop().unwrap();
+                    let effect = frame.stack.pop().unwrap();
                     match (effect, expected_effect) {
                         (Value::Effect(effect), Value::Effect(expected_effect))
-                            if effect.match_effect_handler(&expected_effect) =>
-                        {
-                            frame.effect_handlers.insert(
-                                effect,
-                                EffectHandlerInfo {
-                                    jump_target: i,
-                                    stack_size: frame.stack.len(),
-                                },
-                            );
-                        }
+                            if effect.match_effect_handler(&expected_effect) => {}
                         (effect, expected_effect) => {
                             return Err(operator_error!(opcode, expected_effect, effect));
                         }
                     }
                 }
-                OpCode::UnregisterHandler(i) => {
-                    frame
-                        .effect_handlers
-                        .truncate(frame.effect_handlers.len() - i);
-                }
-                OpCode::JumpTarget(_) => panic!("unexpected opcode: JumpTarget"),
             }
 
             if instructions == 0 {

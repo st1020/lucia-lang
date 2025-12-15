@@ -18,6 +18,24 @@ use super::{
     value::ValueType,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum CodeMarker {
+    OpCode(OpCode),
+    JumpTarget(JumpTarget),
+}
+
+impl From<OpCode> for CodeMarker {
+    fn from(value: OpCode) -> Self {
+        CodeMarker::OpCode(value)
+    }
+}
+
+impl From<JumpTarget> for CodeMarker {
+    fn from(value: JumpTarget) -> Self {
+        CodeMarker::JumpTarget(value)
+    }
+}
+
 impl From<BinOp> for OpCode {
     fn from(value: BinOp) -> Self {
         match value {
@@ -100,7 +118,7 @@ impl<S> From<Params<S>> for CodeParams<S> {
 
 #[derive(Debug, Clone)]
 struct Context<S> {
-    code: Vec<OpCode>,
+    code: Vec<CodeMarker>,
     consts: OrderSet<ConstValue<S>, FxBuildHasher>,
     local_names: OrderMap<SymbolId, S, FxBuildHasher>,
     global_names: OrderMap<SymbolId, S, FxBuildHasher>,
@@ -172,15 +190,18 @@ impl<'a, S: Clone + Eq + Hash> CodeGenerator<'a, S> {
         &mut self.context().break_stack
     }
 
-    fn code(&mut self) -> &mut Vec<OpCode> {
+    fn code(&mut self) -> &mut Vec<CodeMarker> {
         &mut self.context().code
     }
 
-    fn push_code(&mut self, opcode: OpCode) {
-        if opcode == OpCode::Pop && self.code().last().copied().is_some_and(OpCode::is_load) {
+    fn push_code<T: Into<CodeMarker>>(&mut self, code: T) {
+        let code = code.into();
+        if code == CodeMarker::OpCode(OpCode::Pop)
+            && matches!(self.code().last().copied(), Some(CodeMarker::OpCode(opcode)) if opcode.is_load())
+        {
             self.code().pop();
         } else {
-            self.code().push(opcode);
+            self.code().push(code);
         }
     }
 
@@ -322,24 +343,22 @@ impl<'a, S: Clone + Eq + Hash> CodeGenerator<'a, S> {
             .context()
             .code
             .last()
-            .is_some_and(|&opcode| opcode == OpCode::Return)
+            .is_some_and(|&opcode| opcode == OpCode::Return.into())
         {
             self.push_code(OpCode::Return);
         } else {
             // The function already has a return statement, do nothing.
         }
 
+        let mut code = Vec::new();
         let mut jump_target_table = vec![0; self.context().jump_target_count];
-        let mut i = 0;
-        while i < self.code().len() {
-            if let OpCode::JumpTarget(JumpTarget(index)) = self.code()[i] {
-                jump_target_table[index] = i;
-                self.code().remove(i);
-            } else {
-                i += 1;
+        for marker in self.code().iter().copied() {
+            match marker {
+                CodeMarker::OpCode(opcode) => code.push(opcode),
+                CodeMarker::JumpTarget(JumpTarget(index)) => jump_target_table[index] = code.len(),
             }
         }
-        for opcode in self.code().iter_mut() {
+        for opcode in &mut code {
             if let OpCode::Jump(JumpTarget(v))
             | OpCode::JumpPopIfNull(JumpTarget(v))
             | OpCode::PopJumpIfFalse(JumpTarget(v))
@@ -352,14 +371,14 @@ impl<'a, S: Clone + Eq + Hash> CodeGenerator<'a, S> {
         }
 
         let stack_size = Self::get_stack_size(
-            self.code(),
+            &code,
             function.params.params.len() + usize::from(function.params.variadic.is_some()),
         );
         let code = Code {
             name: function.name.clone(),
             params: (*function.params.clone()).into(),
             kind: function.kind,
-            code: self.code().clone(),
+            code,
             consts: self.context().consts.iter().cloned().collect(),
             local_names: self.context().local_names.values().cloned().collect(),
             global_names: self.context().global_names.values().cloned().collect(),
@@ -455,9 +474,8 @@ impl<'a, S: Clone + Eq + Hash> CodeGenerator<'a, S> {
                     continue;
                 }
                 OpCode::LoadLocals => new_depth += 1,
-                OpCode::RegisterHandler(JumpTarget(_)) => new_depth -= 2,
-                OpCode::UnregisterHandler(_) => (),
-                OpCode::JumpTarget(_) => unreachable!(),
+                OpCode::RegisterHandler(_) => new_depth -= 1,
+                OpCode::CheckEffect => new_depth -= 2,
             }
             stack.push((offset + 1, new_depth));
         }
@@ -633,14 +651,14 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
                     self.visit_expr(left)?;
                     self.push_code(OpCode::JumpIfFalseOrPop(label));
                     self.visit_expr(right)?;
-                    self.push_code(OpCode::JumpTarget(label));
+                    self.push_code(label);
                 }
                 BinOp::Or => {
                     let label = self.get_jump_target();
                     self.visit_expr(left)?;
                     self.push_code(OpCode::JumpIfTrueOrPop(label));
                     self.visit_expr(right)?;
-                    self.push_code(OpCode::JumpTarget(label));
+                    self.push_code(label);
                 }
                 _ => {
                     self.visit_expr(left)?;
@@ -664,7 +682,7 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
                 }
                 self.visit_member_property(property)?;
                 self.push_code(property.get_opcode());
-                self.push_code(OpCode::JumpTarget(safe_label));
+                self.push_code(safe_label);
             }
             ExprKind::Call {
                 callee,
@@ -672,19 +690,6 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
                 trailing_lambda,
                 handlers,
             } => {
-                let end_label = self.get_jump_target();
-                let mut handler_labels = Vec::new();
-                for handler in handlers {
-                    let handler_label = self.get_jump_target();
-                    self.push_load_const(ConstValue::Effect(Rc::new(EffectConst {
-                        name: handler.effect.name.clone(),
-                        params: (*handler.params.clone()).into(),
-                    })));
-                    self.load(&handler.effect);
-                    self.push_code(OpCode::RegisterHandler(handler_label));
-                    handler_labels.push(handler_label);
-                }
-
                 let mut argument_count = arguments.len();
                 #[expect(clippy::wildcard_enum_match_arm)]
                 match &callee.kind {
@@ -714,7 +719,7 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
                                 self.push_code(property.get_opcode());
                             }
                         }
-                        self.push_code(OpCode::JumpTarget(safe_label));
+                        self.push_code(safe_label);
                     }
                     _ => self.visit_expr(callee)?,
                 }
@@ -725,19 +730,34 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
                     self.visit_function(trailing_lambda)?;
                     argument_count += 1;
                 }
-                self.push_code(OpCode::Call(argument_count));
 
-                if !handlers.is_empty() {
-                    self.push_code(OpCode::UnregisterHandler(handlers.len()));
+                if handlers.is_empty() {
+                    self.push_code(OpCode::Call(argument_count));
+                } else {
+                    let end_label = self.get_jump_target();
+                    let mut handler_labels = Vec::new();
+                    for handler in handlers {
+                        let handler_label = self.get_jump_target();
+                        self.load(&handler.effect);
+                        self.push_code(OpCode::RegisterHandler(handler_label));
+                        handler_labels.push(handler_label);
+                    }
+
+                    self.push_code(OpCode::Call(argument_count));
                     self.push_code(OpCode::Jump(end_label));
-                    for (handler, jump_target) in handlers.iter().zip(handler_labels) {
-                        self.push_code(OpCode::JumpTarget(jump_target));
-                        self.push_code(OpCode::UnregisterHandler(handlers.len()));
+
+                    for (handler, handler_label) in handlers.iter().zip(handler_labels) {
+                        self.push_code(handler_label);
+                        self.push_load_const(ConstValue::Effect(Rc::new(EffectConst {
+                            name: handler.effect.name.clone(),
+                            params: (*handler.params.clone()).into(),
+                        })));
+                        self.push_code(OpCode::CheckEffect);
                         self.visit_params(&handler.params)?;
                         self.visit_block(&handler.body)?;
                         self.push_code(OpCode::Jump(end_label));
                     }
-                    self.push_code(OpCode::JumpTarget(end_label));
+                    self.push_code(end_label);
                 }
             }
             ExprKind::If {
@@ -751,13 +771,13 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
                 self.push_code(OpCode::PopJumpIfFalse(false_label));
                 self.visit_block(consequent)?;
                 self.push_code(OpCode::Jump(end_label));
-                self.push_code(OpCode::JumpTarget(false_label));
+                self.push_code(false_label);
                 if let Some(alternate) = alternate {
                     self.visit_expr(alternate)?;
                 } else {
                     self.push_load_const(ConstValue::Null);
                 }
-                self.push_code(OpCode::JumpTarget(end_label));
+                self.push_code(end_label);
             }
             ExprKind::Match { expr, cases } => {
                 let end_label = self.get_jump_target();
@@ -765,8 +785,7 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
                 let block_labels = iter::repeat_with(|| self.get_jump_target())
                     .take(cases.len())
                     .collect::<Vec<_>>();
-                for (i, case) in cases.iter().enumerate() {
-                    let block_label = block_labels[i];
+                for (case, block_label) in cases.iter().zip(block_labels.iter().copied()) {
                     for pattern in &case.patterns {
                         let mut clean_stack_label_stack = vec![self.get_jump_target()];
 
@@ -781,18 +800,18 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
                             if clean_stack_index != 0 {
                                 self.push_code(OpCode::Pop);
                             }
-                            self.push_code(OpCode::JumpTarget(clean_stack_label));
+                            self.push_code(clean_stack_label);
                         }
                     }
                 }
                 self.push_load_const(ConstValue::Null);
                 self.push_code(OpCode::Jump(end_label));
-                for (i, case) in cases.iter().enumerate() {
-                    self.push_code(OpCode::JumpTarget(block_labels[i]));
+                for (case, block_label) in cases.iter().zip(block_labels.iter().copied()) {
+                    self.push_code(block_label);
                     self.visit_expr(&case.body)?;
                     self.push_code(OpCode::Jump(end_label));
                 }
-                self.push_code(OpCode::JumpTarget(end_label));
+                self.push_code(end_label);
                 self.push_code(OpCode::Swap(2));
                 self.push_code(OpCode::Pop);
             }
@@ -802,11 +821,11 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
                 self.continue_stack().push(continue_label);
                 self.break_stack().push(break_label);
 
-                self.push_code(OpCode::JumpTarget(continue_label));
+                self.push_code(continue_label);
                 self.visit_block(body)?;
                 self.push_code(OpCode::Pop);
                 self.push_code(OpCode::Jump(continue_label));
-                self.push_code(OpCode::JumpTarget(break_label));
+                self.push_code(break_label);
                 self.push_load_const(ConstValue::Null);
 
                 self.continue_stack().pop();
@@ -818,13 +837,13 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
                 self.continue_stack().push(continue_label);
                 self.break_stack().push(break_label);
 
-                self.push_code(OpCode::JumpTarget(continue_label));
+                self.push_code(continue_label);
                 self.visit_expr(test)?;
                 self.push_code(OpCode::PopJumpIfFalse(break_label));
                 self.visit_block(body)?;
                 self.push_code(OpCode::Pop);
                 self.push_code(OpCode::Jump(continue_label));
-                self.push_code(OpCode::JumpTarget(break_label));
+                self.push_code(break_label);
                 self.push_load_const(ConstValue::Null);
 
                 self.continue_stack().pop();
@@ -839,7 +858,7 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
 
                 self.visit_expr(right)?;
                 self.push_code(OpCode::Iter);
-                self.push_code(OpCode::JumpTarget(continue_label));
+                self.push_code(continue_label);
                 self.push_code(OpCode::Copy(1));
                 self.push_code(OpCode::Call(0));
                 self.push_code(OpCode::JumpPopIfNull(break_label));
@@ -857,7 +876,7 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
                 self.visit_block(body)?;
                 self.push_code(OpCode::Pop);
                 self.push_code(OpCode::Jump(continue_label));
-                self.push_code(OpCode::JumpTarget(break_label));
+                self.push_code(break_label);
                 self.push_code(OpCode::Pop);
                 self.push_load_const(ConstValue::Null);
 
@@ -888,11 +907,12 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
                 for _ in 0..self.context().need_clear_stack_count {
                     self.push_code(OpCode::Pop);
                 }
-                if let ExprKind::Call { .. } = argument.kind {
+                if let ExprKind::Call { handlers, .. } = &argument.kind
+                    && handlers.is_empty()
+                {
                     self.visit_expr(argument)?;
-                    let code_len = self.code().len();
-                    if let OpCode::Call(i) = self.code()[code_len - 2] {
-                        self.code()[code_len - 2] = OpCode::ReturnCall(i);
+                    if let Some(CodeMarker::OpCode(OpCode::Call(i))) = self.code().last().copied() {
+                        *self.code().last_mut().unwrap() = OpCode::ReturnCall(i).into();
                     } else {
                         self.push_code(OpCode::Return);
                     }

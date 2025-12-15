@@ -152,19 +152,10 @@ pub enum OpCode {
     /// Pushes a table of local names onto the stack.
     LoadLocals,
 
-    /// Registers an effect handler of an effect.
-    /// ```lucia
-    /// effect = STACK.pop()
-    /// expected_effect = STACK.pop()
-    /// ```
-    /// If `expected_effect` dose not match `effect`, a runtime error is thrown. Registers the
-    /// effect handler of `effect`, when the effect is performed, jumps to `JumpTarget`.
-    RegisterHandler(JumpTarget), // TODO: Zero cost effect handling, use jump table instead.
-    /// Unregister the top effect handlers.
-    UnregisterHandler(usize),
-
-    /// A jump target, only used during code generation.
-    JumpTarget(JumpTarget),
+    /// Pops an effect from stack and and registers an effect handler for it.
+    RegisterHandler(JumpTarget),
+    /// Pops two effect from stack and checks if they match, if not, raises an error.
+    CheckEffect,
 }
 
 impl OpCode {
@@ -246,13 +237,8 @@ impl fmt::Display for OpCode {
             Self::Return => write!(f, "Return"),
             Self::ReturnCall(i) => write!(f, "{:WIDTH$}{}", "ReturnCall", i),
             Self::LoadLocals => write!(f, "LoadLocals"),
-            Self::RegisterHandler(JumpTarget(i)) => {
-                write!(f, "{:WIDTH$}{}", "RegisterEffectHandler", i)
-            }
-            Self::UnregisterHandler(i) => {
-                write!(f, "{:WIDTH$}{}", "UnregisterEffectHandler", i)
-            }
-            Self::JumpTarget(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "JumpTarget", i),
+            Self::RegisterHandler(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "RegisterHandler", i),
+            Self::CheckEffect => write!(f, "MatchEffect"),
         }
     }
 }

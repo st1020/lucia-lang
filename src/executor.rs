@@ -113,7 +113,14 @@ impl ExecutorInner {
 
     pub(crate) fn return_current(&mut self, value: Value) {
         match self.frames.last_mut() {
-            Some(Frame::Lucia(LuciaFrame { stack, .. })) => stack.push(value),
+            Some(Frame::Lucia(LuciaFrame {
+                stack,
+                effect_handlers,
+                ..
+            })) => {
+                effect_handlers.clear();
+                stack.push(value);
+            }
             None => self.frames.push(Frame::Result { value }),
             _ => panic!("lua frame must be above a lua frame"),
         }
@@ -125,12 +132,12 @@ impl ExecutorInner {
     }
 
     #[inline]
-    fn perform_effect_with(&mut self, effect: &Effect, args: &[Value]) -> bool {
+    fn perform_effect_with(&mut self, effect: Effect, args: &[Value]) -> bool {
         if let Some(i) = self.frames.iter().rposition(|frame| {
             if let Frame::Lucia(LuciaFrame {
                 effect_handlers, ..
             }) = frame
-                && effect_handlers.contains_key(effect)
+                && effect_handlers.contains_key(&effect)
             {
                 true
             } else {
@@ -144,14 +151,14 @@ impl ExecutorInner {
                 effect_handlers,
                 ..
             }) = &mut self.frames[i]
-                && let Some(effect_handler_info) = effect_handlers.get(effect).cloned()
+                && let Some(effect_handler_info) = effect_handlers.get(&effect).cloned()
             {
-                stack.truncate(effect_handler_info.stack_size);
                 stack.push(continuation.into());
                 if let Err(e) = effect.params_info().parse_args_to_stack(stack, args) {
                     self.return_error(e);
                     return true;
                 }
+                stack.push(effect.into());
                 *pc = effect_handler_info.jump_target;
                 self.frames.truncate(i + 1);
                 return true;
@@ -161,7 +168,7 @@ impl ExecutorInner {
     }
 
     pub(crate) fn perform_effect(&mut self, effect: Effect, args: Vec<Value>) {
-        if !self.perform_effect_with(&effect, &args) {
+        if !self.perform_effect_with(Rc::clone(&effect), &args) {
             self.frames.push(Frame::Effect { effect, args });
         }
     }
@@ -169,7 +176,7 @@ impl ExecutorInner {
     pub(crate) fn return_error(&mut self, error: Error) {
         if !self.perform_effect_with(
             #[expect(clippy::wildcard_enum_match_arm)]
-            &match error {
+            match error {
                 Error::LuciaPanic(_) => EffectInner::Panic,
                 Error::LuciaAssert(_) => EffectInner::Assert,
                 _ => EffectInner::Error,
