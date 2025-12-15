@@ -9,7 +9,7 @@ pub fn load_builtin(context: &mut Context) {
     let builtins = &mut context.builtins;
     builtins.set(
         "id",
-        CallbackInner::from(|v: Value| v.id().map(|x| i64::try_from(usize::from(x)).unwrap())),
+        CallbackInner::from(|v: Value| v.id().map(usize::from)),
     );
     builtins.set(
         "type",

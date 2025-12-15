@@ -34,9 +34,7 @@ pub fn string_lib() -> Table {
     );
     t.set(
         "find",
-        CallbackInner::from(|s1: Str, s2: Str| {
-            (s1.find(s2.as_str())).map(|x| Value::Int(x.try_into().unwrap()))
-        }),
+        CallbackInner::from(|s1: Str, s2: Str| (s1.find(s2.as_str())).map(Value::from)),
     );
     t.set(
         "split",

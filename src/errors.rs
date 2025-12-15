@@ -1,5 +1,7 @@
 //! Errors of this crate.
 
+use std::io;
+
 use compact_str::CompactString;
 use thiserror::Error;
 
@@ -52,6 +54,8 @@ pub enum Error {
     DivideByZero { value: i64 },
     #[error("parse error: {reason}")]
     ParseError { reason: CompactString },
+    #[error("I/O error: {reason}")]
+    IOError { reason: io::ErrorKind },
     #[error("unhandled effect: {effect} with arguments {args:?}")]
     UnhandledEffect { effect: Effect, args: Vec<Value> },
 }

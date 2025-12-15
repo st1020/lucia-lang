@@ -32,10 +32,7 @@ pub fn table_lib() -> Table {
     //         )
     //     }),
     // );
-    t.set(
-        "raw_len",
-        CallbackInner::from(|table: Table| i64::try_from(table.len()).unwrap()),
-    );
+    t.set("raw_len", CallbackInner::from(|table: Table| table.len()));
     t.set(
         "raw_get",
         CallbackInner::from(|table: Table, key: Value| table.get(key)),

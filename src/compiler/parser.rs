@@ -1,10 +1,6 @@
 //! The parser.
 
-#![expect(
-    clippy::shadow_unrelated,
-    clippy::if_then_some_else_none,
-    clippy::string_slice
-)]
+#![expect(clippy::shadow_unrelated, clippy::string_slice)]
 
 use std::{iter::Peekable, sync::OnceLock};
 

@@ -40,7 +40,7 @@ impl TableInner {
             self.entries
                 .array
                 .get(index)
-                .map(|v| (Value::Int(index.try_into().unwrap()), v.clone()))
+                .map(|v| (index.into(), v.clone()))
         } else {
             self.entries
                 .map
