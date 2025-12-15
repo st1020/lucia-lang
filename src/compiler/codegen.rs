@@ -422,9 +422,7 @@ impl<'a, S: Clone + Eq + Hash> CodeGenerator<'a, S> {
                 OpCode::StoreLocal(_) | OpCode::StoreGlobal(_) => {
                     new_depth -= 1;
                 }
-                OpCode::Import(_) => new_depth += 1,
-                OpCode::ImportFrom(_) => new_depth += 1,
-                OpCode::ImportGlob => new_depth -= 1,
+
                 OpCode::BuildTable(i) => new_depth = new_depth - i * 2 + 1,
                 OpCode::BuildList(i) => new_depth = new_depth - i + 1,
                 OpCode::GetAttr | OpCode::GetItem => new_depth -= 1,
@@ -447,7 +445,20 @@ impl<'a, S: Clone + Eq + Hash> CodeGenerator<'a, S> {
                 | OpCode::NotIdentical => new_depth -= 1,
                 OpCode::TypeCheck(_) => (),
                 OpCode::GetLen => (),
+                OpCode::Import(_) => new_depth += 1,
+                OpCode::ImportFrom(_) => new_depth += 1,
+                OpCode::ImportGlob => new_depth -= 1,
                 OpCode::Iter => (),
+                OpCode::Call(i) => new_depth -= i,
+                OpCode::Return => {
+                    debug_assert_eq!(new_depth, 1);
+                    continue;
+                }
+                OpCode::ReturnCall(i) => {
+                    debug_assert_eq!(new_depth, i + 1);
+                    continue;
+                }
+                OpCode::LoadLocals => new_depth += 1,
                 OpCode::Jump(JumpTarget(i)) => {
                     stack.push((i, new_depth));
                     continue;
@@ -464,18 +475,8 @@ impl<'a, S: Clone + Eq + Hash> CodeGenerator<'a, S> {
                     stack.push((i, new_depth));
                     new_depth -= 1;
                 }
-                OpCode::Call(i) => new_depth -= i,
-                OpCode::Return => {
-                    debug_assert_eq!(new_depth, 1);
-                    continue;
-                }
-                OpCode::ReturnCall(i) => {
-                    debug_assert_eq!(new_depth, i + 1);
-                    continue;
-                }
-                OpCode::LoadLocals => new_depth += 1,
                 OpCode::RegisterHandler(_) => new_depth -= 1,
-                OpCode::CheckEffect => new_depth -= 2,
+                OpCode::CheckEffect(i) => new_depth += i,
             }
             stack.push((offset + 1, new_depth));
         }
@@ -752,7 +753,10 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
                             name: handler.effect.name.clone(),
                             params: (*handler.params.clone()).into(),
                         })));
-                        self.push_code(OpCode::CheckEffect);
+                        self.push_code(OpCode::CheckEffect(
+                            handler.params.params.len()
+                                + usize::from(handler.params.variadic.is_some()),
+                        ));
                         self.visit_params(&handler.params)?;
                         self.visit_block(&handler.body)?;
                         self.push_code(OpCode::Jump(end_label));

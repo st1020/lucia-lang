@@ -30,13 +30,6 @@ pub enum OpCode {
     /// Stores `STACK.pop()` into the `global_names[namei]`.
     StoreGlobal(usize),
 
-    /// Imports the module `consts[consti]` and pushed it onto the stack.
-    Import(usize),
-    /// Loads the attribute `consts[consti]` the module in `STACK[-1]` and pushed it onto the stack.
-    ImportFrom(usize),
-    /// Loads all symbols from the module in `STACK[-1]` to the global namespace.
-    ImportGlob,
-
     /// Pushes a new table onto the stack. Pops `2 * count` items to build table.
     BuildTable(usize),
     /// Pushes a new list onto the stack. Pops `count` items to build list.
@@ -124,12 +117,27 @@ pub enum OpCode {
 
     /// Implements `STACK[-1] = STACK[-1] is type`.
     TypeCheck(ValueType),
-
     /// Implements `STACK[-1] = len(STACK[-1])`.
     GetLen,
 
+    /// Imports the module `consts[consti]` and pushed it onto the stack.
+    Import(usize),
+    /// Loads the attribute `consts[consti]` the module in `STACK[-1]` and pushed it onto the stack.
+    ImportFrom(usize),
+    /// Loads all symbols from the module in `STACK[-1]` to the global namespace.
+    ImportGlob,
+
     /// Get the __iter__ of `STACK[-1]` and pushed it onto the stack.
     Iter,
+    /// Pops numbers of item for function arguments, then pop an callable value and call it.
+    Call(usize),
+    /// Returns with `STACK[-1]` to the caller of the function.
+    Return,
+    /// Works as `Call(usize); Return;`, this is for tail call optimization.
+    ReturnCall(usize),
+    /// Pushes a table of local names onto the stack.
+    LoadLocals,
+
     /// Sets the bytecode counter to target.
     Jump(JumpTarget),
     /// If `STACK[-1]` is null, sets the bytecode counter to target and pop `STACK[-1]`. Otherwise, leaves `STACK[-1]` on the stack
@@ -143,19 +151,11 @@ pub enum OpCode {
     /// If `STACK[-1]` is false, sets the bytecode counter to target and leaves `STACK[-1]` on the stack. Otherwise, `STACK[-1]` is popped.
     JumpIfFalseOrPop(JumpTarget),
 
-    /// Pops numbers of item for function arguments, then pop an callable value and call it.
-    Call(usize),
-    /// Returns with `STACK[-1]` to the caller of the function.
-    Return,
-    /// Works as `Call(usize); Return;`, this is for tail call optimization.
-    ReturnCall(usize),
-    /// Pushes a table of local names onto the stack.
-    LoadLocals,
-
     /// Pops an effect from stack and and registers an effect handler for it.
     RegisterHandler(JumpTarget),
     /// Pops two effect from stack and checks if they match, if not, raises an error.
-    CheckEffect,
+    /// The usize field is only used for stack size analysis during codegen.
+    CheckEffect(usize),
 }
 
 impl OpCode {
@@ -196,9 +196,6 @@ impl fmt::Display for OpCode {
             Self::LoadConst(i) => write!(f, "{:WIDTH$}{}", "LoadConst", i),
             Self::StoreLocal(i) => write!(f, "{:WIDTH$}{}", "StoreLocal", i),
             Self::StoreGlobal(i) => write!(f, "{:WIDTH$}{}", "StoreGlobal", i),
-            Self::Import(i) => write!(f, "{:WIDTH$}{}", "Import", i),
-            Self::ImportFrom(i) => write!(f, "{:WIDTH$}{}", "ImportFrom", i),
-            Self::ImportGlob => write!(f, "ImportGlob"),
             Self::BuildTable(i) => write!(f, "{:WIDTH$}{}", "BuildTable", i),
             Self::BuildList(i) => write!(f, "{:WIDTH$}{}", "BuildList", i),
             Self::GetAttr => write!(f, "GetAttr"),
@@ -224,7 +221,14 @@ impl fmt::Display for OpCode {
             Self::NotIdentical => write!(f, "NotIdentical"),
             Self::TypeCheck(ty) => write!(f, "{:WIDTH$}{}", "TypeCheck", ty),
             Self::GetLen => write!(f, "GetLen"),
+            Self::Import(i) => write!(f, "{:WIDTH$}{}", "Import", i),
+            Self::ImportFrom(i) => write!(f, "{:WIDTH$}{}", "ImportFrom", i),
+            Self::ImportGlob => write!(f, "ImportGlob"),
             Self::Iter => write!(f, "Iter"),
+            Self::Call(i) => write!(f, "{:WIDTH$}{}", "Call", i),
+            Self::Return => write!(f, "Return"),
+            Self::ReturnCall(i) => write!(f, "{:WIDTH$}{}", "ReturnCall", i),
+            Self::LoadLocals => write!(f, "LoadLocals"),
             Self::Jump(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "Jump", i),
             Self::JumpPopIfNull(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "JumpPopIfNull", i),
             Self::PopJumpIfTrue(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "PopJumpIfTrue", i),
@@ -233,12 +237,8 @@ impl fmt::Display for OpCode {
             Self::JumpIfFalseOrPop(JumpTarget(i)) => {
                 write!(f, "{:WIDTH$}{}", "JumpIfFalseOrPop", i)
             }
-            Self::Call(i) => write!(f, "{:WIDTH$}{}", "Call", i),
-            Self::Return => write!(f, "Return"),
-            Self::ReturnCall(i) => write!(f, "{:WIDTH$}{}", "ReturnCall", i),
-            Self::LoadLocals => write!(f, "LoadLocals"),
             Self::RegisterHandler(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "RegisterHandler", i),
-            Self::CheckEffect => write!(f, "MatchEffect"),
+            Self::CheckEffect(i) => write!(f, "{:WIDTH$}{}", "MatchEffect", i),
         }
     }
 }

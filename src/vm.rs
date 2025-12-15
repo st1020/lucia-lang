@@ -130,34 +130,6 @@ impl ExecutorInner {
                     let value = frame.stack.pop().unwrap();
                     ctx.globals.set(Rc::clone(&code.global_names[i]), value);
                 }
-                OpCode::Import(i) => {
-                    if let ConstValue::Str(v) = &code.consts[i] {
-                        frame.stack.push(ctx.libs.get(Rc::clone(v)));
-                    } else {
-                        panic!("program error");
-                    }
-                }
-                OpCode::ImportFrom(i) => {
-                    let module = frame.stack.last().cloned().unwrap();
-                    match (module, code.consts[i].clone()) {
-                        (Value::Table(module), ConstValue::Str(key)) => {
-                            frame.stack.push(module.get(key));
-                        }
-                        (module, _) => return Err(operator_error!(opcode, module)),
-                    }
-                }
-                OpCode::ImportGlob => {
-                    let module = frame.stack.pop().unwrap();
-                    if let Value::Table(module) = module {
-                        for (k, v) in module.iter() {
-                            if let Value::Str(k) = k {
-                                ctx.globals.set(k, v);
-                            }
-                        }
-                    } else {
-                        return Err(operator_error!(opcode, module));
-                    }
-                }
                 OpCode::BuildTable(i) => {
                     #[expect(clippy::missing_asserts_for_indexing)]
                     let table = frame
@@ -243,9 +215,62 @@ impl ExecutorInner {
                     let value = frame.stack.pop().unwrap();
                     call_metamethod!(value.meta_len(ctx));
                 }
+                OpCode::Import(i) => {
+                    if let ConstValue::Str(v) = &code.consts[i] {
+                        frame.stack.push(ctx.libs.get(Rc::clone(v)));
+                    } else {
+                        panic!("program error");
+                    }
+                }
+                OpCode::ImportFrom(i) => {
+                    let module = frame.stack.last().cloned().unwrap();
+                    match (module, code.consts[i].clone()) {
+                        (Value::Table(module), ConstValue::Str(key)) => {
+                            frame.stack.push(module.get(key));
+                        }
+                        (module, _) => return Err(operator_error!(opcode, module)),
+                    }
+                }
+                OpCode::ImportGlob => {
+                    let module = frame.stack.pop().unwrap();
+                    if let Value::Table(module) = module {
+                        for (k, v) in module.iter() {
+                            if let Value::Str(k) = k {
+                                ctx.globals.set(k, v);
+                            }
+                        }
+                    } else {
+                        return Err(operator_error!(opcode, module));
+                    }
+                }
                 OpCode::Iter => {
                     let value = frame.stack.pop().unwrap();
                     frame.stack.push(value.meta_iter(ctx)?.into());
+                }
+                OpCode::Call(i) => {
+                    let args = frame.stack.split_off(frame.stack.len() - i);
+                    let callee = frame.stack.pop().unwrap();
+                    self.call_function(callee.meta_call(ctx)?, args);
+                    break;
+                }
+                OpCode::Return => {
+                    debug_assert_eq!(frame.stack.len(), 1);
+                    let value = frame.stack.pop().unwrap();
+                    self.return_upper(value);
+                    break;
+                }
+                OpCode::ReturnCall(i) => {
+                    let args = frame.stack.split_off(frame.stack.len() - i);
+                    let callee = frame.stack.pop().unwrap();
+                    self.tail_call(callee.meta_call(ctx)?, args);
+                    break;
+                }
+                OpCode::LoadLocals => {
+                    let mut table = TableInner::new();
+                    for i in 0..code.local_names.len() {
+                        table.set(Rc::clone(&code.local_names[i]), frame.locals[i].clone());
+                    }
+                    frame.stack.push(table.into());
                 }
                 OpCode::Jump(JumpTarget(i)) => {
                     frame.pc = i;
@@ -311,31 +336,6 @@ impl ExecutorInner {
                         _ => return Err(operator_error!(opcode, value)),
                     }
                 }
-                OpCode::Call(i) => {
-                    let args = frame.stack.split_off(frame.stack.len() - i);
-                    let callee = frame.stack.pop().unwrap();
-                    self.call_function(callee.meta_call(ctx)?, args);
-                    break;
-                }
-                OpCode::Return => {
-                    debug_assert_eq!(frame.stack.len(), 1);
-                    let value = frame.stack.pop().unwrap();
-                    self.return_upper(value);
-                    break;
-                }
-                OpCode::ReturnCall(i) => {
-                    let args = frame.stack.split_off(frame.stack.len() - i);
-                    let callee = frame.stack.pop().unwrap();
-                    self.tail_call(callee.meta_call(ctx)?, args);
-                    break;
-                }
-                OpCode::LoadLocals => {
-                    let mut table = TableInner::new();
-                    for i in 0..code.local_names.len() {
-                        table.set(Rc::clone(&code.local_names[i]), frame.locals[i].clone());
-                    }
-                    frame.stack.push(table.into());
-                }
                 OpCode::RegisterHandler(JumpTarget(i)) => {
                     let effect = frame.stack.pop().unwrap();
                     if let Value::Effect(effect) = effect {
@@ -350,7 +350,7 @@ impl ExecutorInner {
                         return Err(operator_error!(opcode, effect));
                     }
                 }
-                OpCode::CheckEffect => {
+                OpCode::CheckEffect(_) => {
                     let expected_effect = frame.stack.pop().unwrap();
                     let effect = frame.stack.pop().unwrap();
                     match (effect, expected_effect) {
