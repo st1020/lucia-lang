@@ -1,18 +1,13 @@
-// skip
-
 fn a() {
-    t = 0
-    return || {
+    t = 1
+    while t <= 10 {
+        yield(t * 2)
         t += 1
-        if t > 10 {
-            return null
-        }
-        return t * 2
     }
 }
 
 l = {}
-for i in a() {
+for i in a {
     l[i] = i
 }
 
@@ -27,4 +22,4 @@ fn foo(iter) {
     }
 }
 
-assert(foo(a()) == 0)
+assert(foo(a) == 0)

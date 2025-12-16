@@ -2,12 +2,13 @@
 
 use std::{fmt, rc::Rc};
 
+use derive_more::From;
 use itertools::Itertools;
 
 use crate::utils::Float;
 
 pub use super::ast::FunctionKind;
-use super::opcode::OpCode;
+use super::{opcode::OpCode, value::BuiltinEffect};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CodeParams<S> {
@@ -146,22 +147,7 @@ impl<S: fmt::Display> fmt::Display for Code<S> {
 }
 
 /// The const value.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct EffectConst<S> {
-    /// The effect name.
-    pub name: S,
-    /// Effect parameters.
-    pub params: CodeParams<S>,
-}
-
-impl<S: fmt::Display> fmt::Display for EffectConst<S> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "effect {}({})", self.name, self.params)
-    }
-}
-
-/// The const value.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, From)]
 pub enum ConstValue<S> {
     /// "null"
     Null,
@@ -172,13 +158,15 @@ pub enum ConstValue<S> {
     /// "12.34", "0b100.100"
     Float(Float),
     /// ""abc"", ""abc"
+    #[from(skip)]
     Str(S),
     /// "b"abc""
     Bytes(Vec<u8>),
     /// A function code.
     Code(Rc<Code<S>>),
     /// An effect.
-    Effect(Rc<EffectConst<S>>),
+    #[from(skip)]
+    Effect(EffectConst<S>),
 }
 
 impl<S: fmt::Display> fmt::Display for ConstValue<S> {
@@ -193,5 +181,45 @@ impl<S: fmt::Display> fmt::Display for ConstValue<S> {
             Self::Code(_) => write!(f, "<code>"),
             Self::Effect(v) => write!(f, "{v}"),
         }
+    }
+}
+
+/// The effect const value.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, From)]
+pub enum EffectConst<S> {
+    User(Rc<UserEffect<S>>),
+    BuiltinEffect(BuiltinEffect),
+}
+
+impl<T, S> From<T> for ConstValue<S>
+where
+    T: Into<EffectConst<S>>,
+{
+    fn from(value: T) -> Self {
+        ConstValue::Effect(value.into())
+    }
+}
+
+impl<S: fmt::Display> fmt::Display for EffectConst<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::User(v) => write!(f, "{v}"),
+            Self::BuiltinEffect(v) => write!(f, "effect {}(...)", v.name()),
+        }
+    }
+}
+
+/// The user effect const value.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct UserEffect<S> {
+    /// The effect name.
+    pub name: S,
+    /// Effect parameters.
+    pub params: CodeParams<S>,
+}
+
+impl<S: fmt::Display> fmt::Display for UserEffect<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "effect {}({})", self.name, self.params)
     }
 }

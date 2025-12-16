@@ -120,7 +120,7 @@ impl ExecutorInner {
                         ConstValue::Code(code) => {
                             ClosureInner::new(Rc::clone(code), Some(frame)).into()
                         }
-                        ConstValue::Effect(effect) => EffectInner::new(Rc::clone(effect)).into(),
+                        ConstValue::Effect(effect) => EffectInner::new(effect.clone()).into(),
                     });
                 }
                 OpCode::StoreLocal(i) => {

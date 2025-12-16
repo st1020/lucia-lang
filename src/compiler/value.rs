@@ -100,6 +100,32 @@ impl AsRef<str> for MetaName {
     }
 }
 
+/// The effect const value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BuiltinEffect {
+    Yield,
+    Error,
+    Panic,
+    Assert,
+}
+
+impl BuiltinEffect {
+    pub const fn name(self) -> &'static str {
+        match self {
+            BuiltinEffect::Yield => "yield",
+            BuiltinEffect::Error => "error",
+            BuiltinEffect::Panic => "panic",
+            BuiltinEffect::Assert => "assert",
+        }
+    }
+}
+
+impl AsRef<str> for BuiltinEffect {
+    fn as_ref(&self) -> &str {
+        self.name()
+    }
+}
+
 macro_rules! metamethod_default {
     (1, $name:ident, $meta_name:ident) => {
         fn $name(self, ctx: Context) -> Result<Self::Result1, Self::Error> {

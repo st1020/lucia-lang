@@ -1,42 +1,47 @@
 use std::rc::Rc;
 
-use derive_more::Display;
+use derive_more::{Display, From};
 
 use crate::{
     Context,
     compiler::{
-        code::{CodeParamsInfo, EffectConst},
+        code::{CodeParamsInfo, EffectConst, UserEffect},
         value::MetaMethod,
     },
     objects::{CallbackFn, CallbackInner, CallbackReturn, Str, Value, impl_metamethod},
 };
 
+pub use crate::compiler::value::BuiltinEffect;
+
 pub type Effect = Rc<EffectInner>;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Display)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Display, From)]
 #[display("<effect {self:p}>")]
 pub enum EffectInner {
-    Effect(Rc<EffectConst<Str>>),
-    Error,
-    Panic,
-    Assert,
-    Yield,
+    User(Rc<UserEffect<Str>>),
+    Builtin(BuiltinEffect),
 }
 
 impl EffectInner {
-    pub fn new(effect: Rc<EffectConst<Str>>) -> Self {
-        Self::Effect(effect)
+    pub fn new(effect: EffectConst<Str>) -> Self {
+        match effect {
+            EffectConst::User(v) => EffectInner::User(v),
+            EffectConst::BuiltinEffect(v) => EffectInner::Builtin(v),
+        }
     }
 
     pub fn params_info(&self) -> CodeParamsInfo {
         match self {
-            EffectInner::Effect(effect) => effect.params.info(),
-            EffectInner::Error | EffectInner::Panic | EffectInner::Assert | EffectInner::Yield => {
-                CodeParamsInfo {
-                    params_count: 1,
-                    has_variadic: false,
-                }
-            }
+            EffectInner::User(effect) => effect.params.info(),
+            EffectInner::Builtin(
+                BuiltinEffect::Error
+                | BuiltinEffect::Panic
+                | BuiltinEffect::Assert
+                | BuiltinEffect::Yield,
+            ) => CodeParamsInfo {
+                params_count: 1,
+                has_variadic: false,
+            },
         }
     }
 
@@ -71,5 +76,11 @@ impl CallbackFn for Effect {
 impl From<EffectInner> for Value {
     fn from(value: EffectInner) -> Self {
         Value::Effect(Rc::new(value))
+    }
+}
+
+impl From<BuiltinEffect> for Value {
+    fn from(value: BuiltinEffect) -> Self {
+        Value::Effect(Rc::new(EffectInner::Builtin(value)))
     }
 }

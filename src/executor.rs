@@ -7,7 +7,9 @@ use crate::{
     errors::Error,
     frame::{Frame, LuciaFrame},
     fuel::Fuel,
-    objects::{CallbackReturn, ContinuationInner, Effect, EffectInner, Function, Value},
+    objects::{
+        BuiltinEffect, CallbackReturn, ContinuationInner, Effect, EffectInner, Function, Value,
+    },
 };
 
 pub type Executor = Rc<ExecutorInner>;
@@ -176,11 +178,11 @@ impl ExecutorInner {
     pub(crate) fn return_error(&mut self, error: Error) {
         if !self.perform_effect_with(
             #[expect(clippy::wildcard_enum_match_arm)]
-            match error {
-                Error::LuciaPanic(_) => EffectInner::Panic,
-                Error::LuciaAssert(_) => EffectInner::Assert,
-                _ => EffectInner::Error,
-            }
+            EffectInner::Builtin(match error {
+                Error::LuciaPanic(_) => BuiltinEffect::Panic,
+                Error::LuciaAssert(_) => BuiltinEffect::Assert,
+                _ => BuiltinEffect::Error,
+            })
             .into(),
             &[],
         ) {

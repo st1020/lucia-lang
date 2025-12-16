@@ -2,11 +2,15 @@ use crate::{
     Context,
     compiler::value::MetaMethod,
     errors::Error,
-    objects::{CallbackInner, Value},
+    objects::{BuiltinEffect, CallbackInner, Value},
 };
 
 pub fn load_builtin(context: &mut Context) {
     let builtins = &mut context.builtins;
+    builtins.set(BuiltinEffect::Yield.name(), BuiltinEffect::Yield);
+    builtins.set(BuiltinEffect::Error.name(), BuiltinEffect::Error);
+    builtins.set(BuiltinEffect::Panic.name(), BuiltinEffect::Panic);
+    builtins.set(BuiltinEffect::Assert.name(), BuiltinEffect::Assert);
     builtins.set(
         "id",
         CallbackInner::from(|v: Value| v.id().map(usize::from)),

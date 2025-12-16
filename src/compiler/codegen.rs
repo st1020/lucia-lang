@@ -6,16 +6,14 @@ use ordermap::{OrderMap, OrderSet};
 use oxc_index::{IndexVec, index_vec};
 use rustc_hash::FxBuildHasher;
 
-use crate::compiler::code::CodeParams;
-
 use super::{
     ast::*,
-    code::{Code, ConstValue, EffectConst, UpvalueCapture},
+    code::{Code, CodeParams, ConstValue, UpvalueCapture, UserEffect},
     error::CompilerError,
     index::{FunctionId, SymbolId},
     opcode::{JumpTarget, OpCode},
     semantic::{FunctionSemantic, Semantic, SymbolKind},
-    value::ValueType,
+    value::{BuiltinEffect, ValueType},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -617,10 +615,10 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
                 name,
                 effect,
             } => {
-                self.push_load_const(ConstValue::Effect(Rc::new(EffectConst {
+                self.push_load_const(Rc::new(UserEffect {
                     name: effect.name.clone(),
                     params: (*effect.params.clone()).into(),
-                })));
+                }));
                 self.store(name);
                 self.push_load_const(ConstValue::Null);
             }
@@ -749,10 +747,10 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
 
                     for (handler, handler_label) in handlers.iter().zip(handler_labels) {
                         self.push_code(handler_label);
-                        self.push_load_const(ConstValue::Effect(Rc::new(EffectConst {
+                        self.push_load_const(Rc::new(UserEffect {
                             name: handler.effect.name.clone(),
                             params: (*handler.params.clone()).into(),
-                        })));
+                        }));
                         self.push_code(OpCode::CheckEffect(
                             handler.params.params.len()
                                 + usize::from(handler.params.variadic.is_some()),
@@ -856,6 +854,7 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
             ExprKind::For { left, right, body } => {
                 let continue_label = self.get_jump_target();
                 let break_label = self.get_jump_target();
+                let body_label = self.get_jump_target();
                 self.continue_stack().push(continue_label);
                 self.break_stack().push(break_label);
                 self.context().need_clear_stack_count += 1;
@@ -863,9 +862,14 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
                 self.visit_expr(right)?;
                 self.push_code(OpCode::Iter);
                 self.push_code(continue_label);
-                self.push_code(OpCode::Copy(1));
-                self.push_code(OpCode::Call(0));
-                self.push_code(OpCode::JumpPopIfNull(break_label));
+                self.push_load_const(BuiltinEffect::Yield);
+                self.push_code(OpCode::RegisterHandler(body_label));
+                self.push_load_const(ConstValue::Null);
+                self.push_code(OpCode::Call(1));
+                self.push_code(OpCode::Pop);
+                self.push_code(OpCode::Jump(break_label));
+                self.push_code(body_label);
+                self.push_code(OpCode::Pop);
                 if left.len() == 1 {
                     self.store(&left[0]);
                 } else {
@@ -881,7 +885,6 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
                 self.push_code(OpCode::Pop);
                 self.push_code(OpCode::Jump(continue_label));
                 self.push_code(break_label);
-                self.push_code(OpCode::Pop);
                 self.push_load_const(ConstValue::Null);
 
                 self.continue_stack().pop();

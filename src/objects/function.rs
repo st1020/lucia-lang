@@ -11,8 +11,8 @@ use crate::{
     compiler::value::MetaMethod,
     errors::Error,
     objects::{
-        Callback, Closure, Continuation, FromValue, Value, ValueType, impl_metamethod,
-        unexpected_type_error,
+        Callback, CallbackFn, CallbackInner, CallbackReturn, Closure, Continuation, FromValue,
+        Value, ValueType, impl_metamethod, unexpected_type_error,
     },
 };
 
@@ -45,7 +45,15 @@ impl MetaMethod<&Context> for Function {
 
     #[inline]
     fn meta_iter(self, _: &Context) -> Result<Self::ResultIter, Self::Error> {
-        Ok(self)
+        struct FunctionIter(Function);
+
+        impl CallbackFn for FunctionIter {
+            fn call(&self, _: &Context, _: &[Value]) -> super::CallbackResult {
+                Ok(CallbackReturn::TailCall(self.0.clone(), Vec::new()))
+            }
+        }
+
+        Ok(Rc::new(CallbackInner::new(FunctionIter(self))).into())
     }
 
     impl_metamethod!(Function, str);
