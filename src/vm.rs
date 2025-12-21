@@ -117,10 +117,11 @@ impl ExecutorInner {
                         ConstValue::Float(v) => Value::Float(*v),
                         ConstValue::Str(v) => Value::Str(Rc::clone(v)),
                         ConstValue::Bytes(v) => Value::Bytes(Rc::new(v.clone().into())),
-                        ConstValue::Code(code) => {
-                            ClosureInner::new(Rc::clone(code), Some(frame)).into()
+                        ConstValue::Function(v) => {
+                            let code = Rc::clone(&code.const_codes[*v]);
+                            ClosureInner::new(code, Some(frame)).into()
                         }
-                        ConstValue::Effect(effect) => EffectInner::new(effect.clone()).into(),
+                        ConstValue::Effect(v) => EffectInner::new(v.clone()).into(),
                     });
                 }
                 OpCode::StoreLocal(i) => {
@@ -272,7 +273,10 @@ impl ExecutorInner {
                     }
                     frame.stack.push(table.into());
                 }
-                OpCode::Jump(JumpTarget(i)) => {
+                OpCode::Jump(JumpTarget(i))
+                | OpCode::JumpBackEdge(JumpTarget(i))
+                | OpCode::Break(JumpTarget(i))
+                | OpCode::Continue(JumpTarget(i)) => {
                     frame.pc = i;
                     continue;
                 }
@@ -361,6 +365,7 @@ impl ExecutorInner {
                         }
                     }
                 }
+                OpCode::MarkAddStackSize(_) => (),
             }
 
             if instructions == 0 {

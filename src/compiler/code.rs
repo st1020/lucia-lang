@@ -86,6 +86,8 @@ pub struct Code<S> {
 
     /// List of constants used in the bytecode.
     pub consts: Vec<ConstValue<S>>,
+    /// List of const function codes.
+    pub const_codes: Vec<Rc<Code<S>>>,
     /// List of local names.
     pub local_names: Vec<S>,
     /// List of global names.
@@ -163,7 +165,8 @@ pub enum ConstValue<S> {
     /// "b"abc""
     Bytes(Vec<u8>),
     /// A function code.
-    Code(Rc<Code<S>>),
+    #[from(skip)]
+    Function(usize),
     /// An effect.
     #[from(skip)]
     Effect(EffectConst<S>),
@@ -178,17 +181,10 @@ impl<S: fmt::Display> fmt::Display for ConstValue<S> {
             Self::Float(v) => write!(f, "{v}"),
             Self::Str(v) => write!(f, "{v}"),
             Self::Bytes(v) => write!(f, "b\"{}\"", v.escape_ascii()),
-            Self::Code(_) => write!(f, "<code>"),
+            Self::Function(v) => write!(f, "<code {v}>"),
             Self::Effect(v) => write!(f, "{v}"),
         }
     }
-}
-
-/// The effect const value.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, From)]
-pub enum EffectConst<S> {
-    User(Rc<UserEffect<S>>),
-    BuiltinEffect(BuiltinEffect),
 }
 
 impl<T, S> From<T> for ConstValue<S>
@@ -198,6 +194,13 @@ where
     fn from(value: T) -> Self {
         ConstValue::Effect(value.into())
     }
+}
+
+/// The effect const value.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, From)]
+pub enum EffectConst<S> {
+    User(Rc<UserEffect<S>>),
+    BuiltinEffect(BuiltinEffect),
 }
 
 impl<S: fmt::Display> fmt::Display for EffectConst<S> {

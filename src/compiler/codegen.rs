@@ -3,21 +3,30 @@
 use std::{hash::Hash, iter, rc::Rc};
 
 use ordermap::{OrderMap, OrderSet};
-use oxc_index::{IndexVec, index_vec};
+use oxc_index::IndexVec;
 use rustc_hash::FxBuildHasher;
 
 use super::{
     ast::*,
-    code::{Code, CodeParams, ConstValue, UpvalueCapture, UserEffect},
+    code::{CodeParams, ConstValue, UpvalueCapture, UserEffect},
     error::CompilerError,
     index::{FunctionId, SymbolId},
+    ir::{ControlFlowGraph, FunctionIR},
     opcode::{JumpTarget, OpCode},
     semantic::{FunctionSemantic, Semantic, SymbolKind},
     value::{BuiltinEffect, ValueType},
 };
 
+/// Generate code.
+pub fn gen_code<S: Clone + Eq + Hash>(
+    program: &Program<S>,
+    semantic: &Semantic<S>,
+) -> (IndexVec<FunctionId, FunctionIR<S>>, Vec<CompilerError>) {
+    CodeGenerator::new(semantic).gen_code(program)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum CodeMarker {
+pub(crate) enum CodeMarker {
     OpCode(OpCode),
     JumpTarget(JumpTarget),
 }
@@ -114,51 +123,19 @@ impl<S> From<Params<S>> for CodeParams<S> {
     }
 }
 
-#[derive(Debug, Clone)]
-struct Context<S> {
+#[derive(Debug, Clone, Default)]
+struct Context {
     code: Vec<CodeMarker>,
-    consts: OrderSet<ConstValue<S>, FxBuildHasher>,
-    local_names: OrderMap<SymbolId, S, FxBuildHasher>,
-    global_names: OrderMap<SymbolId, S, FxBuildHasher>,
-    upvalue_names: OrderMap<SymbolId, (S, UpvalueCapture), FxBuildHasher>,
-
     jump_target_count: usize,
-    need_clear_stack_count: usize,
     continue_stack: Vec<JumpTarget>,
     break_stack: Vec<JumpTarget>,
 }
 
-impl<S: Eq + Hash> Context<S> {
-    fn new() -> Self {
-        let mut consts = OrderSet::with_hasher(FxBuildHasher);
-        consts.insert(ConstValue::Null);
-        Self {
-            code: Vec::new(),
-            consts,
-            local_names: OrderMap::with_hasher(FxBuildHasher),
-            global_names: OrderMap::with_hasher(FxBuildHasher),
-            upvalue_names: OrderMap::with_hasher(FxBuildHasher),
-            jump_target_count: 0,
-            need_clear_stack_count: 0,
-            continue_stack: Vec::new(),
-            break_stack: Vec::new(),
-        }
-    }
-}
-
-/// Generate code.
-pub fn gen_code<S: Clone + Eq + Hash>(
-    program: &Program<S>,
-    semantic: &Semantic<S>,
-) -> (Code<S>, Vec<CompilerError>) {
-    CodeGenerator::new(semantic).gen_code(program)
-}
-
 struct CodeGenerator<'a, S> {
     semantic: &'a Semantic<S>,
-
-    contexts: IndexVec<FunctionId, Context<S>>,
     current_function_id: FunctionId,
+    ir: IndexVec<FunctionId, FunctionIR<S>>,
+    contexts: IndexVec<FunctionId, Context>,
     errors: Vec<CompilerError>,
 }
 
@@ -166,30 +143,39 @@ impl<'a, S: Clone + Eq + Hash> CodeGenerator<'a, S> {
     fn new(semantic: &'a Semantic<S>) -> Self {
         Self {
             semantic,
-            contexts: index_vec![Context::new(); semantic.functions.len()],
             current_function_id: FunctionId::new(0),
+            ir: IndexVec::with_capacity(semantic.functions.len()),
+            contexts: IndexVec::with_capacity(semantic.functions.len()),
             errors: Vec::new(),
         }
-    }
-
-    fn context(&mut self) -> &mut Context<S> {
-        &mut self.contexts[self.current_function_id]
     }
 
     fn function_semantic(&self) -> &FunctionSemantic {
         &self.semantic.functions[self.current_function_id]
     }
 
+    fn local_names(&mut self) -> &OrderMap<SymbolId, S, FxBuildHasher> {
+        &self.ir[self.current_function_id].local_names
+    }
+
+    fn global_names(&mut self) -> &OrderMap<SymbolId, S, FxBuildHasher> {
+        &self.ir[self.current_function_id].global_names
+    }
+
+    fn upvalue_names(&mut self) -> &OrderMap<SymbolId, (S, UpvalueCapture), FxBuildHasher> {
+        &self.ir[self.current_function_id].upvalue_names
+    }
+
     fn continue_stack(&mut self) -> &mut Vec<JumpTarget> {
-        &mut self.context().continue_stack
+        &mut self.contexts[self.current_function_id].continue_stack
     }
 
     fn break_stack(&mut self) -> &mut Vec<JumpTarget> {
-        &mut self.context().break_stack
+        &mut self.contexts[self.current_function_id].break_stack
     }
 
     fn code(&mut self) -> &mut Vec<CodeMarker> {
-        &mut self.context().code
+        &mut self.contexts[self.current_function_id].code
     }
 
     fn push_code<T: Into<CodeMarker>>(&mut self, code: T) {
@@ -209,13 +195,13 @@ impl<'a, S: Clone + Eq + Hash> CodeGenerator<'a, S> {
     }
 
     fn get_jump_target(&mut self) -> JumpTarget {
-        let jump_target = self.context().jump_target_count;
-        self.context().jump_target_count += 1;
+        let jump_target = self.contexts[self.current_function_id].jump_target_count;
+        self.contexts[self.current_function_id].jump_target_count += 1;
         JumpTarget(jump_target)
     }
 
     fn add_const(&mut self, value: ConstValue<S>) -> usize {
-        let consts = &mut self.context().consts;
+        let consts = &mut self.ir[self.current_function_id].consts;
         if let Some(index) = consts.get_index_of(&value) {
             index
         } else {
@@ -229,24 +215,20 @@ impl<'a, S: Clone + Eq + Hash> CodeGenerator<'a, S> {
             self.semantic.references[ident.reference_id.get().copied().unwrap()].symbol_id;
         let opcode = match self.semantic.symbols[symbol_id].kind {
             SymbolKind::Local => {
-                let index = self.context().local_names.get_index_of(&symbol_id).unwrap();
+                let index = self.local_names().get_index_of(&symbol_id).unwrap();
                 OpCode::LoadLocal(index)
             }
             SymbolKind::Upvalue => {
-                if let Some(index) = self.context().local_names.get_index_of(&symbol_id) {
+                if let Some(index) = self.local_names().get_index_of(&symbol_id) {
                     OpCode::LoadLocal(index)
-                } else if let Some(index) = self.context().upvalue_names.get_index_of(&symbol_id) {
+                } else if let Some(index) = self.upvalue_names().get_index_of(&symbol_id) {
                     OpCode::LoadUpvalue(index)
                 } else {
                     panic!("upvalue symbol not found in local or upvalue names");
                 }
             }
             SymbolKind::Global => {
-                let index = self
-                    .context()
-                    .global_names
-                    .get_index_of(&symbol_id)
-                    .unwrap();
+                let index = self.global_names().get_index_of(&symbol_id).unwrap();
                 OpCode::LoadGlobal(index)
             }
         };
@@ -261,28 +243,32 @@ impl<'a, S: Clone + Eq + Hash> CodeGenerator<'a, S> {
                 // Upvalue is stored as local variable. Because upvalue can't be assigned in closure
                 // which captures it. It can only be assigned in the closure where it is declared.
                 // In that closure, it is just a normal local variable.
-                let index = self.context().local_names.get_index_of(&symbol_id).unwrap();
+                let index = self.local_names().get_index_of(&symbol_id).unwrap();
                 OpCode::StoreLocal(index)
             }
             SymbolKind::Global => {
-                let index = self
-                    .context()
-                    .global_names
-                    .get_index_of(&symbol_id)
-                    .unwrap();
+                let index = self.global_names().get_index_of(&symbol_id).unwrap();
                 OpCode::StoreGlobal(index)
             }
         };
         self.push_code(opcode);
     }
 
-    fn gen_code(mut self, program: &Program<S>) -> (Code<S>, Vec<CompilerError>) {
-        let code = self.gen_function_code(&program.function);
-        (code, self.errors)
+    fn gen_code(
+        mut self,
+        program: &Program<S>,
+    ) -> (IndexVec<FunctionId, FunctionIR<S>>, Vec<CompilerError>) {
+        self.gen_function_code(&program.function);
+        (self.ir, self.errors)
     }
 
-    fn gen_function_code(&mut self, function: &Function<S>) -> Code<S> {
-        self.current_function_id = function.function_id.get().copied().unwrap();
+    fn gen_function_code(&mut self, function: &Function<S>) -> FunctionId {
+        let function_id = function.function_id.get().copied().unwrap();
+        self.current_function_id = function_id;
+
+        let mut local_names = OrderMap::with_hasher(FxBuildHasher);
+        let mut global_names = OrderMap::with_hasher(FxBuildHasher);
+        let mut upvalue_names = OrderMap::with_hasher(FxBuildHasher);
         for symbol_id in self.semantic.functions[self.current_function_id]
             .symbols
             .iter()
@@ -291,17 +277,15 @@ impl<'a, S: Clone + Eq + Hash> CodeGenerator<'a, S> {
             let symbol = &self.semantic.symbols[symbol_id];
             match symbol.kind {
                 SymbolKind::Local => {
-                    self.context()
-                        .local_names
-                        .insert(symbol_id, symbol.name.clone());
+                    local_names.insert(symbol_id, symbol.name.clone());
                 }
                 SymbolKind::Upvalue => {
                     let capture = if let Some(parent_id) = self.function_semantic().parent_id {
-                        let base_closure_local_id = self.contexts[parent_id]
+                        let base_closure_local_id = self.ir[parent_id]
                             .local_names
                             .get_index_of(&symbol_id)
                             .map(UpvalueCapture::Local);
-                        let base_closure_upvalue_id = self.contexts[parent_id]
+                        let base_closure_upvalue_id = self.ir[parent_id]
                             .upvalue_names
                             .get_index_of(&symbol_id)
                             .map(UpvalueCapture::Upvalue);
@@ -310,175 +294,60 @@ impl<'a, S: Clone + Eq + Hash> CodeGenerator<'a, S> {
                         None
                     };
                     if let Some(capture) = capture {
-                        self.context()
-                            .upvalue_names
-                            .insert(symbol_id, (symbol.name.clone(), capture));
+                        upvalue_names.insert(symbol_id, (symbol.name.clone(), capture));
                     } else {
                         // If the current closure has no parent, or the symbol can not be found in
                         // the parent closure, it means the upvalue symbol is declared in current
                         // closure. So we just create a local variable for it.
                         // For child closure which use the upvalue symbol, it can capture it from
                         // the local variable.
-                        self.context()
-                            .local_names
-                            .insert(symbol_id, symbol.name.clone());
+                        local_names.insert(symbol_id, symbol.name.clone());
                     }
                 }
                 SymbolKind::Global => {
-                    self.context()
-                        .global_names
-                        .insert(symbol_id, symbol.name.clone());
+                    global_names.insert(symbol_id, symbol.name.clone());
                 }
             }
         }
+        self.ir.push(FunctionIR {
+            name: function.name.clone(),
+            params: (*function.params.clone()).into(),
+            kind: function.kind,
+            cfg: ControlFlowGraph::default(),
+            consts: {
+                let mut consts = OrderSet::with_hasher(FxBuildHasher);
+                consts.insert(ConstValue::Null);
+                consts
+            },
+            local_names,
+            global_names,
+            upvalue_names,
+        });
+        self.contexts.push(Context::default());
+
         self.visit_params(&function.params).unwrap();
         self.visit_block(&function.body).unwrap();
         if function.kind == FunctionKind::Do {
             self.push_code(OpCode::Pop);
             self.push_code(OpCode::LoadLocals);
             self.push_code(OpCode::Return);
-        } else if !self
-            .context()
-            .code
-            .last()
-            .is_some_and(|&opcode| opcode == OpCode::Return.into())
-        {
+        }
+        if self.code().last().copied() != Some(OpCode::Return.into()) {
             self.push_code(OpCode::Return);
-        } else {
-            // The function already has a return statement, do nothing.
         }
 
-        let mut code = Vec::new();
-        let mut jump_target_table = vec![0; self.context().jump_target_count];
-        for marker in self.code().iter().copied() {
-            match marker {
-                CodeMarker::OpCode(opcode) => code.push(opcode),
-                CodeMarker::JumpTarget(JumpTarget(index)) => jump_target_table[index] = code.len(),
-            }
-        }
-        for opcode in &mut code {
-            if let OpCode::Jump(JumpTarget(v))
-            | OpCode::JumpPopIfNull(JumpTarget(v))
-            | OpCode::PopJumpIfFalse(JumpTarget(v))
-            | OpCode::JumpIfTrueOrPop(JumpTarget(v))
-            | OpCode::JumpIfFalseOrPop(JumpTarget(v))
-            | OpCode::RegisterHandler(JumpTarget(v)) = opcode
-            {
-                *v = jump_target_table[*v];
-            }
-        }
-
-        let stack_size = Self::get_stack_size(
-            &code,
+        let jump_target_count = self.contexts[self.current_function_id].jump_target_count;
+        self.ir[self.current_function_id].cfg = ControlFlowGraph::from_bytecode(
+            self.code(),
+            jump_target_count,
             function.params.params.len() + usize::from(function.params.variadic.is_some()),
         );
-        let code = Code {
-            name: function.name.clone(),
-            params: (*function.params.clone()).into(),
-            kind: function.kind,
-            code,
-            consts: self.context().consts.iter().cloned().collect(),
-            local_names: self.context().local_names.values().cloned().collect(),
-            global_names: self.context().global_names.values().cloned().collect(),
-            upvalue_names: self.context().upvalue_names.values().cloned().collect(),
-            stack_size,
-        };
 
         if let Some(parent_id) = self.function_semantic().parent_id {
             self.current_function_id = parent_id;
         }
 
-        code
-    }
-
-    /// Try estimate function stack size.
-    #[expect(clippy::match_same_arms)]
-    fn get_stack_size(code: &[OpCode], init_size: usize) -> usize {
-        let mut max_stack_depth = init_size;
-        let mut stack_depths = vec![None; code.len()];
-        let mut stack = vec![(0, init_size)]; // (offset, current_depth)
-        while let Some((offset, current_depth)) = stack.pop() {
-            if offset >= code.len() {
-                continue;
-            }
-            if let Some(prev_depth) = stack_depths[offset]
-                && current_depth <= prev_depth
-            {
-                continue;
-            }
-            stack_depths[offset] = Some(current_depth);
-            max_stack_depth = max_stack_depth.max(current_depth);
-            let mut new_depth = current_depth;
-            match code[offset] {
-                OpCode::Pop => new_depth -= 1,
-                OpCode::Copy(_) => new_depth += 1,
-                OpCode::Swap(_) => (),
-                OpCode::LoadLocal(_)
-                | OpCode::LoadGlobal(_)
-                | OpCode::LoadUpvalue(_)
-                | OpCode::LoadConst(_) => new_depth += 1,
-                OpCode::StoreLocal(_) | OpCode::StoreGlobal(_) => {
-                    new_depth -= 1;
-                }
-
-                OpCode::BuildTable(i) => new_depth = new_depth - i * 2 + 1,
-                OpCode::BuildList(i) => new_depth = new_depth - i + 1,
-                OpCode::GetAttr | OpCode::GetItem => new_depth -= 1,
-                OpCode::GetMeta => (),
-                OpCode::SetAttr | OpCode::SetItem => new_depth -= 2,
-                OpCode::SetMeta => new_depth -= 1,
-                OpCode::Neg | OpCode::Not => (),
-                OpCode::Add
-                | OpCode::Sub
-                | OpCode::Mul
-                | OpCode::Div
-                | OpCode::Rem
-                | OpCode::Eq
-                | OpCode::Ne
-                | OpCode::Gt
-                | OpCode::Ge
-                | OpCode::Lt
-                | OpCode::Le
-                | OpCode::Identical
-                | OpCode::NotIdentical => new_depth -= 1,
-                OpCode::TypeCheck(_) => (),
-                OpCode::GetLen => (),
-                OpCode::Import(_) => new_depth += 1,
-                OpCode::ImportFrom(_) => new_depth += 1,
-                OpCode::ImportGlob => new_depth -= 1,
-                OpCode::Iter => (),
-                OpCode::Call(i) => new_depth -= i,
-                OpCode::Return => {
-                    debug_assert_eq!(new_depth, 1);
-                    continue;
-                }
-                OpCode::ReturnCall(i) => {
-                    debug_assert_eq!(new_depth, i + 1);
-                    continue;
-                }
-                OpCode::LoadLocals => new_depth += 1,
-                OpCode::Jump(JumpTarget(i)) => {
-                    stack.push((i, new_depth));
-                    continue;
-                }
-                OpCode::JumpPopIfNull(JumpTarget(i)) => {
-                    stack.push((i, new_depth - 1));
-                }
-                OpCode::PopJumpIfTrue(JumpTarget(i)) | OpCode::PopJumpIfFalse(JumpTarget(i)) => {
-                    new_depth -= 1;
-                    stack.push((i, new_depth));
-                }
-                OpCode::JumpIfTrueOrPop(JumpTarget(i))
-                | OpCode::JumpIfFalseOrPop(JumpTarget(i)) => {
-                    stack.push((i, new_depth));
-                    new_depth -= 1;
-                }
-                OpCode::RegisterHandler(_) => new_depth -= 1,
-                OpCode::CheckEffect(i) => new_depth += i,
-            }
-            stack.push((offset + 1, new_depth));
-        }
-        max_stack_depth
+        function_id
     }
 
     fn visit_pattern_depth(
@@ -500,12 +369,7 @@ impl<'a, S: Clone + Eq + Hash> CodeGenerator<'a, S> {
             PatternKind::Lit(lit) => {
                 let next_pattern_label = get_or_push_pattern_clean_stack_label(pattern_depth);
                 self.push_load_const(lit.kind.clone());
-                self.push_code(match lit.kind {
-                    LitKind::Null | LitKind::Bool(_) | LitKind::Int(_) | LitKind::Float(_) => {
-                        OpCode::Identical
-                    }
-                    LitKind::Str(_) | LitKind::Bytes(_) => OpCode::Eq,
-                });
+                self.push_code(OpCode::Eq);
                 self.push_code(OpCode::PopJumpIfFalse(next_pattern_label));
             }
             PatternKind::Ident(ident) => {
@@ -570,8 +434,8 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
     }
 
     fn visit_function(&mut self, function: &Function<S>) -> Self::Return {
-        let code = self.gen_function_code(function);
-        self.push_load_const(ConstValue::Code(Rc::new(code)));
+        let function_id = self.gen_function_code(function);
+        self.push_load_const(ConstValue::Function(function_id.into()));
         if function.kind == FunctionKind::Do {
             self.push_code(OpCode::Call(0));
         }
@@ -826,7 +690,7 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
                 self.push_code(continue_label);
                 self.visit_block(body)?;
                 self.push_code(OpCode::Pop);
-                self.push_code(OpCode::Jump(continue_label));
+                self.push_code(OpCode::JumpBackEdge(continue_label));
                 self.push_code(break_label);
                 self.push_load_const(ConstValue::Null);
 
@@ -844,7 +708,7 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
                 self.push_code(OpCode::PopJumpIfFalse(break_label));
                 self.visit_block(body)?;
                 self.push_code(OpCode::Pop);
-                self.push_code(OpCode::Jump(continue_label));
+                self.push_code(OpCode::JumpBackEdge(continue_label));
                 self.push_code(break_label);
                 self.push_load_const(ConstValue::Null);
 
@@ -857,18 +721,17 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
                 let body_label = self.get_jump_target();
                 self.continue_stack().push(continue_label);
                 self.break_stack().push(break_label);
-                self.context().need_clear_stack_count += 1;
 
                 self.visit_expr(right)?;
                 self.push_code(OpCode::Iter);
                 self.push_code(continue_label);
+                self.push_load_const(ConstValue::Null);
                 self.push_load_const(BuiltinEffect::Yield);
                 self.push_code(OpCode::RegisterHandler(body_label));
-                self.push_load_const(ConstValue::Null);
                 self.push_code(OpCode::Call(1));
-                self.push_code(OpCode::Pop);
                 self.push_code(OpCode::Jump(break_label));
                 self.push_code(body_label);
+                self.push_code(OpCode::MarkAddStackSize(3));
                 self.push_code(OpCode::Pop);
                 if left.len() == 1 {
                     self.store(&left[0]);
@@ -883,27 +746,27 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
                 }
                 self.visit_block(body)?;
                 self.push_code(OpCode::Pop);
-                self.push_code(OpCode::Jump(continue_label));
+                self.push_code(OpCode::JumpBackEdge(continue_label));
                 self.push_code(break_label);
+                self.push_code(OpCode::Pop);
                 self.push_load_const(ConstValue::Null);
 
                 self.continue_stack().pop();
                 self.break_stack().pop();
-                self.context().need_clear_stack_count -= 1;
             }
             ExprKind::Break => {
-                let opcode = OpCode::Jump(match self.break_stack().last().copied() {
-                    Some(v) => v,
+                let opcode = match self.break_stack().last().copied() {
+                    Some(v) => OpCode::Break(v),
                     None => return Err(CompilerError::BreakOutsideLoop { range: expr.range }),
-                });
+                };
                 self.push_code(opcode);
                 self.push_load_const(ConstValue::Null);
             }
             ExprKind::Continue => {
-                let opcode = OpCode::Jump(match self.continue_stack().last().copied() {
-                    Some(v) => v,
+                let opcode = match self.continue_stack().last().copied() {
+                    Some(v) => OpCode::Continue(v),
                     None => return Err(CompilerError::ContinueOutsideLoop { range: expr.range }),
-                });
+                };
                 self.push_code(opcode);
                 self.push_load_const(ConstValue::Null);
             }
@@ -911,9 +774,15 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
                 if self.function_semantic().kind == FunctionKind::Do {
                     return Err(CompilerError::ReturnOutsideFunction { range: expr.range });
                 }
-                for _ in 0..self.context().need_clear_stack_count {
-                    self.push_code(OpCode::Pop);
-                }
+
+                // This is actually useless, the noop jump is help to keep the return expression
+                // in a separate basic block, so the CFG construction can insert stack cleanup code
+                // at starting of the return basic block. The jump opcode will be removed when
+                // converting CFG to bytecode.
+                let return_label = self.get_jump_target();
+                self.push_code(OpCode::Jump(return_label));
+                self.push_code(return_label);
+
                 if let ExprKind::Call { handlers, .. } = &argument.kind
                     && handlers.is_empty()
                 {

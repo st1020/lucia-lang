@@ -13,9 +13,11 @@ pub struct JumpTarget(pub usize);
 pub enum OpCode {
     /// Removes the top-of-stack item, `STACK.pop()`.
     Pop,
-    /// Push the i-th item to the top of the stack without removing it from its original location, `STACK.push(STACK[-1])`.
+    /// Push the i-th item to the top of the stack without removing it from its original location.
+    /// `STACK.push(STACK[-1])`.
     Copy(usize),
-    /// Swap the top of the stack with the i-th element, `STACK[-i], STACK[-1] = STACK[-1], STACK[-i]`.
+    /// Swap the top of the stack with the i-th element.
+    /// `STACK[-i], STACK[-1] = STACK[-1], STACK[-i]`.
     Swap(usize),
     /// Pushes the value associated with `local_names[namei]` onto the stack.
     LoadLocal(usize),
@@ -140,15 +142,25 @@ pub enum OpCode {
 
     /// Sets the bytecode counter to target.
     Jump(JumpTarget),
-    /// If `STACK[-1]` is null, sets the bytecode counter to target and pop `STACK[-1]`. Otherwise, leaves `STACK[-1]` on the stack
+    /// As same as `Jump` in runtime, used in codegen.
+    JumpBackEdge(JumpTarget),
+    /// As same as `Jump` in runtime, used in codegen.
+    Break(JumpTarget),
+    /// As same as `Jump` in runtime, used in codegen.
+    Continue(JumpTarget),
+
+    /// If `STACK[-1]` is null, sets the bytecode counter to target and pop `STACK[-1]`.
+    /// Otherwise, leaves `STACK[-1]` on the stack
     JumpPopIfNull(JumpTarget),
     /// If `STACK[-1]` is true, sets the bytecode counter to target. `STACK[-1]` is popped.
     PopJumpIfTrue(JumpTarget),
     /// If `STACK[-1]` is false, sets the bytecode counter to target. `STACK[-1]` is popped.
     PopJumpIfFalse(JumpTarget),
-    /// If `STACK[-1]` is true, sets the bytecode counter to target and leaves `STACK[-1]` on the stack. Otherwise, `STACK[-1]` is popped.
+    /// If `STACK[-1]` is true, sets the bytecode counter to target and leaves it on the stack.
+    /// Otherwise, `STACK[-1]` is popped.
     JumpIfTrueOrPop(JumpTarget),
-    /// If `STACK[-1]` is false, sets the bytecode counter to target and leaves `STACK[-1]` on the stack. Otherwise, `STACK[-1]` is popped.
+    /// If `STACK[-1]` is false, sets the bytecode counter to target and leaves it on the stack.
+    /// Otherwise, `STACK[-1]` is popped.
     JumpIfFalseOrPop(JumpTarget),
 
     /// Pops an effect from stack and and registers an effect handler for it.
@@ -156,6 +168,8 @@ pub enum OpCode {
     /// Pops two effect from stack and checks if they match, if not, raises an error.
     /// The usize field is only used for stack size analysis during codegen.
     CheckEffect(usize),
+    /// Noop in runtime, only used for stack size analysis during codegen.
+    MarkAddStackSize(usize),
 }
 
 impl OpCode {
@@ -174,12 +188,53 @@ impl OpCode {
         matches!(
             self,
             Self::Jump(_)
+                | Self::JumpBackEdge(_)
+                | Self::Break(_)
+                | Self::Continue(_)
                 | Self::JumpPopIfNull(_)
                 | Self::PopJumpIfTrue(_)
                 | Self::PopJumpIfFalse(_)
                 | Self::JumpIfTrueOrPop(_)
                 | Self::JumpIfFalseOrPop(_)
         )
+    }
+
+    pub fn is_return(self) -> bool {
+        matches!(self, Self::Return | Self::ReturnCall(_))
+    }
+
+    pub fn jump_target(&self) -> Option<JumpTarget> {
+        #[expect(clippy::wildcard_enum_match_arm)]
+        match self {
+            Self::Jump(target)
+            | Self::JumpBackEdge(target)
+            | Self::Break(target)
+            | Self::Continue(target)
+            | Self::JumpPopIfNull(target)
+            | Self::PopJumpIfTrue(target)
+            | Self::PopJumpIfFalse(target)
+            | Self::JumpIfTrueOrPop(target)
+            | Self::JumpIfFalseOrPop(target)
+            | Self::RegisterHandler(target) => Some(*target),
+            _ => None,
+        }
+    }
+
+    pub fn jump_target_mut(&mut self) -> Option<&mut JumpTarget> {
+        #[expect(clippy::wildcard_enum_match_arm)]
+        match self {
+            Self::Jump(target)
+            | Self::JumpBackEdge(target)
+            | Self::Break(target)
+            | Self::Continue(target)
+            | Self::JumpPopIfNull(target)
+            | Self::PopJumpIfTrue(target)
+            | Self::PopJumpIfFalse(target)
+            | Self::JumpIfTrueOrPop(target)
+            | Self::JumpIfFalseOrPop(target)
+            | Self::RegisterHandler(target) => Some(target),
+            _ => None,
+        }
     }
 }
 
@@ -230,6 +285,9 @@ impl fmt::Display for OpCode {
             Self::ReturnCall(i) => write!(f, "{:WIDTH$}{}", "ReturnCall", i),
             Self::LoadLocals => write!(f, "LoadLocals"),
             Self::Jump(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "Jump", i),
+            Self::JumpBackEdge(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "JumpBackEdge", i),
+            Self::Break(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "Break", i),
+            Self::Continue(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "Continue", i),
             Self::JumpPopIfNull(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "JumpPopIfNull", i),
             Self::PopJumpIfTrue(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "PopJumpIfTrue", i),
             Self::PopJumpIfFalse(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "PopJumpIfFalse", i),
@@ -239,6 +297,7 @@ impl fmt::Display for OpCode {
             }
             Self::RegisterHandler(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "RegisterHandler", i),
             Self::CheckEffect(i) => write!(f, "{:WIDTH$}{}", "MatchEffect", i),
+            Self::MarkAddStackSize(i) => write!(f, "{:WIDTH$}{}", "MarkStackSize", i),
         }
     }
 }

@@ -7,8 +7,10 @@ pub mod codegen;
 pub mod error;
 pub mod index;
 pub mod interning;
+pub mod ir;
 pub mod lexer;
 pub mod opcode;
+pub mod optimizer;
 pub mod parser;
 pub mod semantic;
 pub mod token;
@@ -21,7 +23,8 @@ pub fn compile<S: interning::StringInterner>(
 ) -> Result<code::Code<S::String>, Vec<error::CompilerError>> {
     let (ast, parser_errors) = parser::parse(interner, input);
     let (semantic, analyzer_errors) = analyzer::analyze(&ast);
-    let (code, codegen_errors) = codegen::gen_code(&ast, &semantic);
+    let (ir, codegen_errors) = codegen::gen_code(&ast, &semantic);
+    let code = optimizer::optimize(ir);
     let errors = parser_errors
         .into_iter()
         .chain(analyzer_errors)

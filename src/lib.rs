@@ -1,16 +1,16 @@
 //! Lucia Language Compiler and VM.
 //!
 //! ```txt
-//!        +-------+             +--------+          +----------+
-//! str -> | lexer | - Tokens -> | parser | - AST -> | analyzer |
-//!        +-------+             +--------+          +----------+
-//!                                                        |
-//!             +----- AST with semantic information ------+
-//!             |
-//!             v
-//!        +---------+           +-----------------------+
-//!        | codegen | - Code -> | Lucia Virtual Machine |
-//!        +---------+           +-----------------------+
+//!         +-------+             +--------+          +----------+
+//!  str -> | lexer | - Tokens -> | parser | - AST -> | analyzer |
+//!         +-------+             +--------+          +----------+
+//!                                                         |
+//!      +--------- AST with semantic information ----------+
+//!      |
+//!      v
+//! +---------+         +-----------+           +-----------------+
+//! | codegen | - IR -> | optimizer | - Code -> | Virtual Machine |
+//! +---------+         +-----------+           +-----------------+
 //! ```
 //!
 //! # Examples

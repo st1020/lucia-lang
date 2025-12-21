@@ -19,3 +19,8 @@ define_nonmax_u32_index_type! {
 define_nonmax_u32_index_type! {
     pub struct ReferenceId;
 }
+
+define_nonmax_u32_index_type! {
+    #[derive(Default)]
+    pub struct BasicBlockId;
+}
