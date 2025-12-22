@@ -81,22 +81,32 @@ impl CallbackInner {
         Self(Box::new(f))
     }
 
-    pub fn from<F, T>(f: F) -> Self
+    pub fn from_fn<F, T>(call: F) -> Self
     where
-        F: IntoCallback<T> + 'static,
+        F: IntoCallback<(), T> + 'static,
         T: 'static,
     {
-        struct Shim<F, T>(F, PhantomData<T>);
+        Self::from_fn_with((), call)
+    }
 
-        impl<F, T> CallbackFn for Shim<F, T>
+    pub fn from_fn_with<V, F, T>(value: V, call: F) -> Self
+    where
+        V: 'static,
+        F: IntoCallback<V, T> + 'static,
+        T: 'static,
+    {
+        struct Shim<V, F, T>(V, F, PhantomData<T>);
+
+        impl<V, F, T> CallbackFn for Shim<V, F, T>
         where
-            F: IntoCallback<T>,
+            F: IntoCallback<V, T>,
         {
             fn call(&self, ctx: &Context, args: &[Value]) -> CallbackResult {
-                self.0.call(ctx, args)
+                self.1.call(&self.0, ctx, args)
             }
         }
-        CallbackInner(Box::new(Shim(f, PhantomData)))
+
+        Self(Box::new(Shim(value, call, PhantomData)))
     }
 
     pub fn call(&self, ctx: &Context, args: &[Value]) -> CallbackResult {
@@ -110,91 +120,127 @@ impl From<CallbackInner> for Value {
     }
 }
 
-pub trait IntoCallback<Marker> {
-    fn call(&self, ctx: &Context, args: &[Value]) -> CallbackResult;
+pub trait IntoCallback<V, Marker> {
+    fn call(&self, value: &V, ctx: &Context, args: &[Value]) -> CallbackResult;
 }
 
 macro_rules! impl_into_callback {
+    (@CHECK_ARGS $args:ident, $argument_range:expr) => {
+        let args_len = $args.len();
+        let required = ArgumentRange::from($argument_range);
+        if !required.contains(&args_len) {
+            return Err(Error::CallArguments {
+                required,
+                given: args_len
+            });
+        }
+    };
     ($len:literal, $($idx:literal $t:ident),*) => {
-        impl<Func, Ret, $($t,)*> IntoCallback<fn($($t,)*) -> Ret> for Func
+        impl<Func, Ret, $($t,)*> IntoCallback<(), fn($($t,)*) -> Ret> for Func
         where
             Func: Fn($($t,)*) -> Ret,
             Ret: IntoCallbackResult,
             $($t: FromValue,)*
         {
-            fn call(&self, _ctx: &Context, args: &[Value]) -> CallbackResult {
-                let args_len = args.len();
-                let required = ArgumentRange::from($len);
-                if !required.contains(&args_len) {
-                    return Err(Error::CallArguments {
-                        required,
-                        given: args_len,
-                    });
-                }
+            fn call(&self, _value: &(), _ctx: &Context, args: &[Value]) -> CallbackResult {
+                impl_into_callback!(@CHECK_ARGS args, $len);
                 debug_assert!(args.len() == $len);
                 self($($t::from_value(args[$idx].clone())?,)*).into_callback_result()
             }
         }
 
         #[allow(unused_comparisons, clippy::allow_attributes)]
-        impl<Func, Ret, $($t,)*> IntoCallback<fn($($t,)* &[Value]) -> Ret> for Func
+        impl<Func, Ret, $($t,)*> IntoCallback<(), fn($($t,)* &[Value]) -> Ret> for Func
         where
             Func: Fn($($t,)* &[Value]) -> Ret,
             Ret: IntoCallbackResult,
             $($t: FromValue,)*
         {
-            fn call(&self, _ctx: &Context, args: &[Value]) -> CallbackResult {
-                let args_len = args.len();
-                let required = ArgumentRange::from(($len, None));
-                if !required.contains(&args_len) {
-                    return Err(Error::CallArguments {
-                        required,
-                        given: args_len
-                    });
-                }
+            fn call(&self, _value: &(), _ctx: &Context, args: &[Value]) -> CallbackResult {
+                impl_into_callback!(@CHECK_ARGS args, ($len, None));
                 debug_assert!(args.len() >= $len);
                 self($($t::from_value(args[$idx].clone())?,)* &args[$len..]).into_callback_result()
             }
         }
 
-        impl<Func, Ret, $($t,)*> IntoCallback<fn(Context, $($t,)*) -> Ret> for Func
+        impl<Func, Ret, $($t,)*> IntoCallback<(), fn(Context, $($t,)*) -> Ret> for Func
         where
             Func: Fn(&Context, $($t,)*) -> Ret,
             Ret: IntoCallbackResult,
             $($t: FromValue,)*
         {
-            fn call(&self, ctx: &Context, args: &[Value]) -> CallbackResult {
-                let args_len = args.len();
-                let required = ArgumentRange::from($len);
-                if !required.contains(&args_len) {
-                    return Err(Error::CallArguments {
-                        required,
-                        given: args_len,
-                    });
-                }
+            fn call(&self, _value: &(), ctx: &Context, args: &[Value]) -> CallbackResult {
+                impl_into_callback!(@CHECK_ARGS args, $len);
                 debug_assert!(args.len() == $len);
                 self(ctx, $($t::from_value(args[$idx].clone())?,)*).into_callback_result()
             }
         }
 
         #[allow(unused_comparisons, clippy::allow_attributes)]
-        impl<Func, Ret, $($t,)*> IntoCallback<fn(Context, $($t,)* &[Value]) -> Ret> for Func
+        impl<Func, Ret, $($t,)*> IntoCallback<(), fn(Context, $($t,)* &[Value]) -> Ret> for Func
         where
             Func: Fn(&Context, $($t,)* &[Value]) -> Ret,
             Ret: IntoCallbackResult,
             $($t: FromValue,)*
         {
-            fn call(&self, ctx: &Context, args: &[Value]) -> CallbackResult {
-                let args_len = args.len();
-                let required = ArgumentRange::from(($len, None));
-                if !required.contains(&args_len) {
-                    return Err(Error::CallArguments {
-                        required,
-                        given: args_len,
-                    });
-                }
+            fn call(&self, _value: &(), ctx: &Context, args: &[Value]) -> CallbackResult {
+                impl_into_callback!(@CHECK_ARGS args, ($len, None));
                 debug_assert!(args.len() >= $len);
                 self(ctx, $($t::from_value(args[$idx].clone())?,)* &args[$len..]).into_callback_result()
+            }
+        }
+
+        impl<V, Func, Ret, $($t,)*> IntoCallback<V, fn(&V, $($t,)*) -> Ret> for Func
+        where
+            Func: Fn(&V, $($t,)*) -> Ret,
+            Ret: IntoCallbackResult,
+            $($t: FromValue,)*
+        {
+            fn call(&self, value: &V, _ctx: &Context, args: &[Value]) -> CallbackResult {
+                impl_into_callback!(@CHECK_ARGS args, $len);
+                debug_assert!(args.len() == $len);
+                self(value, $($t::from_value(args[$idx].clone())?,)*).into_callback_result()
+            }
+        }
+
+        #[allow(unused_comparisons, clippy::allow_attributes)]
+        impl<V, Func, Ret, $($t,)*> IntoCallback<V, fn(&V, $($t,)* &[Value]) -> Ret> for Func
+        where
+            Func: Fn(&V, $($t,)* &[Value]) -> Ret,
+            Ret: IntoCallbackResult,
+            $($t: FromValue,)*
+        {
+            fn call(&self, value: &V, _ctx: &Context, args: &[Value]) -> CallbackResult {
+                impl_into_callback!(@CHECK_ARGS args, ($len, None));
+                debug_assert!(args.len() >= $len);
+                self(value, $($t::from_value(args[$idx].clone())?,)* &args[$len..]).into_callback_result()
+            }
+        }
+
+        impl<V, Func, Ret, $($t,)*> IntoCallback<V, fn(&V, &Context, $($t,)*) -> Ret> for Func
+        where
+            Func: Fn(&V, &Context, $($t,)*) -> Ret,
+            Ret: IntoCallbackResult,
+            $($t: FromValue,)*
+        {
+            fn call(&self, value: &V, ctx: &Context, args: &[Value]) -> CallbackResult {
+                impl_into_callback!(@CHECK_ARGS args, $len);
+                debug_assert!(args.len() == $len);
+                self(value, ctx, $($t::from_value(args[$idx].clone())?,)*).into_callback_result()
+            }
+        }
+
+        #[allow(unused_comparisons, clippy::allow_attributes)]
+        impl<V, Func, Ret, $($t,)*> IntoCallback<V, fn(&V, &Context, $($t,)* &[Value]) -> Ret> for Func
+        where
+            Func: Fn(&V, &Context, $($t,)* &[Value]) -> Ret,
+            Ret: IntoCallbackResult,
+            $($t: FromValue,)*
+        {
+            fn call(&self, value: &V, ctx: &Context, args: &[Value]) -> CallbackResult {
+                impl_into_callback!(@CHECK_ARGS args, ($len, None));
+                debug_assert!(args.len() >= $len);
+                self(value, ctx, $($t::from_value(args[$idx].clone())?,)* &args[$len..]).into_callback_result()
             }
         }
     };
@@ -220,6 +266,8 @@ impl_into_callback!(16, 0 A, 1 B, 2 C, 3 D, 4 E, 5 F, 6 G, 7 H, 8 I, 9 J, 10 K, 
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+
     use crate::{Context, objects::CallbackReturn};
 
     use super::*;
@@ -239,6 +287,24 @@ mod tests {
         assert_eq!(
             dyn_callback.call(&context, &[]),
             Ok(CallbackReturn::Return(Value::Int(42)))
+        );
+    }
+
+    #[test]
+    fn test_callback_from_fn_with() {
+        let context = Context::empty();
+        let callback = CallbackInner::from_fn_with(Cell::new(0), |cell: &Cell<usize>| {
+            let value = cell.get();
+            cell.set(value + 1);
+            value
+        });
+        assert_eq!(
+            callback.call(&context, &[]),
+            Ok(CallbackReturn::Return(Value::Int(0)))
+        );
+        assert_eq!(
+            callback.call(&context, &[]),
+            Ok(CallbackReturn::Return(Value::Int(1)))
         );
     }
 }

@@ -12,7 +12,7 @@ pub fn io_lib() -> Table {
     t.set(
         "print",
         #[expect(clippy::print_stdout)]
-        CallbackInner::from(|args: &[Value]| match args {
+        CallbackInner::from_fn(|args: &[Value]| match args {
             [] => (),
             [value] => print!("{value}"),
             _ => print!("{}", args.iter().join(" ")),
@@ -21,7 +21,7 @@ pub fn io_lib() -> Table {
     t.set(
         "println",
         #[expect(clippy::print_stdout)]
-        CallbackInner::from(|args: &[Value]| match args {
+        CallbackInner::from_fn(|args: &[Value]| match args {
             [] => println!(),
             [value] => println!("{value}"),
             _ => println!("{}", args.iter().join(" ")),
@@ -29,7 +29,7 @@ pub fn io_lib() -> Table {
     );
     t.set(
         "input",
-        CallbackInner::from(|| {
+        CallbackInner::from_fn(|| {
             let mut buf = String::new();
             io::stdin()
                 .read_line(&mut buf)
