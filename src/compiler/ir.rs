@@ -175,7 +175,10 @@ impl ControlFlowGraph {
             #[expect(clippy::match_same_arms)]
             let jump_target = match current_block.code.last() {
                 Some(OpCode::Jump(_)) => None, // Handled by next_block
-                Some(OpCode::JumpBackEdge(_) | OpCode::Break(_) | OpCode::Continue(_)) => None, // Handled later
+                Some(OpCode::JumpBackEdge(JumpTarget(i))) => {
+                    Some((BasicBlockId::new(*i), next_stack_size))
+                }
+                Some(OpCode::Break(_) | OpCode::Continue(_)) => None, // Handled later
                 Some(OpCode::JumpPopIfNull(JumpTarget(i))) => {
                     Some((BasicBlockId::new(*i), next_stack_size - 1))
                 }
