@@ -47,10 +47,6 @@ pub enum BinOp {
     Gt,
     /// The `>=` operator (greater than or equal to)
     Ge,
-    /// The '===' operator (identical)
-    Identical,
-    /// The '!==' operator (not identical)
-    NotIdentical,
     /// The `is` operator (type check)
     Is,
 }
@@ -71,8 +67,6 @@ impl fmt::Display for BinOp {
             BinOp::Le => write!(f, "<="),
             BinOp::Gt => write!(f, ">"),
             BinOp::Ge => write!(f, ">="),
-            BinOp::Identical => write!(f, "==="),
-            BinOp::NotIdentical => write!(f, "!=="),
             BinOp::Is => write!(f, "is"),
         }
     }
@@ -83,15 +77,7 @@ impl BinOp {
         match self {
             BinOp::Mul | BinOp::Div | BinOp::Rem => 5,
             BinOp::Add | BinOp::Sub => 4,
-            BinOp::Eq
-            | BinOp::Ne
-            | BinOp::Lt
-            | BinOp::Le
-            | BinOp::Gt
-            | BinOp::Ge
-            | BinOp::Identical
-            | BinOp::NotIdentical
-            | BinOp::Is => 3,
+            BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge | BinOp::Is => 3,
             BinOp::And => 2,
             BinOp::Or => 1,
         }

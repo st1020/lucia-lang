@@ -52,9 +52,7 @@ impl IntoSemanticTokenType for TokenKind {
             | TokenKind::Null
             | TokenKind::True
             | TokenKind::False => Some(SemanticTokenType::KEYWORD),
-            TokenKind::Identical
-            | TokenKind::NotIdentical
-            | TokenKind::Ellipsis
+            TokenKind::Ellipsis
             | TokenKind::DoubleColon
             | TokenKind::Arrow
             | TokenKind::FatArrow

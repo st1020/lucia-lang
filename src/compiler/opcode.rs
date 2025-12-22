@@ -112,13 +112,9 @@ pub enum OpCode {
     Lt,
     /// Works as `Add`, but performs `>=` operation.
     Le,
-    /// Works as `Add`, but performs `===` operation.
-    Identical,
-    /// Works as `Add`, but performs `!==` operation.
-    NotIdentical,
-
     /// Implements `STACK[-1] = STACK[-1] is type`.
     TypeCheck(ValueType),
+
     /// Implements `STACK[-1] = len(STACK[-1])`.
     GetLen,
 
@@ -272,8 +268,6 @@ impl fmt::Display for OpCode {
             Self::Ge => write!(f, "Ge"),
             Self::Lt => write!(f, "Lt"),
             Self::Le => write!(f, "Le"),
-            Self::Identical => write!(f, "Identical"),
-            Self::NotIdentical => write!(f, "NotIdentical"),
             Self::TypeCheck(ty) => write!(f, "{:WIDTH$}{}", "TypeCheck", ty),
             Self::GetLen => write!(f, "GetLen"),
             Self::Import(i) => write!(f, "{:WIDTH$}{}", "Import", i),

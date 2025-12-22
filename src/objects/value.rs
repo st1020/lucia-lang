@@ -62,14 +62,6 @@ impl Value {
         }
     }
 
-    pub fn identical(&self, other: &Value) -> bool {
-        if let (Some(this), Some(other)) = (self.id(), other.id()) {
-            this == other
-        } else {
-            self == other
-        }
-    }
-
     pub const fn value_type(&self) -> ValueType {
         match self {
             Self::Null => ValueType::Null,

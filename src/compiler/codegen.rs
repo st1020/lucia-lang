@@ -57,8 +57,6 @@ impl From<BinOp> for OpCode {
             BinOp::Le => OpCode::Le,
             BinOp::Gt => OpCode::Gt,
             BinOp::Ge => OpCode::Ge,
-            BinOp::Identical => OpCode::Identical,
-            BinOp::NotIdentical => OpCode::NotIdentical,
             BinOp::And | BinOp::Or | BinOp::Is => unreachable!(),
         }
     }

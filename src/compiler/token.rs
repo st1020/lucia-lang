@@ -108,10 +108,6 @@ pub enum TokenKind {
     False,
 
     // Three-char tokens:
-    /// "==="
-    Identical,
-    /// "!=="
-    NotIdentical,
     /// "..."
     Ellipsis,
 

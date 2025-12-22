@@ -239,16 +239,6 @@ impl Cursor<'_> {
                 self.bump();
                 Ellipsis
             }
-            '=' if self.first() == '=' && self.second() == '=' => {
-                self.bump();
-                self.bump();
-                Identical
-            }
-            '!' if self.first() == '=' && self.second() == '=' => {
-                self.bump();
-                self.bump();
-                NotIdentical
-            }
 
             // Two-char tokens.
             ':' if self.eat(':') => DoubleColon,

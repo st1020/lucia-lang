@@ -641,8 +641,6 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
                 TokenKind::LtEq => BinOp::Le,
                 TokenKind::Gt => BinOp::Gt,
                 TokenKind::GtEq => BinOp::Ge,
-                TokenKind::Identical => BinOp::Identical,
-                TokenKind::NotIdentical => BinOp::NotIdentical,
                 TokenKind::Is => BinOp::Is,
                 _ => break,
             };

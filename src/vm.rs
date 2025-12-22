@@ -198,16 +198,6 @@ impl ExecutorInner {
                 OpCode::Ge => bin_op!(meta_ge),
                 OpCode::Lt => bin_op!(meta_lt),
                 OpCode::Le => bin_op!(meta_le),
-                OpCode::Identical => {
-                    let rhs = frame.stack.pop().unwrap();
-                    let lhs = frame.stack.pop().unwrap();
-                    frame.stack.push(Value::Bool(lhs.identical(&rhs)));
-                }
-                OpCode::NotIdentical => {
-                    let rhs = frame.stack.pop().unwrap();
-                    let lhs = frame.stack.pop().unwrap();
-                    frame.stack.push(Value::Bool(!lhs.identical(&rhs)));
-                }
                 OpCode::TypeCheck(ty) => {
                     let value = frame.stack.pop().unwrap();
                     frame.stack.push(Value::Bool(value.value_type() == ty));

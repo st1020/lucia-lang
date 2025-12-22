@@ -135,9 +135,7 @@ impl ControlFlowGraph {
                     | OpCode::Gt
                     | OpCode::Ge
                     | OpCode::Lt
-                    | OpCode::Le
-                    | OpCode::Identical
-                    | OpCode::NotIdentical => next_stack_size -= 1,
+                    | OpCode::Le => next_stack_size -= 1,
                     OpCode::TypeCheck(_) => (),
                     OpCode::GetLen => (),
                     OpCode::Import(_) => next_stack_size += 1,

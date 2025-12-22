@@ -39,12 +39,3 @@ assert(1 >= 1 == true)
 assert(2 >= 1 == true)
 assert(1 <= 1 == true)
 assert(1 <= 2 == true)
-
-// test identical operation
-assert(1 === 1)
-assert(1 !== 2)
-a = {}
-b = a
-c = {}
-assert(a === b)
-assert(a !== c)

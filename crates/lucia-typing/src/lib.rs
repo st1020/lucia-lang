@@ -624,7 +624,7 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
             BinOp::Le => MetaMethodType.le(left_type, right_type),
             BinOp::Gt => MetaMethodType.gt(left_type, right_type),
             BinOp::Ge => MetaMethodType.ge(left_type, right_type),
-            BinOp::Identical | BinOp::NotIdentical | BinOp::Is => Ok(Type::Bool),
+            BinOp::Is => Ok(Type::Bool),
         }
     }
 }
