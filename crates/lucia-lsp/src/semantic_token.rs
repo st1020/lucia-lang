@@ -21,7 +21,7 @@ impl IntoSemanticTokenType for TokenKind {
     fn into_semantic_token_type(self) -> Option<SemanticTokenType> {
         match self {
             TokenKind::LineComment | TokenKind::BlockComment => Some(SemanticTokenType::COMMENT),
-            TokenKind::Whitespace => None,
+            TokenKind::Whitespace | TokenKind::EscapedNewline => None,
             TokenKind::Ident => Some(SemanticTokenType::VARIABLE),
             TokenKind::Int | TokenKind::Float => Some(SemanticTokenType::NUMBER),
             TokenKind::Str | TokenKind::RawStr | TokenKind::ByteStr => {
@@ -92,7 +92,9 @@ impl IntoSemanticTokenType for TokenKind {
             | TokenKind::EmptyInt
             | TokenKind::EmptyExponentFloat
             | TokenKind::NonDecimalFloat
-            | TokenKind::UnterminatedStr => None,
+            | TokenKind::UnterminatedStr
+            | TokenKind::UnterminatedRawStr
+            | TokenKind::UnterminatedByteStr => None,
         }
     }
 }

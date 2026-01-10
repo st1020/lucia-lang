@@ -131,23 +131,22 @@ pub fn is_whitespace(c: char) -> bool {
 
     matches!(
         c,
-        // Usual ASCII suspects
-        '\u{0009}'   // \t
+        // End-of-line characters
+        // | '\u{000A}' // line feed (\n)
         | '\u{000B}' // vertical tab
         | '\u{000C}' // form feed
-        | '\u{000D}' // \r
-        | '\u{0020}' // space
+        | '\u{000D}' // carriage return (\r)
+        | '\u{0085}' // next line (from latin1)
+        | '\u{2028}' // LINE SEPARATOR
+        | '\u{2029}' // PARAGRAPH SEPARATOR
 
-        // NEXT LINE from latin1
-        | '\u{0085}'
-
-        // Bidi markers
+        // `Default_Ignorable_Code_Point` characters
         | '\u{200E}' // LEFT-TO-RIGHT MARK
         | '\u{200F}' // RIGHT-TO-LEFT MARK
 
-        // Dedicated whitespace characters from Unicode
-        | '\u{2028}' // LINE SEPARATOR
-        | '\u{2029}' // PARAGRAPH SEPARATOR
+        // Horizontal space characters
+        | '\u{0009}'   // tab (\t)
+        | '\u{0020}' // space
     )
 }
 
@@ -173,16 +172,16 @@ pub fn is_ident(string: &str) -> bool {
 }
 
 /// Base of numeric literal encoding according to its prefix.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Base {
     /// Literal starts with "0b".
-    Binary,
+    Binary = 2,
     /// Literal starts with "0o".
-    Octal,
-    /// Literal starts with "0x".
-    Hexadecimal,
+    Octal = 8,
     /// Literal doesn't contain a prefix.
-    Decimal,
+    Decimal = 10,
+    /// Literal starts with "0x".
+    Hexadecimal = 16,
 }
 
 impl Cursor<'_> {
@@ -204,7 +203,7 @@ impl Cursor<'_> {
             'r' => match self.first() {
                 c @ ('"' | '\'') => {
                     self.bump();
-                    self.string(c, true, RawStr, UnterminatedStr)
+                    self.string(c, true, RawStr, UnterminatedRawStr)
                 }
                 _ => self.ident_or_keyword(start),
             },
@@ -213,7 +212,7 @@ impl Cursor<'_> {
             'b' => match self.first() {
                 c @ ('"' | '\'') => {
                     self.bump();
-                    self.string(c, false, ByteStr, UnterminatedStr)
+                    self.string(c, false, ByteStr, UnterminatedByteStr)
                 }
                 _ => self.ident_or_keyword(start),
             },
@@ -228,7 +227,7 @@ impl Cursor<'_> {
             c @ ('"' | '\'') => self.string(c, false, Str, UnterminatedStr),
 
             // Escaped newline are treated as whitespace.
-            '\\' if self.eat('\n') => Whitespace,
+            '\\' if self.eat('\n') => EscapedNewline,
 
             // Newline.
             '\n' => self.eol(),
@@ -331,14 +330,7 @@ impl Cursor<'_> {
 
     fn ident_or_keyword(&mut self, start: TextSize) -> TokenKind {
         debug_assert!(is_id_start(self.prev()));
-        loop {
-            let c = self.first();
-            if !is_id_continue(c) {
-                break;
-            }
-            self.bump();
-        }
-
+        self.eat_while(is_id_continue);
         let range = TextRange::new(start, self.pos());
         #[expect(clippy::string_slice)]
         match &self.input[range] {

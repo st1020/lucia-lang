@@ -258,7 +258,7 @@ impl<S: fmt::Display> fmt::Display for ExprKind<S> {
     }
 }
 
-/// A TableProperty.
+/// A table property.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TableProperty<S> {
     pub key: Expr<S>,

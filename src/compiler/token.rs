@@ -40,6 +40,8 @@ pub enum TokenKind {
     BlockComment,
     /// Any whitespace character sequence.
     Whitespace,
+    /// Escaped newline (`\` followed by `\n`).
+    EscapedNewline,
     /// "ident"
     Ident,
 
@@ -200,13 +202,17 @@ pub enum TokenKind {
     NonDecimalFloat,
     /// Unterminated string literal, e.g. `"abc`.
     UnterminatedStr,
+    /// Unterminated raw string literal, e.g. `r"abc`.
+    UnterminatedRawStr,
+    /// Unterminated byte string literal, e.g. `b"abc`.
+    UnterminatedByteStr,
 }
 
 impl TokenKind {
     pub fn is_trivia(self) -> bool {
         matches!(
             self,
-            Self::LineComment | Self::BlockComment | Self::Whitespace
+            Self::LineComment | Self::BlockComment | Self::Whitespace | Self::EscapedNewline
         )
     }
 
@@ -219,6 +225,8 @@ impl TokenKind {
                 | Self::EmptyExponentFloat
                 | Self::NonDecimalFloat
                 | Self::UnterminatedStr
+                | Self::UnterminatedRawStr
+                | Self::UnterminatedByteStr
         )
     }
 }
