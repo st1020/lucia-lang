@@ -203,7 +203,7 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
         node.ok()
     }
 
-    /// Parses one or more items separated by `sep`.
+    /// Parses one or more items separated by comma.
     fn parse_items<T, F: Fn(&mut Self) -> Result<T, CompilerError>>(
         &mut self,
         parse_func: F,
@@ -218,8 +218,8 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
         Ok(items)
     }
 
-    /// Parses zero or more items separated by `sep` until `end`.
-    /// Allowing trailing `seq` and eol before `sep`. The `end` will be consumed.
+    /// Parses zero or more items separated by comma until `end`.
+    /// Allowing trailing comma and eol before comma. The `end` will be consumed.
     fn parse_items_until<T, F: Fn(&mut Self) -> Result<T, CompilerError>>(
         &mut self,
         parse_func: F,
@@ -239,8 +239,8 @@ impl<'input, S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'input
         Ok(items)
     }
 
-    /// Parses zero or more items separated by `sep` until `end`.
-    /// Allowing trailing `seq` and eol before `sep`. The `end` will be consumed.
+    /// Parses zero or more items separated by comma until `end`.
+    /// Allowing trailing comma and eol before comma. The `end` will be consumed.
     /// The last element is specified by `parse_last_func`.
     fn parse_items_until_with_last<Item, Last, ItemFunc, LastFunc>(
         &mut self,
@@ -656,14 +656,18 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
                     (TokenKind::Ident, "int") => ValueType::Int,
                     (TokenKind::Ident, "float") => ValueType::Float,
                     (TokenKind::Ident, "str") => ValueType::Str,
+                    (TokenKind::Ident, "bytes") => ValueType::Bytes,
                     (TokenKind::Ident, "table") => ValueType::Table,
                     (TokenKind::Ident, "function") => ValueType::Function,
+                    (TokenKind::Ident, "effect") => ValueType::Effect,
                     (TokenKind::Ident, "userdata") => ValueType::UserData,
                     _ => return Err(self.unexpected()),
                 };
                 self.bump();
-                let left = Box::new(left);
-                let kind = ExprKind::TypeCheck { left, right };
+                let kind = ExprKind::TypeCheck {
+                    left: Box::new(left),
+                    right,
+                };
                 let range = self.end_range(start);
                 Expr { kind, range }
             } else {
@@ -687,16 +691,14 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
     ) -> Result<Expr<S::String>, CompilerError> {
         let start = self.start_range();
         let kind = if self.eat(TokenKind::Not) {
-            let argument = Box::new(self.parse_expr_primary(allow_trailing_lambda)?);
             ExprKind::Unary {
                 operator: UnOp::Not,
-                argument,
+                argument: Box::new(self.parse_expr_primary(allow_trailing_lambda)?),
             }
         } else if self.eat(TokenKind::Sub) {
-            let argument = Box::new(self.parse_expr_primary(allow_trailing_lambda)?);
             ExprKind::Unary {
                 operator: UnOp::Neg,
-                argument,
+                argument: Box::new(self.parse_expr_primary(allow_trailing_lambda)?),
             }
         } else if let Some(try_range) = self.eat_range(TokenKind::Try) {
             let mut expr = self.parse_expr_primary(allow_trailing_lambda)?;
@@ -739,6 +741,21 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
     ) -> Result<Expr<S::String>, CompilerError> {
         let start = self.start_range();
         let mut expr = self.parse_expr_atom()?;
+        macro_rules! trailing_lambda {
+            () => {{
+                let body = self.parse_block()?;
+                let range = body.range;
+                Some(Box::new(Function {
+                    name: None,
+                    kind: FunctionKind::Closure,
+                    params: Box::new(Params::empty()),
+                    returns: None,
+                    body,
+                    range,
+                    function_id: OnceLock::new(),
+                }))
+            }};
+        }
         macro_rules! member_expr {
             (Bracket, BracketMeta, $safe:expr) => {
                 if self.eat(TokenKind::Pound) {
@@ -758,7 +775,6 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
                     }
                 }
             };
-
             ($kind:ident, $kind_meta:ident, $safe:expr) => {
                 if self.eat(TokenKind::Pound) {
                     ExprKind::Member {
@@ -781,17 +797,7 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
                 let arguments =
                     self.parse_items_until(Parser::parse_expr, TokenKind::CloseParen)?;
                 let trailing_lambda = if allow_trailing_lambda && self.check(TokenKind::OpenBrace) {
-                    let body = self.parse_block()?;
-                    let range = body.range;
-                    Some(Box::new(Function {
-                        name: None,
-                        kind: FunctionKind::Closure,
-                        params: Box::new(Params::empty()),
-                        returns: None,
-                        body,
-                        range,
-                        function_id: OnceLock::new(),
-                    }))
+                    trailing_lambda!()
                 } else {
                     None
                 };
@@ -802,21 +808,10 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
                     handlers: Vec::new(),
                 }
             } else if allow_trailing_lambda && self.check(TokenKind::OpenBrace) {
-                let body = self.parse_block()?;
-                let range = body.range;
-                let trailing_lambda = Some(Box::new(Function {
-                    name: None,
-                    kind: FunctionKind::Closure,
-                    params: Box::new(Params::empty()),
-                    returns: None,
-                    body,
-                    range,
-                    function_id: OnceLock::new(),
-                }));
                 ExprKind::Call {
                     callee: Box::new(expr),
                     arguments: Vec::new(),
-                    trailing_lambda,
+                    trailing_lambda: trailing_lambda!(),
                     handlers: Vec::new(),
                 }
             } else {
@@ -1118,17 +1113,13 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
     }
 
     fn parse_ident(&mut self) -> Result<Ident<S::String>, CompilerError> {
-        let token = self.current_token().ok_or_else(|| self.unexpected())?;
-        if !self.check(TokenKind::Ident) {
-            return Err(self.unexpected());
-        }
-        let ident = Ident {
-            range: token.range,
-            name: self.interner.intern(&self.input[token.range]),
+        let range = self.current_range().ok_or_else(|| self.unexpected())?;
+        self.expect(TokenKind::Ident)?;
+        Ok(Ident {
+            range,
+            name: self.interner.intern(&self.input[range]),
             reference_id: OnceLock::new(),
-        };
-        self.bump();
-        Ok(ident)
+        })
     }
 
     fn parse_typed_ident(&mut self) -> Result<TypedIdent<S::String>, CompilerError> {

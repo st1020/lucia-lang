@@ -26,7 +26,7 @@ impl EffectInner {
     pub fn new(effect: EffectConst<Str>) -> Self {
         match effect {
             EffectConst::User(v) => EffectInner::User(v),
-            EffectConst::BuiltinEffect(v) => EffectInner::Builtin(v),
+            EffectConst::Builtin(v) => EffectInner::Builtin(v),
         }
     }
 

@@ -5,10 +5,6 @@
 
 use std::{hash::Hash, sync::OnceLock};
 
-use ordermap::OrderMap;
-use oxc_index::IndexVec;
-use rustc_hash::FxBuildHasher;
-
 use super::{
     ast::*,
     error::CompilerError,
@@ -25,12 +21,7 @@ pub fn analyze<S: Clone + Eq + Hash>(program: &Program<S>) -> (Semantic<S>, Vec<
 struct SemanticAnalyzer<S> {
     current_function_id: FunctionId,
     current_scope_id: ScopeId,
-
-    functions: IndexVec<FunctionId, FunctionSemantic>,
-    scopes: IndexVec<ScopeId, Scope<S>>,
-    symbols: IndexVec<SymbolId, Symbol<S>>,
-    references: IndexVec<ReferenceId, Reference>,
-    globals: OrderMap<S, SymbolId, FxBuildHasher>,
+    semantic: Semantic<S>,
 }
 
 impl<S: Clone + Eq + Hash> SemanticAnalyzer<S> {
@@ -38,26 +29,14 @@ impl<S: Clone + Eq + Hash> SemanticAnalyzer<S> {
         Self {
             current_function_id: FunctionId::new(0),
             current_scope_id: ScopeId::new(0),
-            functions: IndexVec::new(),
-            scopes: IndexVec::new(),
-            symbols: IndexVec::new(),
-            references: IndexVec::new(),
-            globals: OrderMap::with_hasher(FxBuildHasher),
+            semantic: Semantic::new(),
         }
     }
 
     fn analyze(mut self, program: &Program<S>) -> (Semantic<S>, Vec<CompilerError>) {
         self.visit_program(program);
-        (
-            Semantic {
-                functions: self.functions,
-                scopes: self.scopes,
-                symbols: self.symbols,
-                references: self.references,
-            },
-            // SemanticAnalyzer does not produce errors now, but can be extended to do in the future.
-            Vec::new(),
-        )
+        // SemanticAnalyzer does not produce errors now, but can be extended to do in the future.
+        (self.semantic, Vec::new())
     }
 
     fn declare_symbol(&mut self, ident: &Ident<S>, kind: SymbolKind) -> SymbolId {
@@ -69,20 +48,20 @@ impl<S: Clone + Eq + Hash> SemanticAnalyzer<S> {
             references: Vec::new(),
         };
         let symbol_id = if matches!(kind, SymbolKind::Global) {
-            if let Some(symbol_id) = self.globals.get(&ident.name).copied() {
+            if let Some(symbol_id) = self.semantic.globals.get(&ident.name).copied() {
                 symbol_id
             } else {
-                let symbol_id = self.symbols.push(symbol);
-                self.globals.insert(ident.name.clone(), symbol_id);
+                let symbol_id = self.semantic.symbols.push(symbol);
+                self.semantic.globals.insert(ident.name.clone(), symbol_id);
                 symbol_id
             }
         } else {
-            self.symbols.push(symbol)
+            self.semantic.symbols.push(symbol)
         };
-        self.scopes[self.current_scope_id]
+        self.semantic.scopes[self.current_scope_id]
             .bindings
             .insert(ident.name.clone(), symbol_id);
-        self.functions[self.current_function_id]
+        self.semantic.functions[self.current_function_id]
             .symbols
             .insert(symbol_id);
         symbol_id
@@ -99,8 +78,10 @@ impl<S: Clone + Eq + Hash> SemanticAnalyzer<S> {
             range: ident.range,
             kind,
         };
-        let reference_id = self.references.push(reference);
-        self.symbols[symbol_id].references.push(reference_id);
+        let reference_id = self.semantic.references.push(reference);
+        self.semantic.symbols[symbol_id]
+            .references
+            .push(reference_id);
         ident.reference_id.set(reference_id).unwrap();
         reference_id
     }
@@ -114,19 +95,14 @@ impl<S: Clone + Eq + Hash> SemanticAnalyzer<S> {
         let symbol_id = {
             let mut scope_id = self.current_scope_id;
             loop {
-                let scope = &self.scopes[scope_id];
+                let scope = &self.semantic.scopes[scope_id];
                 if let Some(symbol_id) = scope.bindings.get(&ident.name).copied() {
-                    let symbol = &mut self.symbols[symbol_id];
+                    let symbol = &mut self.semantic.symbols[symbol_id];
                     match symbol.kind {
                         SymbolKind::Local => {
                             if scope.function_id != self.current_function_id {
-                                symbol.kind = SymbolKind::Upvalue;
                                 self.declare_upvalue(symbol_id, scope_id);
                             }
-                            break Some(symbol_id);
-                        }
-                        SymbolKind::Upvalue => {
-                            self.declare_upvalue(symbol_id, scope_id);
                             break Some(symbol_id);
                         }
                         SymbolKind::Global => (),
@@ -150,15 +126,15 @@ impl<S: Clone + Eq + Hash> SemanticAnalyzer<S> {
         let symbol_id = {
             let mut scope_id = self.current_scope_id;
             loop {
-                let scope = &self.scopes[scope_id];
+                let scope = &self.semantic.scopes[scope_id];
                 if scope.function_id != self.current_function_id {
                     break None;
                 }
                 if let Some(symbol_id) = scope.bindings.get(&ident.name).copied() {
-                    let symbol = &mut self.symbols[symbol_id];
+                    let symbol = &mut self.semantic.symbols[symbol_id];
                     match symbol.kind {
                         SymbolKind::Local => break Some(symbol_id),
-                        SymbolKind::Upvalue | SymbolKind::Global => (),
+                        SymbolKind::Global => (),
                     }
                 }
                 if scope.kind == ScopeKind::Function {
@@ -178,9 +154,11 @@ impl<S: Clone + Eq + Hash> SemanticAnalyzer<S> {
     fn declare_upvalue(&mut self, symbol_id: SymbolId, def_scope_id: ScopeId) {
         let mut scope_id = self.current_scope_id;
         while scope_id != def_scope_id {
-            let function_id = self.scopes[scope_id].function_id;
-            self.functions[function_id].symbols.insert(symbol_id);
-            scope_id = self.scopes[scope_id].parent_id.unwrap();
+            let function_id = self.semantic.scopes[scope_id].function_id;
+            self.semantic.functions[function_id]
+                .symbols
+                .insert(symbol_id);
+            scope_id = self.semantic.scopes[scope_id].parent_id.unwrap();
         }
     }
 
@@ -188,13 +166,13 @@ impl<S: Clone + Eq + Hash> SemanticAnalyzer<S> {
         let parent_function_id = self.current_function_id;
 
         let function = FunctionSemantic::new(kind, Some(parent_function_id));
-        self.current_function_id = self.functions.push(function);
+        self.current_function_id = self.semantic.functions.push(function);
 
         function_id.set(self.current_function_id).unwrap();
     }
 
     fn leave_function(&mut self) {
-        if let Some(parent_id) = self.functions[self.current_function_id].parent_id {
+        if let Some(parent_id) = self.semantic.functions[self.current_function_id].parent_id {
             self.current_function_id = parent_id;
         }
     }
@@ -203,13 +181,13 @@ impl<S: Clone + Eq + Hash> SemanticAnalyzer<S> {
         let parent_scope_id = self.current_scope_id;
 
         let scope = Scope::new(kind, Some(parent_scope_id), self.current_function_id);
-        self.current_scope_id = self.scopes.push(scope);
+        self.current_scope_id = self.semantic.scopes.push(scope);
 
         scope_id.set(self.current_scope_id).unwrap();
     }
 
     fn leave_scope(&mut self) {
-        if let Some(parent_id) = self.scopes[self.current_scope_id].parent_id {
+        if let Some(parent_id) = self.semantic.scopes[self.current_scope_id].parent_id {
             self.current_scope_id = parent_id;
         }
     }
@@ -226,10 +204,11 @@ impl<S: Clone + Eq + Hash> Visit<S> for SemanticAnalyzer<S> {
 
     fn visit_program(&mut self, program: &Program<S>) -> Self::Return {
         let function_id = self
+            .semantic
             .functions
             .push(FunctionSemantic::new(FunctionKind::Function, None));
         let scope = Scope::new(ScopeKind::Function, None, function_id);
-        let scope_id = self.scopes.push(scope);
+        let scope_id = self.semantic.scopes.push(scope);
         program.function.function_id.set(function_id).unwrap();
         program.function.body.scope_id.set(scope_id).unwrap();
         self.visit_exprs(&program.function.body.body);

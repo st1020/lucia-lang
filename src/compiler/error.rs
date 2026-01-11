@@ -46,8 +46,6 @@ pub enum CompilerError {
     ContinueOutsideLoop { range: TextRange },
     #[error("return outside loop {:?}", .range)]
     ReturnOutsideFunction { range: TextRange },
-    #[error("throw outside loop {:?}", .range)]
-    ThrowOutsideFunction { range: TextRange },
 }
 
 impl Locatable for CompilerError {
@@ -59,8 +57,7 @@ impl Locatable for CompilerError {
             | CompilerError::EscapeError { range, .. }
             | CompilerError::BreakOutsideLoop { range, .. }
             | CompilerError::ContinueOutsideLoop { range, .. }
-            | CompilerError::ReturnOutsideFunction { range, .. }
-            | CompilerError::ThrowOutsideFunction { range, .. } => *range,
+            | CompilerError::ReturnOutsideFunction { range, .. } => *range,
         }
     }
 }

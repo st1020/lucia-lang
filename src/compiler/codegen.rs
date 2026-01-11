@@ -211,24 +211,14 @@ impl<'a, S: Clone + Eq + Hash> CodeGenerator<'a, S> {
     fn load(&mut self, ident: &Ident<S>) {
         let symbol_id =
             self.semantic.references[ident.reference_id.get().copied().unwrap()].symbol_id;
-        let opcode = match self.semantic.symbols[symbol_id].kind {
-            SymbolKind::Local => {
-                let index = self.local_names().get_index_of(&symbol_id).unwrap();
-                OpCode::LoadLocal(index)
-            }
-            SymbolKind::Upvalue => {
-                if let Some(index) = self.local_names().get_index_of(&symbol_id) {
-                    OpCode::LoadLocal(index)
-                } else if let Some(index) = self.upvalue_names().get_index_of(&symbol_id) {
-                    OpCode::LoadUpvalue(index)
-                } else {
-                    panic!("upvalue symbol not found in local or upvalue names");
-                }
-            }
-            SymbolKind::Global => {
-                let index = self.global_names().get_index_of(&symbol_id).unwrap();
-                OpCode::LoadGlobal(index)
-            }
+        let opcode = if let Some(index) = self.local_names().get_index_of(&symbol_id) {
+            OpCode::LoadLocal(index)
+        } else if let Some(index) = self.upvalue_names().get_index_of(&symbol_id) {
+            OpCode::LoadUpvalue(index)
+        } else if let Some(index) = self.global_names().get_index_of(&symbol_id) {
+            OpCode::LoadGlobal(index)
+        } else {
+            panic!("symbol not found");
         };
         self.push_code(opcode);
     }
@@ -237,10 +227,7 @@ impl<'a, S: Clone + Eq + Hash> CodeGenerator<'a, S> {
         let symbol_id =
             self.semantic.references[ident.reference_id.get().copied().unwrap()].symbol_id;
         let opcode = match self.semantic.symbols[symbol_id].kind {
-            SymbolKind::Local | SymbolKind::Upvalue => {
-                // Upvalue is stored as local variable. Because upvalue can't be assigned in closure
-                // which captures it. It can only be assigned in the closure where it is declared.
-                // In that closure, it is just a normal local variable.
+            SymbolKind::Local => {
                 let index = self.local_names().get_index_of(&symbol_id).unwrap();
                 OpCode::StoreLocal(index)
             }
@@ -275,9 +262,6 @@ impl<'a, S: Clone + Eq + Hash> CodeGenerator<'a, S> {
             let symbol = &self.semantic.symbols[symbol_id];
             match symbol.kind {
                 SymbolKind::Local => {
-                    local_names.insert(symbol_id, symbol.name.clone());
-                }
-                SymbolKind::Upvalue => {
                     let capture = if let Some(parent_id) = self.function_semantic().parent_id {
                         let base_closure_local_id = self.ir[parent_id]
                             .local_names
@@ -295,10 +279,8 @@ impl<'a, S: Clone + Eq + Hash> CodeGenerator<'a, S> {
                         upvalue_names.insert(symbol_id, (symbol.name.clone(), capture));
                     } else {
                         // If the current closure has no parent, or the symbol can not be found in
-                        // the parent closure, it means the upvalue symbol is declared in current
-                        // closure. So we just create a local variable for it.
-                        // For child closure which use the upvalue symbol, it can capture it from
-                        // the local variable.
+                        // the parent closure, it means the symbol is declared in current closure.
+                        // So we create a local variable for it.
                         local_names.insert(symbol_id, symbol.name.clone());
                     }
                 }
@@ -924,7 +906,7 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
         Ok(())
     }
 
-    /// See [CodeGenerator::visit_pattern_depth].
+    /// See [`CodeGenerator::visit_pattern_depth`].
     fn visit_pattern(&mut self, _pattern: &Pattern<S>) -> Self::Return {
         unreachable!()
     }

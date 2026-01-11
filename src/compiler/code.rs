@@ -200,14 +200,14 @@ where
 #[derive(Debug, Clone, PartialEq, Eq, Hash, From)]
 pub enum EffectConst<S> {
     User(Rc<UserEffect<S>>),
-    BuiltinEffect(BuiltinEffect),
+    Builtin(BuiltinEffect),
 }
 
 impl<S: fmt::Display> fmt::Display for EffectConst<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::User(v) => write!(f, "{v}"),
-            Self::BuiltinEffect(v) => write!(f, "effect {}(...)", v.name()),
+            Self::Builtin(v) => write!(f, "effect {}(...)", v.name()),
         }
     }
 }

@@ -1,5 +1,15 @@
 use derive_more::Display;
 
+macro_rules! impl_as_ref_str {
+    ($t:ty) => {
+        impl AsRef<str> for $t {
+            fn as_ref(&self) -> &str {
+                self.name()
+            }
+        }
+    };
+}
+
 /// The type of Value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display)]
 #[display("{}", self.name())]
@@ -32,6 +42,8 @@ impl ValueType {
         }
     }
 }
+
+impl_as_ref_str!(ValueType);
 
 /// The name of a metamethod.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Display)]
@@ -94,11 +106,7 @@ impl MetaName {
     }
 }
 
-impl AsRef<str> for MetaName {
-    fn as_ref(&self) -> &str {
-        self.name()
-    }
-}
+impl_as_ref_str!(MetaName);
 
 /// The effect const value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -120,11 +128,7 @@ impl BuiltinEffect {
     }
 }
 
-impl AsRef<str> for BuiltinEffect {
-    fn as_ref(&self) -> &str {
-        self.name()
-    }
-}
+impl_as_ref_str!(BuiltinEffect);
 
 macro_rules! metamethod_default {
     (1, $name:ident, $meta_name:ident) => {

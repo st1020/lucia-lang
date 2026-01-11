@@ -13,17 +13,37 @@ use super::{
 /// Semantic information of a Lucia program.
 ///
 /// [`Semantic`] contains the results of analyzing a program, including the
-/// [function] table, [scope] tree and [symbol] table.
+/// [function] table, [scope] tree, [symbol] table and [reference] table.
 ///
 /// [function]: FunctionSemantic
 /// [scope]: Scope
 /// [symbol]: Symbol
+/// [reference]: Reference
 #[derive(Debug, Clone)]
 pub struct Semantic<S> {
     pub functions: IndexVec<FunctionId, FunctionSemantic>,
     pub scopes: IndexVec<ScopeId, Scope<S>>,
     pub symbols: IndexVec<SymbolId, Symbol<S>>,
     pub references: IndexVec<ReferenceId, Reference>,
+    pub globals: OrderMap<S, SymbolId, FxBuildHasher>,
+}
+
+impl<S> Semantic<S> {
+    pub fn new() -> Self {
+        Self {
+            functions: IndexVec::new(),
+            scopes: IndexVec::new(),
+            symbols: IndexVec::new(),
+            references: IndexVec::new(),
+            globals: OrderMap::with_hasher(FxBuildHasher),
+        }
+    }
+}
+
+impl<S> Default for Semantic<S> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// The semantic information of a function.
@@ -100,7 +120,6 @@ pub struct Symbol<S> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SymbolKind {
     Local,
-    Upvalue,
     Global,
 }
 
