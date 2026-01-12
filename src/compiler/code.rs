@@ -8,7 +8,10 @@ use itertools::Itertools;
 use crate::utils::Float;
 
 pub use super::ast::FunctionKind;
-use super::{opcode::OpCode, value::BuiltinEffect};
+use super::{
+    opcode::OpCode,
+    value::{BuiltinEffect, ValueType},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CodeParams<S> {
@@ -170,6 +173,21 @@ pub enum ConstValue<S> {
     /// An effect.
     #[from(skip)]
     Effect(EffectConst<S>),
+}
+
+impl<S> ConstValue<S> {
+    pub const fn value_type(&self) -> ValueType {
+        match self {
+            ConstValue::Null => ValueType::Null,
+            ConstValue::Bool(_) => ValueType::Bool,
+            ConstValue::Int(_) => ValueType::Int,
+            ConstValue::Float(_) => ValueType::Float,
+            ConstValue::Str(_) => ValueType::Str,
+            ConstValue::Bytes(_) => ValueType::Bytes,
+            ConstValue::Function(_) => ValueType::Function,
+            ConstValue::Effect(_) => ValueType::Effect,
+        }
+    }
 }
 
 impl<S: fmt::Display> fmt::Display for ConstValue<S> {

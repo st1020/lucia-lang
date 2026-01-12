@@ -180,6 +180,20 @@ impl OpCode {
         matches!(self, Self::StoreLocal(_) | Self::StoreGlobal(_))
     }
 
+    pub fn is_arithmetic(self) -> bool {
+        matches!(
+            self,
+            Self::Add | Self::Sub | Self::Mul | Self::Div | Self::Rem
+        )
+    }
+
+    pub fn is_comparison(self) -> bool {
+        matches!(
+            self,
+            Self::Eq | Self::Ne | Self::Gt | Self::Ge | Self::Lt | Self::Le
+        )
+    }
+
     pub fn is_jump(self) -> bool {
         matches!(
             self,

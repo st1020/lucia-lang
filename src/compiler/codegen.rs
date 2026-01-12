@@ -177,14 +177,7 @@ impl<'a, S: Clone + Eq + Hash> CodeGenerator<'a, S> {
     }
 
     fn push_code<T: Into<CodeMarker>>(&mut self, code: T) {
-        let code = code.into();
-        if code == CodeMarker::OpCode(OpCode::Pop)
-            && matches!(self.code().last().copied(), Some(CodeMarker::OpCode(opcode)) if opcode.is_load())
-        {
-            self.code().pop();
-        } else {
-            self.code().push(code);
-        }
+        self.code().push(code.into());
     }
 
     fn push_load_const<T: Into<ConstValue<S>>>(&mut self, value: T) {

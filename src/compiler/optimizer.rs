@@ -1,20 +1,19 @@
 //! Code optimizer.
 
-use std::rc::Rc;
+use std::{hash::Hash, rc::Rc};
 
-use ordermap::OrderMap;
+use ordermap::{OrderMap, OrderSet};
 use oxc_index::IndexVec;
 use rustc_hash::FxBuildHasher;
-
-use crate::compiler::ir::BasicBlock;
 
 use super::{
     code::{Code, ConstValue},
     index::FunctionId,
-    ir::FunctionIR,
+    ir::{BasicBlock, FunctionIR},
+    opcode::OpCode,
 };
 
-pub fn optimize<S: Clone>(ir: IndexVec<FunctionId, FunctionIR<S>>) -> Code<S> {
+pub fn optimize<S: Clone + Eq + Hash>(ir: IndexVec<FunctionId, FunctionIR<S>>) -> Code<S> {
     let mut codes = OrderMap::with_hasher(FxBuildHasher);
     for (function_id, function_ir) in ir.into_iter_enumerated().rev() {
         let code = optimize_function_ir(function_ir, &mut codes);
@@ -23,10 +22,15 @@ pub fn optimize<S: Clone>(ir: IndexVec<FunctionId, FunctionIR<S>>) -> Code<S> {
     codes.remove(&FunctionId::new(0)).unwrap()
 }
 
-fn optimize_function_ir<S: Clone>(
+fn optimize_function_ir<S: Clone + Eq + Hash>(
     mut function_ir: FunctionIR<S>,
     codes: &mut OrderMap<FunctionId, Code<S>, FxBuildHasher>,
 ) -> Code<S> {
+    for block in &mut function_ir.cfg.blocks {
+        constant_fold(block, &mut function_ir.consts);
+        eliminate_redundant_stack_ops(block);
+    }
+
     let mut consts = Vec::new();
     let mut const_codes = Vec::new();
     for const_value in function_ir.consts {
@@ -39,11 +43,6 @@ fn optimize_function_ir<S: Clone>(
             consts.push(const_value);
         }
     }
-
-    for block in &mut function_ir.cfg.blocks {
-        optimize_basic_block(block);
-    }
-
     Code {
         name: function_ir.name.clone(),
         params: function_ir.params.clone(),
@@ -58,7 +57,141 @@ fn optimize_function_ir<S: Clone>(
     }
 }
 
-#[expect(unused)]
-fn optimize_basic_block(block: &mut BasicBlock) {
-    // TODO: implement optimizations
+fn constant_fold<S: Clone + Eq + Hash>(
+    block: &mut BasicBlock,
+    consts: &mut OrderSet<ConstValue<S>, FxBuildHasher>,
+) {
+    let mut out = Vec::with_capacity(block.code.len());
+    let mut stack = Vec::new();
+    macro_rules! add_const {
+        ($value:ident) => {
+            if let Some(index) = consts.get_index_of(&$value) {
+                index
+            } else {
+                consts.insert($value);
+                consts.len() - 1
+            }
+        };
+    }
+    for opcode in block.code.iter().copied() {
+        #[expect(clippy::restriction)]
+        match opcode {
+            OpCode::LoadConst(i) => {
+                stack.push(consts.get_index(i).unwrap().clone());
+                out.push(opcode);
+            }
+            OpCode::Neg | OpCode::Not | OpCode::TypeCheck(_) => {
+                if let Some(v) = stack.pop()
+                    && let Some(res) = eval_unary(opcode, &v)
+                {
+                    out.pop();
+                    stack.push(res.clone());
+                    out.push(OpCode::LoadConst(add_const!(res)));
+                    continue;
+                }
+                stack.clear();
+                out.push(opcode);
+            }
+            _ if opcode.is_arithmetic() || opcode.is_comparison() => {
+                if let (Some(rhs), Some(lhs)) = (stack.pop(), stack.pop())
+                    && let Some(res) = eval_binary(opcode, &lhs, &rhs)
+                {
+                    out.pop();
+                    out.pop();
+                    stack.push(res.clone());
+                    out.push(OpCode::LoadConst(add_const!(res)));
+                    continue;
+                }
+                stack.clear();
+                out.push(opcode);
+            }
+            _ => {
+                stack.clear();
+                out.push(opcode);
+            }
+        }
+    }
+    block.code = out;
+}
+
+fn eval_unary<S>(opcode: OpCode, v: &ConstValue<S>) -> Option<ConstValue<S>> {
+    use ConstValue::{Bool, Float, Int};
+    match (opcode, v) {
+        (OpCode::Neg, Int(i)) => Some(Int(-i)),
+        (OpCode::Neg, Float(f)) => Some(Float(-f)),
+
+        (OpCode::Not, Bool(b)) => Some(Bool(!b)),
+
+        (OpCode::TypeCheck(t), _) => Some(Bool(v.value_type() == t)),
+
+        _ => None,
+    }
+}
+
+fn eval_binary<S: Eq>(
+    opcode: OpCode,
+    lhs: &ConstValue<S>,
+    rhs: &ConstValue<S>,
+) -> Option<ConstValue<S>> {
+    use ConstValue::{Bool, Bytes, Float, Int, Null, Str};
+    match (opcode, lhs, rhs) {
+        (OpCode::Add, Int(lhs), Int(rhs)) => Some(Int(i64::wrapping_add(*lhs, *rhs))),
+        (OpCode::Add, Float(lhs), Float(rhs)) => Some(Float(lhs + rhs)),
+
+        (OpCode::Sub, Int(lhs), Int(rhs)) => Some(Int(i64::wrapping_sub(*lhs, *rhs))),
+        (OpCode::Sub, Float(lhs), Float(rhs)) => Some(Float(lhs - rhs)),
+
+        (OpCode::Mul, Int(lhs), Int(rhs)) => Some(Int(i64::wrapping_mul(*lhs, *rhs))),
+        (OpCode::Mul, Float(lhs), Float(rhs)) => Some(Float(lhs * rhs)),
+
+        (OpCode::Div, Int(lhs), Int(rhs)) => Some(Int(i64::wrapping_div(*lhs, *rhs))),
+        (OpCode::Div, Float(lhs), Float(rhs)) => Some(Float(lhs / rhs)),
+
+        (OpCode::Rem, Int(lhs), Int(rhs)) => Some(Int(i64::wrapping_rem(*lhs, *rhs))),
+        (OpCode::Rem, Float(lhs), Float(rhs)) => Some(Float(lhs % rhs)),
+
+        (OpCode::Eq, Null, Null) => Some(Bool(true)),
+        (OpCode::Eq, Bool(lhs), Bool(rhs)) => Some(Bool(lhs == rhs)),
+        (OpCode::Eq, Int(lhs), Int(rhs)) => Some(Bool(lhs == rhs)),
+        (OpCode::Eq, Float(lhs), Float(rhs)) => Some(Bool(lhs == rhs)),
+        (OpCode::Eq, Str(lhs), Str(rhs)) => Some(Bool(lhs == rhs)),
+        (OpCode::Eq, Bytes(lhs), Bytes(rhs)) => Some(Bool(lhs == rhs)),
+
+        (OpCode::Ne, Null, Null) => Some(Bool(false)),
+        (OpCode::Ne, Bool(lhs), Bool(rhs)) => Some(Bool(lhs != rhs)),
+        (OpCode::Ne, Int(lhs), Int(rhs)) => Some(Bool(lhs != rhs)),
+        (OpCode::Ne, Float(lhs), Float(rhs)) => Some(Bool(lhs != rhs)),
+        (OpCode::Ne, Str(lhs), Str(rhs)) => Some(Bool(lhs != rhs)),
+        (OpCode::Ne, Bytes(lhs), Bytes(rhs)) => Some(Bool(lhs != rhs)),
+
+        (OpCode::Gt, Int(lhs), Int(rhs)) => Some(Bool(lhs > rhs)),
+        (OpCode::Gt, Float(lhs), Float(rhs)) => Some(Bool(lhs > rhs)),
+
+        (OpCode::Ge, Int(lhs), Int(rhs)) => Some(Bool(lhs >= rhs)),
+        (OpCode::Ge, Float(lhs), Float(rhs)) => Some(Bool(lhs >= rhs)),
+
+        (OpCode::Lt, Int(lhs), Int(rhs)) => Some(Bool(lhs < rhs)),
+        (OpCode::Lt, Float(lhs), Float(rhs)) => Some(Bool(lhs < rhs)),
+
+        (OpCode::Le, Int(lhs), Int(rhs)) => Some(Bool(lhs <= rhs)),
+        (OpCode::Le, Float(lhs), Float(rhs)) => Some(Bool(lhs <= rhs)),
+
+        _ => None,
+    }
+}
+
+fn eliminate_redundant_stack_ops(block: &mut BasicBlock) {
+    let mut out = Vec::with_capacity(block.code.len());
+    for opcode in block.code.iter().copied() {
+        if opcode == OpCode::Pop
+            && out
+                .last()
+                .is_some_and(|last| matches!(last, OpCode::Copy(_)) || last.is_load())
+        {
+            out.pop();
+        } else {
+            out.push(opcode);
+        }
+    }
+    block.code = out;
 }
