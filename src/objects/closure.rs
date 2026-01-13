@@ -1,7 +1,12 @@
 use std::rc::Rc;
 
+use oxc_index::IndexVec;
+
 use crate::{
-    compiler::code::{Code, UpvalueCapture},
+    compiler::{
+        code::{Code, UpvalueCapture},
+        index::UpvalueNameId,
+    },
     frame::LuciaFrame,
     objects::{Str, Value},
 };
@@ -11,12 +16,12 @@ pub type Closure = Rc<ClosureInner>;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ClosureInner {
     pub code: Rc<Code<Str>>,
-    pub upvalues: Vec<Value>,
+    pub upvalues: IndexVec<UpvalueNameId, Value>,
 }
 
 impl ClosureInner {
     pub fn new(code: Rc<Code<Str>>, frame: Option<&LuciaFrame>) -> Self {
-        let mut upvalues = Vec::with_capacity(code.upvalue_names.len());
+        let mut upvalues = IndexVec::with_capacity(code.upvalue_names.len());
 
         if let Some(frame) = frame {
             let base_locals = &frame.locals;

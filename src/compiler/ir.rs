@@ -4,14 +4,16 @@ use std::{fmt, iter};
 
 use itertools::Itertools;
 use ordermap::{OrderMap, OrderSet};
-use oxc_index::IndexVec;
+use oxc_index::{IndexVec, index_vec};
 use rustc_hash::FxBuildHasher;
+
+use crate::compiler::index::CodeId;
 
 use super::{
     code::{CodeParams, ConstValue, FunctionKind, UpvalueCapture},
     codegen::CodeMarker,
-    index::{BasicBlockId, SymbolId},
-    opcode::{JumpTarget, OpCode},
+    index::{BasicBlockId, FunctionId, LabelId, SymbolId},
+    opcode::OpCode,
 };
 
 #[derive(Debug, Clone)]
@@ -20,7 +22,7 @@ pub struct FunctionIR<S> {
     pub params: CodeParams<S>,
     pub kind: FunctionKind,
     pub cfg: ControlFlowGraph,
-    pub consts: OrderSet<ConstValue<S>, FxBuildHasher>,
+    pub consts: OrderSet<ConstValue<S, FunctionId>, FxBuildHasher>,
     pub local_names: OrderMap<SymbolId, S, FxBuildHasher>,
     pub global_names: OrderMap<SymbolId, S, FxBuildHasher>,
     pub upvalue_names: OrderMap<SymbolId, (S, UpvalueCapture), FxBuildHasher>,
@@ -35,23 +37,23 @@ pub struct ControlFlowGraph {
 impl ControlFlowGraph {
     pub(crate) fn from_bytecode(
         code: &[CodeMarker],
-        jump_target_count: usize,
+        label_count: usize,
         init_stack_size: usize,
     ) -> Self {
         let mut cfg = ControlFlowGraph::default();
 
         // Determine which jump targets are used
-        let mut jump_target_used = vec![false; jump_target_count];
+        let mut label_used = index_vec![false; label_count];
         for marker in code.iter().copied() {
             if let CodeMarker::OpCode(opcode) = marker
-                && let Some(JumpTarget(index)) = opcode.jump_target()
+                && let Some(index) = opcode.jump_target()
             {
-                jump_target_used[index] = true;
+                label_used[*index] = true;
             }
         }
 
         // Build basic blocks
-        let mut jump_target_to_basic_block_id = vec![BasicBlockId::new(0); jump_target_count];
+        let mut label_to_basic_block_id = index_vec![BasicBlockId::new(0); label_count];
         let mut current_block_id = cfg.blocks.push(BasicBlock::default());
         macro_rules! push_basic_block {
             () => {
@@ -68,14 +70,16 @@ impl ControlFlowGraph {
         for marker in code.iter().copied() {
             match marker {
                 CodeMarker::OpCode(opcode) => {
-                    cfg.blocks[current_block_id].code.push(opcode);
+                    cfg.blocks[current_block_id]
+                        .code
+                        .push(opcode.map_jump_target(BasicBlockId::from));
                     if opcode.is_jump() || opcode.is_return() {
                         push_basic_block!();
                     }
                 }
-                CodeMarker::JumpTarget(JumpTarget(i)) => {
-                    if jump_target_used[i] {
-                        jump_target_to_basic_block_id[i] = push_basic_block!();
+                CodeMarker::Label(i) => {
+                    if label_used[i] {
+                        label_to_basic_block_id[i] = push_basic_block!();
                     }
                 }
             }
@@ -84,13 +88,13 @@ impl ControlFlowGraph {
         // Set jump target and next block for each basic block
         for block in &mut cfg.blocks.iter_mut() {
             for opcode in &mut block.code {
-                if let Some(JumpTarget(i)) = opcode.jump_target_mut() {
-                    *i = jump_target_to_basic_block_id[*i].into();
+                if let Some(i) = opcode.jump_target_mut() {
+                    *i = label_to_basic_block_id[LabelId::from(*i)];
                 }
-                if let OpCode::Jump(JumpTarget(i)) = opcode {
+                if let OpCode::Jump(i) = opcode {
                     // Only set next block to jump target for unconditional jumps
                     // JumpBackEdge/Break/Continue should be ignored here
-                    block.next_block = Some(BasicBlockId::new(*i));
+                    block.next_block = Some(*i);
                 }
                 if opcode.is_return() {
                     block.next_block = None;
@@ -162,9 +166,9 @@ impl ControlFlowGraph {
                     OpCode::JumpIfTrueOrPop(_) | OpCode::JumpIfFalseOrPop(_) => {
                         next_stack_size -= 1;
                     }
-                    OpCode::RegisterHandler(JumpTarget(i)) => {
+                    OpCode::RegisterHandler(i) => {
                         next_stack_size -= 1;
-                        handler_block_stack.push((BasicBlockId::new(i), None));
+                        handler_block_stack.push((i, None));
                     }
                     OpCode::CheckEffect(i) => next_stack_size = next_stack_size + i - 1,
                     OpCode::MarkAddStackSize(i) => next_stack_size += i,
@@ -173,22 +177,17 @@ impl ControlFlowGraph {
             }
 
             #[expect(clippy::match_same_arms)]
-            let jump_target = match current_block.code.last() {
+            let jump_target = match current_block.code.last().copied() {
                 Some(OpCode::Jump(_)) => None, // Handled by next_block
-                Some(OpCode::JumpBackEdge(JumpTarget(i))) => {
-                    Some((BasicBlockId::new(*i), next_stack_size))
-                }
+                Some(OpCode::JumpBackEdge(i)) => Some((i, next_stack_size)),
                 Some(OpCode::Break(_) | OpCode::Continue(_)) => None, // Handled later
-                Some(OpCode::JumpPopIfNull(JumpTarget(i))) => {
-                    Some((BasicBlockId::new(*i), next_stack_size - 1))
+                Some(OpCode::JumpPopIfNull(i)) => Some((i, next_stack_size - 1)),
+                Some(OpCode::PopJumpIfTrue(i) | OpCode::PopJumpIfFalse(i)) => {
+                    Some((i, next_stack_size))
                 }
-                Some(
-                    OpCode::PopJumpIfTrue(JumpTarget(i)) | OpCode::PopJumpIfFalse(JumpTarget(i)),
-                ) => Some((BasicBlockId::new(*i), next_stack_size)),
-                Some(
-                    OpCode::JumpIfTrueOrPop(JumpTarget(i))
-                    | OpCode::JumpIfFalseOrPop(JumpTarget(i)),
-                ) => Some((BasicBlockId::new(*i), next_stack_size + 1)),
+                Some(OpCode::JumpIfTrueOrPop(i) | OpCode::JumpIfFalseOrPop(i)) => {
+                    Some((i, next_stack_size + 1))
+                }
                 _ => None,
             };
 
@@ -220,8 +219,8 @@ impl ControlFlowGraph {
         for block_id in cfg.blocks.indices().clone() {
             let current_end_stack_size = cfg.blocks[block_id].end_stack_size;
             match cfg.blocks[block_id].code.last().copied() {
-                Some(OpCode::Break(JumpTarget(i)) | OpCode::Continue(JumpTarget(i))) => {
-                    let target_start_stack_size = cfg.blocks[BasicBlockId::new(i)].start_stack_size;
+                Some(OpCode::Break(i) | OpCode::Continue(i)) => {
+                    let target_start_stack_size = cfg.blocks[i].start_stack_size;
                     if current_end_stack_size != target_start_stack_size {
                         let opcode = cfg.blocks[block_id].code.pop().unwrap();
                         cfg.blocks[block_id].code.extend(iter::repeat_n(
@@ -246,13 +245,18 @@ impl ControlFlowGraph {
         cfg
     }
 
-    pub(crate) fn to_bytecode(&self) -> Vec<OpCode> {
-        let mut code = Vec::new();
-        let mut jump_target_table = Vec::with_capacity(self.blocks.len());
+    pub(crate) fn to_bytecode(&self) -> IndexVec<CodeId, OpCode<CodeId>> {
+        let mut code = IndexVec::new();
+        let mut basic_block_id_to_code_id = index_vec![CodeId::new(0); self.blocks.len()];
         for (current_block_id, block) in self.blocks.iter_enumerated() {
-            jump_target_table.push(code.len());
+            basic_block_id_to_code_id[current_block_id] = CodeId::new(code.len());
             if block.reachable {
-                code.extend(block.code.clone());
+                code.extend(
+                    block
+                        .code
+                        .iter()
+                        .map(|opcode| opcode.map_jump_target(CodeId::from)),
+                );
                 if let Some(next_block_id) = block.next_block {
                     match (
                         next_block_id == current_block_id + 1,
@@ -262,7 +266,7 @@ impl ControlFlowGraph {
                             code.pop();
                         }
                         (false, false) => {
-                            code.push(OpCode::Jump(JumpTarget(next_block_id.into())));
+                            code.push(OpCode::Jump(next_block_id.into()));
                         }
                         _ => (),
                     }
@@ -270,8 +274,8 @@ impl ControlFlowGraph {
             }
         }
         for opcode in &mut code {
-            if let Some(JumpTarget(jump_target)) = opcode.jump_target_mut() {
-                *jump_target = jump_target_table[*jump_target];
+            if let Some(i) = opcode.jump_target_mut() {
+                *i = basic_block_id_to_code_id[BasicBlockId::from(*i)];
             }
         }
         code
@@ -280,7 +284,7 @@ impl ControlFlowGraph {
 
 #[derive(Debug, Clone, Default)]
 pub struct BasicBlock {
-    pub code: Vec<OpCode>,
+    pub code: Vec<OpCode<BasicBlockId>>,
     pub next_block: Option<BasicBlockId>,
     pub start_stack_size: usize,
     pub end_stack_size: usize,

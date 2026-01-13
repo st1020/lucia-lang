@@ -8,7 +8,7 @@ use rustc_hash::FxBuildHasher;
 
 use super::{
     code::{Code, ConstValue},
-    index::FunctionId,
+    index::{BasicBlockId, ConstCodeId, ConstId, FunctionId},
     ir::{BasicBlock, FunctionIR},
     opcode::OpCode,
 };
@@ -31,17 +31,22 @@ fn optimize_function_ir<S: Clone + Eq + Hash>(
         eliminate_redundant_stack_ops(block);
     }
 
-    let mut consts = Vec::new();
-    let mut const_codes = Vec::new();
+    let mut consts = IndexVec::with_capacity(function_ir.consts.len());
+    let mut const_codes = IndexVec::new();
     for const_value in function_ir.consts {
-        if let ConstValue::Function(id) = const_value {
-            const_codes.push(Rc::new(
-                codes.remove(&FunctionId::from(id)).unwrap().clone(),
-            ));
-            consts.push(ConstValue::Function(const_codes.len() - 1));
-        } else {
-            consts.push(const_value);
-        }
+        consts.push(match const_value {
+            ConstValue::Null => ConstValue::Null,
+            ConstValue::Bool(v) => ConstValue::Bool(v),
+            ConstValue::Int(v) => ConstValue::Int(v),
+            ConstValue::Float(v) => ConstValue::Float(v),
+            ConstValue::Str(v) => ConstValue::Str(v),
+            ConstValue::Bytes(v) => ConstValue::Bytes(v),
+            ConstValue::Function(id) => {
+                const_codes.push(Rc::new(codes.remove(&id).unwrap().clone()));
+                ConstValue::Function(ConstCodeId::new(const_codes.len() - 1))
+            }
+            ConstValue::Effect(v) => ConstValue::Effect(v),
+        });
     }
     Code {
         name: function_ir.name.clone(),
@@ -59,25 +64,25 @@ fn optimize_function_ir<S: Clone + Eq + Hash>(
 
 fn constant_fold<S: Clone + Eq + Hash>(
     block: &mut BasicBlock,
-    consts: &mut OrderSet<ConstValue<S>, FxBuildHasher>,
+    consts: &mut OrderSet<ConstValue<S, FunctionId>, FxBuildHasher>,
 ) {
     let mut out = Vec::with_capacity(block.code.len());
     let mut stack = Vec::new();
     macro_rules! add_const {
         ($value:ident) => {
-            if let Some(index) = consts.get_index_of(&$value) {
+            ConstId::new(if let Some(index) = consts.get_index_of(&$value) {
                 index
             } else {
                 consts.insert($value);
                 consts.len() - 1
-            }
+            })
         };
     }
     for opcode in block.code.iter().copied() {
         #[expect(clippy::restriction)]
         match opcode {
             OpCode::LoadConst(i) => {
-                stack.push(consts.get_index(i).unwrap().clone());
+                stack.push(consts.get_index(i.index()).unwrap().clone());
                 out.push(opcode);
             }
             OpCode::Neg | OpCode::Not | OpCode::TypeCheck(_) => {
@@ -114,7 +119,10 @@ fn constant_fold<S: Clone + Eq + Hash>(
     block.code = out;
 }
 
-fn eval_unary<S>(opcode: OpCode, v: &ConstValue<S>) -> Option<ConstValue<S>> {
+fn eval_unary<S>(
+    opcode: OpCode<BasicBlockId>,
+    v: &ConstValue<S, FunctionId>,
+) -> Option<ConstValue<S, FunctionId>> {
     use ConstValue::{Bool, Float, Int};
     match (opcode, v) {
         (OpCode::Neg, Int(i)) => Some(Int(-i)),
@@ -129,10 +137,10 @@ fn eval_unary<S>(opcode: OpCode, v: &ConstValue<S>) -> Option<ConstValue<S>> {
 }
 
 fn eval_binary<S: Eq>(
-    opcode: OpCode,
-    lhs: &ConstValue<S>,
-    rhs: &ConstValue<S>,
-) -> Option<ConstValue<S>> {
+    opcode: OpCode<BasicBlockId>,
+    lhs: &ConstValue<S, FunctionId>,
+    rhs: &ConstValue<S, FunctionId>,
+) -> Option<ConstValue<S, FunctionId>> {
     use ConstValue::{Bool, Bytes, Float, Int, Null, Str};
     match (opcode, lhs, rhs) {
         (OpCode::Add, Int(lhs), Int(rhs)) => Some(Int(i64::wrapping_add(*lhs, *rhs))),

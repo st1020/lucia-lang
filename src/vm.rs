@@ -4,11 +4,7 @@ use std::rc::Rc;
 
 use crate::{
     Context,
-    compiler::{
-        code::ConstValue,
-        opcode::{JumpTarget, OpCode},
-        value::MetaMethod,
-    },
+    compiler::{code::ConstValue, opcode::OpCode, value::MetaMethod},
     errors::Error,
     executor::ExecutorInner,
     frame::{EffectHandlerInfo, Frame},
@@ -258,19 +254,19 @@ impl ExecutorInner {
                 }
                 OpCode::LoadLocals => {
                     let mut table = TableInner::new();
-                    for i in 0..code.local_names.len() {
+                    for i in code.local_names.indices() {
                         table.set(Rc::clone(&code.local_names[i]), frame.locals[i].clone());
                     }
                     frame.stack.push(table.into());
                 }
-                OpCode::Jump(JumpTarget(i))
-                | OpCode::JumpBackEdge(JumpTarget(i))
-                | OpCode::Break(JumpTarget(i))
-                | OpCode::Continue(JumpTarget(i)) => {
+                OpCode::Jump(i)
+                | OpCode::JumpBackEdge(i)
+                | OpCode::Break(i)
+                | OpCode::Continue(i) => {
                     frame.pc = i;
                     continue;
                 }
-                OpCode::JumpPopIfNull(JumpTarget(i)) => {
+                OpCode::JumpPopIfNull(i) => {
                     let value = frame.stack.last().cloned().unwrap();
                     if let Value::Null = value {
                         frame.stack.pop().unwrap();
@@ -278,7 +274,7 @@ impl ExecutorInner {
                         continue;
                     }
                 }
-                OpCode::PopJumpIfTrue(JumpTarget(i)) => {
+                OpCode::PopJumpIfTrue(i) => {
                     let value = frame.stack.pop().unwrap();
                     #[expect(clippy::wildcard_enum_match_arm)]
                     match value {
@@ -290,7 +286,7 @@ impl ExecutorInner {
                         _ => return Err(operator_error!(opcode, value)),
                     }
                 }
-                OpCode::PopJumpIfFalse(JumpTarget(i)) => {
+                OpCode::PopJumpIfFalse(i) => {
                     let value = frame.stack.pop().unwrap();
                     #[expect(clippy::wildcard_enum_match_arm)]
                     match value {
@@ -302,7 +298,7 @@ impl ExecutorInner {
                         _ => return Err(operator_error!(opcode, value)),
                     }
                 }
-                OpCode::JumpIfTrueOrPop(JumpTarget(i)) => {
+                OpCode::JumpIfTrueOrPop(i) => {
                     let value = frame.stack.last().cloned().unwrap();
                     #[expect(clippy::wildcard_enum_match_arm)]
                     match value {
@@ -316,7 +312,7 @@ impl ExecutorInner {
                         _ => return Err(operator_error!(opcode, value)),
                     }
                 }
-                OpCode::JumpIfFalseOrPop(JumpTarget(i)) => {
+                OpCode::JumpIfFalseOrPop(i) => {
                     let value = frame.stack.last().cloned().unwrap();
                     #[expect(clippy::wildcard_enum_match_arm)]
                     match value {
@@ -330,7 +326,7 @@ impl ExecutorInner {
                         _ => return Err(operator_error!(opcode, value)),
                     }
                 }
-                OpCode::RegisterHandler(JumpTarget(i)) => {
+                OpCode::RegisterHandler(i) => {
                     let effect = frame.stack.pop().unwrap();
                     if let Value::Effect(effect) = effect {
                         frame.effect_handlers.insert(

@@ -6,7 +6,7 @@ use compact_str::CompactString;
 use thiserror::Error;
 
 use crate::{
-    compiler::{opcode::OpCode, value::MetaName},
+    compiler::{index::CodeId, opcode::OpCode, value::MetaName},
     objects::{ArgumentRange, Effect, Value, ValueType},
 };
 
@@ -32,12 +32,12 @@ pub enum Error {
     },
     #[error("operator error (unsupported operand type for {operator}: {operand})")]
     UnOperator {
-        operator: OpCode,
+        operator: OpCode<CodeId>,
         operand: ValueType,
     },
     #[error("operator error (unsupported operand types for {operator}: {} and {})", .operand.0, .operand.1)]
     BinOperator {
-        operator: OpCode,
+        operator: OpCode<CodeId>,
         operand: (ValueType, ValueType),
     },
     #[error("operator error (unsupported operand type for {operator}: {operand})")]

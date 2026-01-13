@@ -2,15 +2,14 @@
 
 use std::fmt;
 
-use super::value::ValueType;
-
-/// The jump target.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct JumpTarget(pub usize);
+use super::{
+    index::{ConstId, GlobalNameId, LocalNameId, UpvalueNameId},
+    value::ValueType,
+};
 
 /// The operation code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum OpCode {
+pub enum OpCode<JumpTarget> {
     /// Removes the top-of-stack item, `STACK.pop()`.
     Pop,
     /// Push the i-th item to the top of the stack without removing it from its original location.
@@ -20,17 +19,17 @@ pub enum OpCode {
     /// `STACK[-i], STACK[-1] = STACK[-1], STACK[-i]`.
     Swap(usize),
     /// Pushes the value associated with `local_names[namei]` onto the stack.
-    LoadLocal(usize),
+    LoadLocal(LocalNameId),
     /// Pushes the value associated with `global_names[namei]` onto the stack.
-    LoadGlobal(usize),
+    LoadGlobal(GlobalNameId),
     /// Pushes the value associated with `upvalue_names[namei]` onto the stack.
-    LoadUpvalue(usize),
+    LoadUpvalue(UpvalueNameId),
     /// Pushes `consts[consti]` onto the stack.
-    LoadConst(usize),
+    LoadConst(ConstId),
     /// Stores `STACK.pop()` into the `local_names[namei]`.
-    StoreLocal(usize),
+    StoreLocal(LocalNameId),
     /// Stores `STACK.pop()` into the `global_names[namei]`.
-    StoreGlobal(usize),
+    StoreGlobal(GlobalNameId),
 
     /// Pushes a new table onto the stack. Pops `2 * count` items to build table.
     BuildTable(usize),
@@ -119,9 +118,9 @@ pub enum OpCode {
     GetLen,
 
     /// Imports the module `consts[consti]` and pushed it onto the stack.
-    Import(usize),
+    Import(ConstId),
     /// Loads the attribute `consts[consti]` the module in `STACK[-1]` and pushed it onto the stack.
-    ImportFrom(usize),
+    ImportFrom(ConstId),
     /// Loads all symbols from the module in `STACK[-1]` to the global namespace.
     ImportGlob,
 
@@ -168,7 +167,7 @@ pub enum OpCode {
     MarkAddStackSize(usize),
 }
 
-impl OpCode {
+impl<JumpTarget> OpCode<JumpTarget> {
     pub fn is_load(self) -> bool {
         matches!(
             self,
@@ -213,7 +212,7 @@ impl OpCode {
         matches!(self, Self::Return | Self::ReturnCall(_))
     }
 
-    pub fn jump_target(&self) -> Option<JumpTarget> {
+    pub fn jump_target(&self) -> Option<&JumpTarget> {
         #[expect(clippy::wildcard_enum_match_arm)]
         match self {
             Self::Jump(target)
@@ -225,7 +224,7 @@ impl OpCode {
             | Self::PopJumpIfFalse(target)
             | Self::JumpIfTrueOrPop(target)
             | Self::JumpIfFalseOrPop(target)
-            | Self::RegisterHandler(target) => Some(*target),
+            | Self::RegisterHandler(target) => Some(target),
             _ => None,
         }
     }
@@ -246,9 +245,70 @@ impl OpCode {
             _ => None,
         }
     }
+
+    #[inline]
+    pub fn map_jump_target<U, F>(self, f: F) -> OpCode<U>
+    where
+        F: FnOnce(JumpTarget) -> U,
+    {
+        match self {
+            OpCode::Pop => OpCode::Pop,
+            OpCode::Copy(i) => OpCode::Copy(i),
+            OpCode::Swap(i) => OpCode::Swap(i),
+            OpCode::LoadLocal(i) => OpCode::LoadLocal(i),
+            OpCode::LoadGlobal(i) => OpCode::LoadGlobal(i),
+            OpCode::LoadUpvalue(i) => OpCode::LoadUpvalue(i),
+            OpCode::LoadConst(i) => OpCode::LoadConst(i),
+            OpCode::StoreLocal(i) => OpCode::StoreLocal(i),
+            OpCode::StoreGlobal(i) => OpCode::StoreGlobal(i),
+            OpCode::BuildTable(i) => OpCode::BuildTable(i),
+            OpCode::BuildList(i) => OpCode::BuildList(i),
+            OpCode::GetAttr => OpCode::GetAttr,
+            OpCode::GetItem => OpCode::GetItem,
+            OpCode::GetMeta => OpCode::GetMeta,
+            OpCode::SetAttr => OpCode::SetAttr,
+            OpCode::SetItem => OpCode::SetItem,
+            OpCode::SetMeta => OpCode::SetMeta,
+            OpCode::Neg => OpCode::Neg,
+            OpCode::Not => OpCode::Not,
+            OpCode::Add => OpCode::Add,
+            OpCode::Sub => OpCode::Sub,
+            OpCode::Mul => OpCode::Mul,
+            OpCode::Div => OpCode::Div,
+            OpCode::Rem => OpCode::Rem,
+            OpCode::Eq => OpCode::Eq,
+            OpCode::Ne => OpCode::Ne,
+            OpCode::Gt => OpCode::Gt,
+            OpCode::Ge => OpCode::Ge,
+            OpCode::Lt => OpCode::Lt,
+            OpCode::Le => OpCode::Le,
+            OpCode::TypeCheck(i) => OpCode::TypeCheck(i),
+            OpCode::GetLen => OpCode::GetLen,
+            OpCode::Import(i) => OpCode::Import(i),
+            OpCode::ImportFrom(i) => OpCode::ImportFrom(i),
+            OpCode::ImportGlob => OpCode::ImportGlob,
+            OpCode::Iter => OpCode::Iter,
+            OpCode::Call(i) => OpCode::Call(i),
+            OpCode::Return => OpCode::Return,
+            OpCode::ReturnCall(i) => OpCode::ReturnCall(i),
+            OpCode::LoadLocals => OpCode::LoadLocals,
+            OpCode::Jump(i) => OpCode::Jump(f(i)),
+            OpCode::JumpBackEdge(i) => OpCode::JumpBackEdge(f(i)),
+            OpCode::Break(i) => OpCode::Break(f(i)),
+            OpCode::Continue(i) => OpCode::Continue(f(i)),
+            OpCode::JumpPopIfNull(i) => OpCode::JumpPopIfNull(f(i)),
+            OpCode::PopJumpIfTrue(i) => OpCode::PopJumpIfTrue(f(i)),
+            OpCode::PopJumpIfFalse(i) => OpCode::PopJumpIfFalse(f(i)),
+            OpCode::JumpIfTrueOrPop(i) => OpCode::JumpIfTrueOrPop(f(i)),
+            OpCode::JumpIfFalseOrPop(i) => OpCode::JumpIfFalseOrPop(f(i)),
+            OpCode::RegisterHandler(i) => OpCode::RegisterHandler(f(i)),
+            OpCode::CheckEffect(i) => OpCode::CheckEffect(i),
+            OpCode::MarkAddStackSize(i) => OpCode::MarkAddStackSize(i),
+        }
+    }
 }
 
-impl fmt::Display for OpCode {
+impl<JumpTarget: fmt::Display> fmt::Display for OpCode<JumpTarget> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         const WIDTH: usize = 20;
         match self {
@@ -292,18 +352,18 @@ impl fmt::Display for OpCode {
             Self::Return => write!(f, "Return"),
             Self::ReturnCall(i) => write!(f, "{:WIDTH$}{}", "ReturnCall", i),
             Self::LoadLocals => write!(f, "LoadLocals"),
-            Self::Jump(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "Jump", i),
-            Self::JumpBackEdge(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "JumpBackEdge", i),
-            Self::Break(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "Break", i),
-            Self::Continue(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "Continue", i),
-            Self::JumpPopIfNull(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "JumpPopIfNull", i),
-            Self::PopJumpIfTrue(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "PopJumpIfTrue", i),
-            Self::PopJumpIfFalse(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "PopJumpIfFalse", i),
-            Self::JumpIfTrueOrPop(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "JumpIfTrueOrPop", i),
-            Self::JumpIfFalseOrPop(JumpTarget(i)) => {
+            Self::Jump(i) => write!(f, "{:WIDTH$}{}", "Jump", i),
+            Self::JumpBackEdge(i) => write!(f, "{:WIDTH$}{}", "JumpBackEdge", i),
+            Self::Break(i) => write!(f, "{:WIDTH$}{}", "Break", i),
+            Self::Continue(i) => write!(f, "{:WIDTH$}{}", "Continue", i),
+            Self::JumpPopIfNull(i) => write!(f, "{:WIDTH$}{}", "JumpPopIfNull", i),
+            Self::PopJumpIfTrue(i) => write!(f, "{:WIDTH$}{}", "PopJumpIfTrue", i),
+            Self::PopJumpIfFalse(i) => write!(f, "{:WIDTH$}{}", "PopJumpIfFalse", i),
+            Self::JumpIfTrueOrPop(i) => write!(f, "{:WIDTH$}{}", "JumpIfTrueOrPop", i),
+            Self::JumpIfFalseOrPop(i) => {
                 write!(f, "{:WIDTH$}{}", "JumpIfFalseOrPop", i)
             }
-            Self::RegisterHandler(JumpTarget(i)) => write!(f, "{:WIDTH$}{}", "RegisterHandler", i),
+            Self::RegisterHandler(i) => write!(f, "{:WIDTH$}{}", "RegisterHandler", i),
             Self::CheckEffect(i) => write!(f, "{:WIDTH$}{}", "MatchEffect", i),
             Self::MarkAddStackSize(i) => write!(f, "{:WIDTH$}{}", "MarkStackSize", i),
         }

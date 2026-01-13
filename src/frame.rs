@@ -2,16 +2,20 @@ use std::{cmp::Ordering, fmt};
 
 use itertools::Itertools;
 use ordermap::OrderMap;
+use oxc_index::{IndexVec, index_vec};
 
 use crate::{
-    compiler::code::CodeParamsInfo,
+    compiler::{
+        code::CodeParamsInfo,
+        index::{CodeId, LocalNameId},
+    },
     errors::Error,
     objects::{Callback, Closure, Effect, TableInner, Value},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EffectHandlerInfo {
-    pub jump_target: usize,
+    pub jump_target: CodeId,
     pub stack_size: usize,
 }
 
@@ -37,9 +41,9 @@ pub enum Frame {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LuciaFrame {
-    pub pc: usize,
+    pub pc: CodeId,
     pub closure: Closure,
-    pub locals: Vec<Value>,
+    pub locals: IndexVec<LocalNameId, Value>,
     pub stack: Vec<Value>,
     pub effect_handlers: OrderMap<Effect, EffectHandlerInfo>,
 }
@@ -82,8 +86,8 @@ impl LuciaFrame {
             .info()
             .parse_args_to_stack(&mut stack, args)?;
         Ok(LuciaFrame {
-            pc: 0,
-            locals: vec![Value::Null; closure.code.local_names.len()],
+            pc: CodeId::new(0),
+            locals: index_vec![Value::Null; closure.code.local_names.len()],
             stack,
             closure,
             effect_handlers: OrderMap::new(),
