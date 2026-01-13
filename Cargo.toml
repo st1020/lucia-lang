@@ -14,7 +14,7 @@ lucia-lang = { path = "./" }
 text-size = "1"
 compact_str = "0.9"
 unicode-ident = "1"
-rustc-literal-escaper = "0.0.5"
+rustc-literal-escaper = "0.0.7"
 # Data Structure
 itertools = "0.14"
 derive_more = { version = "2", features = [
