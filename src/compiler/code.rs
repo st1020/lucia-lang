@@ -195,14 +195,14 @@ impl<S, F> ConstValue<S, F> {
 impl<S: fmt::Display, F: fmt::Display> fmt::Display for ConstValue<S, F> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Null => write!(f, "null"),
-            Self::Bool(v) => write!(f, "{v}"),
-            Self::Int(v) => write!(f, "{v}"),
-            Self::Float(v) => write!(f, "{v}"),
-            Self::Str(v) => write!(f, "{v}"),
-            Self::Bytes(v) => write!(f, "b\"{}\"", v.escape_ascii()),
-            Self::Function(v) => write!(f, "<code {v}>"),
-            Self::Effect(v) => write!(f, "{v}"),
+            ConstValue::Null => write!(f, "null"),
+            ConstValue::Bool(v) => write!(f, "{v}"),
+            ConstValue::Int(v) => write!(f, "{v}"),
+            ConstValue::Float(v) => write!(f, "{v}"),
+            ConstValue::Str(v) => write!(f, "{v}"),
+            ConstValue::Bytes(v) => write!(f, "b\"{}\"", v.escape_ascii()),
+            ConstValue::Function(v) => write!(f, "<code {v}>"),
+            ConstValue::Effect(v) => write!(f, "{v}"),
         }
     }
 }
@@ -226,8 +226,8 @@ pub enum EffectConst<S> {
 impl<S: fmt::Display> fmt::Display for EffectConst<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::User(v) => write!(f, "{v}"),
-            Self::Builtin(v) => write!(f, "effect {}(...)", v.name()),
+            EffectConst::User(v) => write!(f, "{v}"),
+            EffectConst::Builtin(v) => write!(f, "effect {}(...)", v.name()),
         }
     }
 }

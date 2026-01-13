@@ -212,21 +212,24 @@ impl TokenKind {
     pub fn is_trivia(self) -> bool {
         matches!(
             self,
-            Self::LineComment | Self::BlockComment | Self::Whitespace | Self::EscapedNewline
+            TokenKind::LineComment
+                | TokenKind::BlockComment
+                | TokenKind::Whitespace
+                | TokenKind::EscapedNewline
         )
     }
 
     pub fn is_error(self) -> bool {
         matches!(
             self,
-            Self::Unknown
-                | Self::UnterminatedBlockComment
-                | Self::EmptyInt
-                | Self::EmptyExponentFloat
-                | Self::NonDecimalFloat
-                | Self::UnterminatedStr
-                | Self::UnterminatedRawStr
-                | Self::UnterminatedByteStr
+            TokenKind::Unknown
+                | TokenKind::UnterminatedBlockComment
+                | TokenKind::EmptyInt
+                | TokenKind::EmptyExponentFloat
+                | TokenKind::NonDecimalFloat
+                | TokenKind::UnterminatedStr
+                | TokenKind::UnterminatedRawStr
+                | TokenKind::UnterminatedByteStr
         )
     }
 }

@@ -43,8 +43,8 @@ impl Value {
     pub fn metatable(self) -> Option<Table> {
         #[expect(clippy::wildcard_enum_match_arm)]
         match self {
-            Self::Table(t) => t.metatable(),
-            Self::UserData(u) => u.metatable(),
+            Value::Table(t) => t.metatable(),
+            Value::UserData(u) => u.metatable(),
             _ => None,
         }
     }
@@ -52,28 +52,28 @@ impl Value {
     #[expect(clippy::as_conversions)]
     pub fn id(&self) -> Option<NonZeroUsize> {
         match self {
-            Self::Null | Self::Bool(_) | Self::Int(_) | Self::Float(_) => None,
-            Self::Str(v) => NonZeroUsize::new(Rc::as_ptr(v).cast::<()>() as usize),
-            Self::Bytes(v) => NonZeroUsize::new(Rc::as_ptr(v).cast::<()>() as usize),
-            Self::Table(v) => NonZeroUsize::new(Rc::as_ptr(v) as usize),
-            Self::Function(v) => NonZeroUsize::new(v.const_ptr() as usize),
-            Self::Effect(v) => NonZeroUsize::new(Rc::as_ptr(v) as usize),
-            Self::UserData(v) => NonZeroUsize::new(Rc::as_ptr(v) as usize),
+            Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) => None,
+            Value::Str(v) => NonZeroUsize::new(Rc::as_ptr(v).cast::<()>() as usize),
+            Value::Bytes(v) => NonZeroUsize::new(Rc::as_ptr(v).cast::<()>() as usize),
+            Value::Table(v) => NonZeroUsize::new(Rc::as_ptr(v) as usize),
+            Value::Function(v) => NonZeroUsize::new(v.const_ptr() as usize),
+            Value::Effect(v) => NonZeroUsize::new(Rc::as_ptr(v) as usize),
+            Value::UserData(v) => NonZeroUsize::new(Rc::as_ptr(v) as usize),
         }
     }
 
     pub const fn value_type(&self) -> ValueType {
         match self {
-            Self::Null => ValueType::Null,
-            Self::Bool(_) => ValueType::Bool,
-            Self::Int(_) => ValueType::Int,
-            Self::Float(_) => ValueType::Float,
-            Self::Str(_) => ValueType::Str,
-            Self::Bytes(_) => ValueType::Bytes,
-            Self::Table(_) => ValueType::Table,
-            Self::Function(_) => ValueType::Function,
-            Self::Effect(_) => ValueType::Effect,
-            Self::UserData(_) => ValueType::UserData,
+            Value::Null => ValueType::Null,
+            Value::Bool(_) => ValueType::Bool,
+            Value::Int(_) => ValueType::Int,
+            Value::Float(_) => ValueType::Float,
+            Value::Str(_) => ValueType::Str,
+            Value::Bytes(_) => ValueType::Bytes,
+            Value::Table(_) => ValueType::Table,
+            Value::Function(_) => ValueType::Function,
+            Value::Effect(_) => ValueType::Effect,
+            Value::UserData(_) => ValueType::UserData,
         }
     }
 }

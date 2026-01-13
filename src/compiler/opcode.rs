@@ -18,17 +18,17 @@ pub enum OpCode<JumpTarget> {
     /// Swap the top of the stack with the i-th element.
     /// `STACK[-i], STACK[-1] = STACK[-1], STACK[-i]`.
     Swap(usize),
-    /// Pushes the value associated with `local_names[namei]` onto the stack.
+    /// Pushes the value associated with `local_names[local_name_id]` onto the stack.
     LoadLocal(LocalNameId),
-    /// Pushes the value associated with `global_names[namei]` onto the stack.
+    /// Pushes the value associated with `global_names[global_name_id]` onto the stack.
     LoadGlobal(GlobalNameId),
-    /// Pushes the value associated with `upvalue_names[namei]` onto the stack.
+    /// Pushes the value associated with `upvalue_names[upvalue_name_id]` onto the stack.
     LoadUpvalue(UpvalueNameId),
-    /// Pushes `consts[consti]` onto the stack.
+    /// Pushes `consts[const_id]` onto the stack.
     LoadConst(ConstId),
-    /// Stores `STACK.pop()` into the `local_names[namei]`.
+    /// Stores `STACK.pop()` into the `local_names[local_name_id]`.
     StoreLocal(LocalNameId),
-    /// Stores `STACK.pop()` into the `global_names[namei]`.
+    /// Stores `STACK.pop()` into the `global_names[global_name_id]`.
     StoreGlobal(GlobalNameId),
 
     /// Pushes a new table onto the stack. Pops `2 * count` items to build table.
@@ -117,9 +117,10 @@ pub enum OpCode<JumpTarget> {
     /// Implements `STACK[-1] = len(STACK[-1])`.
     GetLen,
 
-    /// Imports the module `consts[consti]` and pushed it onto the stack.
+    /// Imports the module `consts[const_id]` and pushed it onto the stack.
     Import(ConstId),
-    /// Loads the attribute `consts[consti]` the module in `STACK[-1]` and pushed it onto the stack.
+    /// Loads the attribute `consts[const_id]` of the module in `STACK[-1]` and pushed it onto the
+    /// stack.
     ImportFrom(ConstId),
     /// Loads all symbols from the module in `STACK[-1]` to the global namespace.
     ImportGlob,
@@ -171,60 +172,63 @@ impl<JumpTarget> OpCode<JumpTarget> {
     pub fn is_load(self) -> bool {
         matches!(
             self,
-            Self::LoadLocal(_) | Self::LoadGlobal(_) | Self::LoadUpvalue(_) | Self::LoadConst(_)
+            OpCode::LoadLocal(_)
+                | OpCode::LoadGlobal(_)
+                | OpCode::LoadUpvalue(_)
+                | OpCode::LoadConst(_)
         )
     }
 
     pub fn is_store(self) -> bool {
-        matches!(self, Self::StoreLocal(_) | Self::StoreGlobal(_))
+        matches!(self, OpCode::StoreLocal(_) | OpCode::StoreGlobal(_))
     }
 
     pub fn is_arithmetic(self) -> bool {
         matches!(
             self,
-            Self::Add | Self::Sub | Self::Mul | Self::Div | Self::Rem
+            OpCode::Add | OpCode::Sub | OpCode::Mul | OpCode::Div | OpCode::Rem
         )
     }
 
     pub fn is_comparison(self) -> bool {
         matches!(
             self,
-            Self::Eq | Self::Ne | Self::Gt | Self::Ge | Self::Lt | Self::Le
+            OpCode::Eq | OpCode::Ne | OpCode::Gt | OpCode::Ge | OpCode::Lt | OpCode::Le
         )
     }
 
     pub fn is_jump(self) -> bool {
         matches!(
             self,
-            Self::Jump(_)
-                | Self::JumpBackEdge(_)
-                | Self::Break(_)
-                | Self::Continue(_)
-                | Self::JumpPopIfNull(_)
-                | Self::PopJumpIfTrue(_)
-                | Self::PopJumpIfFalse(_)
-                | Self::JumpIfTrueOrPop(_)
-                | Self::JumpIfFalseOrPop(_)
+            OpCode::Jump(_)
+                | OpCode::JumpBackEdge(_)
+                | OpCode::Break(_)
+                | OpCode::Continue(_)
+                | OpCode::JumpPopIfNull(_)
+                | OpCode::PopJumpIfTrue(_)
+                | OpCode::PopJumpIfFalse(_)
+                | OpCode::JumpIfTrueOrPop(_)
+                | OpCode::JumpIfFalseOrPop(_)
         )
     }
 
     pub fn is_return(self) -> bool {
-        matches!(self, Self::Return | Self::ReturnCall(_))
+        matches!(self, OpCode::Return | OpCode::ReturnCall(_))
     }
 
     pub fn jump_target(&self) -> Option<&JumpTarget> {
         #[expect(clippy::wildcard_enum_match_arm)]
         match self {
-            Self::Jump(target)
-            | Self::JumpBackEdge(target)
-            | Self::Break(target)
-            | Self::Continue(target)
-            | Self::JumpPopIfNull(target)
-            | Self::PopJumpIfTrue(target)
-            | Self::PopJumpIfFalse(target)
-            | Self::JumpIfTrueOrPop(target)
-            | Self::JumpIfFalseOrPop(target)
-            | Self::RegisterHandler(target) => Some(target),
+            OpCode::Jump(target)
+            | OpCode::JumpBackEdge(target)
+            | OpCode::Break(target)
+            | OpCode::Continue(target)
+            | OpCode::JumpPopIfNull(target)
+            | OpCode::PopJumpIfTrue(target)
+            | OpCode::PopJumpIfFalse(target)
+            | OpCode::JumpIfTrueOrPop(target)
+            | OpCode::JumpIfFalseOrPop(target)
+            | OpCode::RegisterHandler(target) => Some(target),
             _ => None,
         }
     }
@@ -232,16 +236,16 @@ impl<JumpTarget> OpCode<JumpTarget> {
     pub fn jump_target_mut(&mut self) -> Option<&mut JumpTarget> {
         #[expect(clippy::wildcard_enum_match_arm)]
         match self {
-            Self::Jump(target)
-            | Self::JumpBackEdge(target)
-            | Self::Break(target)
-            | Self::Continue(target)
-            | Self::JumpPopIfNull(target)
-            | Self::PopJumpIfTrue(target)
-            | Self::PopJumpIfFalse(target)
-            | Self::JumpIfTrueOrPop(target)
-            | Self::JumpIfFalseOrPop(target)
-            | Self::RegisterHandler(target) => Some(target),
+            OpCode::Jump(target)
+            | OpCode::JumpBackEdge(target)
+            | OpCode::Break(target)
+            | OpCode::Continue(target)
+            | OpCode::JumpPopIfNull(target)
+            | OpCode::PopJumpIfTrue(target)
+            | OpCode::PopJumpIfFalse(target)
+            | OpCode::JumpIfTrueOrPop(target)
+            | OpCode::JumpIfFalseOrPop(target)
+            | OpCode::RegisterHandler(target) => Some(target),
             _ => None,
         }
     }
@@ -312,60 +316,60 @@ impl<JumpTarget: fmt::Display> fmt::Display for OpCode<JumpTarget> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         const WIDTH: usize = 20;
         match self {
-            Self::Pop => write!(f, "Pop"),
-            Self::Copy(i) => write!(f, "{:WIDTH$}{}", "Copy", i),
-            Self::Swap(i) => write!(f, "{:WIDTH$}{}", "Swap", i),
-            Self::LoadLocal(i) => write!(f, "{:WIDTH$}{}", "LoadLocal", i),
-            Self::LoadGlobal(i) => write!(f, "{:WIDTH$}{}", "LoadGlobal", i),
-            Self::LoadUpvalue(i) => write!(f, "{:WIDTH$}{}", "LoadUpvalue", i),
-            Self::LoadConst(i) => write!(f, "{:WIDTH$}{}", "LoadConst", i),
-            Self::StoreLocal(i) => write!(f, "{:WIDTH$}{}", "StoreLocal", i),
-            Self::StoreGlobal(i) => write!(f, "{:WIDTH$}{}", "StoreGlobal", i),
-            Self::BuildTable(i) => write!(f, "{:WIDTH$}{}", "BuildTable", i),
-            Self::BuildList(i) => write!(f, "{:WIDTH$}{}", "BuildList", i),
-            Self::GetAttr => write!(f, "GetAttr"),
-            Self::GetItem => write!(f, "GetItem"),
-            Self::GetMeta => write!(f, "GetMeta"),
-            Self::SetAttr => write!(f, "SetAttr"),
-            Self::SetItem => write!(f, "SetItem"),
-            Self::SetMeta => write!(f, "SetMeta"),
-            Self::Neg => write!(f, "Neg"),
-            Self::Not => write!(f, "Not"),
-            Self::Add => write!(f, "Add"),
-            Self::Sub => write!(f, "Sub"),
-            Self::Mul => write!(f, "Mul"),
-            Self::Div => write!(f, "Div"),
-            Self::Rem => write!(f, "Rem"),
-            Self::Eq => write!(f, "Eq"),
-            Self::Ne => write!(f, "Ne"),
-            Self::Gt => write!(f, "Gt"),
-            Self::Ge => write!(f, "Ge"),
-            Self::Lt => write!(f, "Lt"),
-            Self::Le => write!(f, "Le"),
-            Self::TypeCheck(ty) => write!(f, "{:WIDTH$}{}", "TypeCheck", ty),
-            Self::GetLen => write!(f, "GetLen"),
-            Self::Import(i) => write!(f, "{:WIDTH$}{}", "Import", i),
-            Self::ImportFrom(i) => write!(f, "{:WIDTH$}{}", "ImportFrom", i),
-            Self::ImportGlob => write!(f, "ImportGlob"),
-            Self::Iter => write!(f, "Iter"),
-            Self::Call(i) => write!(f, "{:WIDTH$}{}", "Call", i),
-            Self::Return => write!(f, "Return"),
-            Self::ReturnCall(i) => write!(f, "{:WIDTH$}{}", "ReturnCall", i),
-            Self::LoadLocals => write!(f, "LoadLocals"),
-            Self::Jump(i) => write!(f, "{:WIDTH$}{}", "Jump", i),
-            Self::JumpBackEdge(i) => write!(f, "{:WIDTH$}{}", "JumpBackEdge", i),
-            Self::Break(i) => write!(f, "{:WIDTH$}{}", "Break", i),
-            Self::Continue(i) => write!(f, "{:WIDTH$}{}", "Continue", i),
-            Self::JumpPopIfNull(i) => write!(f, "{:WIDTH$}{}", "JumpPopIfNull", i),
-            Self::PopJumpIfTrue(i) => write!(f, "{:WIDTH$}{}", "PopJumpIfTrue", i),
-            Self::PopJumpIfFalse(i) => write!(f, "{:WIDTH$}{}", "PopJumpIfFalse", i),
-            Self::JumpIfTrueOrPop(i) => write!(f, "{:WIDTH$}{}", "JumpIfTrueOrPop", i),
-            Self::JumpIfFalseOrPop(i) => {
+            OpCode::Pop => write!(f, "Pop"),
+            OpCode::Copy(i) => write!(f, "{:WIDTH$}{}", "Copy", i),
+            OpCode::Swap(i) => write!(f, "{:WIDTH$}{}", "Swap", i),
+            OpCode::LoadLocal(i) => write!(f, "{:WIDTH$}{}", "LoadLocal", i),
+            OpCode::LoadGlobal(i) => write!(f, "{:WIDTH$}{}", "LoadGlobal", i),
+            OpCode::LoadUpvalue(i) => write!(f, "{:WIDTH$}{}", "LoadUpvalue", i),
+            OpCode::LoadConst(i) => write!(f, "{:WIDTH$}{}", "LoadConst", i),
+            OpCode::StoreLocal(i) => write!(f, "{:WIDTH$}{}", "StoreLocal", i),
+            OpCode::StoreGlobal(i) => write!(f, "{:WIDTH$}{}", "StoreGlobal", i),
+            OpCode::BuildTable(i) => write!(f, "{:WIDTH$}{}", "BuildTable", i),
+            OpCode::BuildList(i) => write!(f, "{:WIDTH$}{}", "BuildList", i),
+            OpCode::GetAttr => write!(f, "GetAttr"),
+            OpCode::GetItem => write!(f, "GetItem"),
+            OpCode::GetMeta => write!(f, "GetMeta"),
+            OpCode::SetAttr => write!(f, "SetAttr"),
+            OpCode::SetItem => write!(f, "SetItem"),
+            OpCode::SetMeta => write!(f, "SetMeta"),
+            OpCode::Neg => write!(f, "Neg"),
+            OpCode::Not => write!(f, "Not"),
+            OpCode::Add => write!(f, "Add"),
+            OpCode::Sub => write!(f, "Sub"),
+            OpCode::Mul => write!(f, "Mul"),
+            OpCode::Div => write!(f, "Div"),
+            OpCode::Rem => write!(f, "Rem"),
+            OpCode::Eq => write!(f, "Eq"),
+            OpCode::Ne => write!(f, "Ne"),
+            OpCode::Gt => write!(f, "Gt"),
+            OpCode::Ge => write!(f, "Ge"),
+            OpCode::Lt => write!(f, "Lt"),
+            OpCode::Le => write!(f, "Le"),
+            OpCode::TypeCheck(ty) => write!(f, "{:WIDTH$}{}", "TypeCheck", ty),
+            OpCode::GetLen => write!(f, "GetLen"),
+            OpCode::Import(i) => write!(f, "{:WIDTH$}{}", "Import", i),
+            OpCode::ImportFrom(i) => write!(f, "{:WIDTH$}{}", "ImportFrom", i),
+            OpCode::ImportGlob => write!(f, "ImportGlob"),
+            OpCode::Iter => write!(f, "Iter"),
+            OpCode::Call(i) => write!(f, "{:WIDTH$}{}", "Call", i),
+            OpCode::Return => write!(f, "Return"),
+            OpCode::ReturnCall(i) => write!(f, "{:WIDTH$}{}", "ReturnCall", i),
+            OpCode::LoadLocals => write!(f, "LoadLocals"),
+            OpCode::Jump(i) => write!(f, "{:WIDTH$}{}", "Jump", i),
+            OpCode::JumpBackEdge(i) => write!(f, "{:WIDTH$}{}", "JumpBackEdge", i),
+            OpCode::Break(i) => write!(f, "{:WIDTH$}{}", "Break", i),
+            OpCode::Continue(i) => write!(f, "{:WIDTH$}{}", "Continue", i),
+            OpCode::JumpPopIfNull(i) => write!(f, "{:WIDTH$}{}", "JumpPopIfNull", i),
+            OpCode::PopJumpIfTrue(i) => write!(f, "{:WIDTH$}{}", "PopJumpIfTrue", i),
+            OpCode::PopJumpIfFalse(i) => write!(f, "{:WIDTH$}{}", "PopJumpIfFalse", i),
+            OpCode::JumpIfTrueOrPop(i) => write!(f, "{:WIDTH$}{}", "JumpIfTrueOrPop", i),
+            OpCode::JumpIfFalseOrPop(i) => {
                 write!(f, "{:WIDTH$}{}", "JumpIfFalseOrPop", i)
             }
-            Self::RegisterHandler(i) => write!(f, "{:WIDTH$}{}", "RegisterHandler", i),
-            Self::CheckEffect(i) => write!(f, "{:WIDTH$}{}", "MatchEffect", i),
-            Self::MarkAddStackSize(i) => write!(f, "{:WIDTH$}{}", "MarkStackSize", i),
+            OpCode::RegisterHandler(i) => write!(f, "{:WIDTH$}{}", "RegisterHandler", i),
+            OpCode::CheckEffect(i) => write!(f, "{:WIDTH$}{}", "MatchEffect", i),
+            OpCode::MarkAddStackSize(i) => write!(f, "{:WIDTH$}{}", "MarkStackSize", i),
         }
     }
 }
