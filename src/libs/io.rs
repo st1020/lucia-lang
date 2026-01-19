@@ -4,15 +4,15 @@ use itertools::Itertools;
 
 use crate::{
     errors::Error,
-    objects::{CallbackInner, Table, TableInner, Value},
+    objects::{Callback, Table, Value},
 };
 
 pub fn io_lib() -> Table {
-    let mut t = TableInner::new();
+    let mut t = Table::new();
     t.set(
         "print",
         #[expect(clippy::print_stdout)]
-        CallbackInner::from_fn(|args: &[Value]| match args {
+        Callback::from_fn(|args: &[Value]| match args {
             [] => (),
             [value] => print!("{value}"),
             _ => print!("{}", args.iter().join(" ")),
@@ -21,7 +21,7 @@ pub fn io_lib() -> Table {
     t.set(
         "println",
         #[expect(clippy::print_stdout)]
-        CallbackInner::from_fn(|args: &[Value]| match args {
+        Callback::from_fn(|args: &[Value]| match args {
             [] => println!(),
             [value] => println!("{value}"),
             _ => println!("{}", args.iter().join(" ")),
@@ -29,7 +29,7 @@ pub fn io_lib() -> Table {
     );
     t.set(
         "input",
-        CallbackInner::from_fn(|| {
+        Callback::from_fn(|| {
             let mut buf = String::new();
             io::stdin()
                 .read_line(&mut buf)
@@ -37,5 +37,5 @@ pub fn io_lib() -> Table {
             Ok(buf.strip_suffix('\n').unwrap_or(&buf).to_owned())
         }),
     );
-    t.into()
+    t
 }

@@ -1,31 +1,31 @@
 use std::{panic, rc::Rc};
 
 use crate::{
-    compiler::{code::Code, compile, error::CompilerError, interning::CompactInterner},
+    compiler::{code::Code, compile, error::CompilerError},
     errors::Error,
-    executor::ExecutorInner,
+    executor::Executor,
     frame::Frame,
     fuel::Fuel,
     libs,
-    objects::{Closure, ClosureInner, Str, TableInner, Value},
+    objects::{Closure, RcStr, StrInterner, Table, Value},
 };
 
 #[derive(Debug, Clone)]
 pub struct Context {
     /// Global variables.
-    pub globals: TableInner,
+    pub globals: Table,
     /// Builtin variables.
-    pub builtins: TableInner,
+    pub builtins: Table,
     /// Importable libraries.
-    pub libs: TableInner,
+    pub libs: Table,
 }
 
 impl Context {
     pub fn empty() -> Self {
         Self {
-            globals: TableInner::new(),
-            builtins: TableInner::new(),
-            libs: TableInner::new(),
+            globals: Table::new(),
+            builtins: Table::new(),
+            libs: Table::new(),
         }
     }
 
@@ -42,16 +42,16 @@ impl Context {
         self.libs.set("std::table", libs::table_lib());
     }
 
-    pub fn compile(&mut self, input: &str) -> Result<Code<Str>, Vec<CompilerError>> {
-        let interner = CompactInterner::default();
+    pub fn compile(&mut self, input: &str) -> Result<Code<RcStr>, Vec<CompilerError>> {
+        let interner = StrInterner::default();
         compile(interner, input)
     }
 
-    pub fn execute(&mut self, code: Code<Str>) -> Result<Value, Error> {
+    pub fn execute(&mut self, code: Code<RcStr>) -> Result<Value, Error> {
         const FUEL_PER_GC: i32 = 4096;
 
-        let closure = Closure::new(ClosureInner::new(Rc::new(code), None));
-        let mut executor = ExecutorInner::new();
+        let closure = Rc::new(Closure::new(Rc::new(code), None));
+        let mut executor = Executor::new();
         executor.start(closure.into(), Vec::new());
 
         loop {

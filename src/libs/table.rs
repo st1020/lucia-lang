@@ -1,9 +1,9 @@
 use std::rc::Rc;
 
-use crate::objects::{CallbackInner, Table, TableInner, Value};
+use crate::objects::{Callback, RcTable, Table, Value};
 
 pub fn table_lib() -> Table {
-    let mut t = TableInner::new();
+    let mut t = Table::new();
     // t.set(
     //     "keys",
     //     NativeFn::from(&ctx, |ctx: Context, table: Table| {
@@ -32,22 +32,19 @@ pub fn table_lib() -> Table {
     //         )
     //     }),
     // );
-    t.set(
-        "raw_len",
-        CallbackInner::from_fn(|table: Table| table.len()),
-    );
+    t.set("raw_len", Callback::from_fn(|table: RcTable| table.len()));
     t.set(
         "raw_get",
-        CallbackInner::from_fn(|table: Table, key: Value| table.get(key)),
+        Callback::from_fn(|table: RcTable, key: Value| table.get(key)),
     );
     t.set(
         "raw_set",
-        CallbackInner::from_fn(|table: Table, key: Value, value: Value| {
+        Callback::from_fn(|table: RcTable, key: Value, value: Value| {
             let mut table = Rc::unwrap_or_clone(table);
             table.set(key, value);
             table
         }),
     );
     // t.set("raw_iter", t.iter_callback(ctx));
-    t.into()
+    t
 }

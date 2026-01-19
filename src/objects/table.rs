@@ -10,18 +10,18 @@ use crate::{
     objects::{MetaResult, Value, call_metamethod, impl_metamethod},
 };
 
-pub type Table = Rc<TableInner>;
+pub type RcTable = Rc<Table>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default, Display)]
 #[display("<table {self:p}>")]
-pub struct TableInner {
+pub struct Table {
     pub entries: TableEntries,
-    pub metatable: Option<Table>,
+    pub metatable: Option<RcTable>,
 }
 
-impl TableInner {
+impl Table {
     pub fn new() -> Self {
-        TableInner::default()
+        Table::default()
     }
 
     pub fn get<K: Into<Value>>(&self, key: K) -> Value {
@@ -76,11 +76,11 @@ impl TableInner {
         self.len() == 0
     }
 
-    pub fn metatable(&self) -> Option<Table> {
+    pub fn metatable(&self) -> Option<RcTable> {
         self.metatable.clone()
     }
 
-    pub fn set_metatable(&mut self, metatable: Option<Table>) {
+    pub fn set_metatable(&mut self, metatable: Option<RcTable>) {
         self.metatable = metatable;
     }
 
@@ -107,7 +107,7 @@ impl TableInner {
     // }
 }
 
-impl<'a> IntoIterator for &'a TableInner {
+impl<'a> IntoIterator for &'a Table {
     type Item = (Value, Value);
     type IntoIter = TableIter<'a>;
 
@@ -116,7 +116,7 @@ impl<'a> IntoIterator for &'a TableInner {
     }
 }
 
-impl MetaMethod<&Context> for Table {
+impl MetaMethod<&Context> for RcTable {
     impl_metamethod!(Table);
 
     #[inline]
@@ -307,7 +307,7 @@ impl FromIterator<(Value, Value)> for TableEntries {
 
 #[derive(Debug)]
 pub struct TableIter<'a> {
-    table: &'a TableInner,
+    table: &'a Table,
     i: usize,
 }
 
@@ -339,15 +339,15 @@ impl Iterator for TableIter<'_> {
 
 impl ExactSizeIterator for TableIter<'_> {}
 
-impl From<TableInner> for Value {
-    fn from(value: TableInner) -> Self {
-        Value::Table(Table::new(value))
+impl From<Table> for Value {
+    fn from(value: Table) -> Self {
+        Value::Table(Rc::new(value))
     }
 }
 
 impl<T: Into<TableEntries>> From<T> for Value {
     fn from(value: T) -> Self {
-        Value::Table(Table::new(TableInner {
+        Value::Table(Rc::new(Table {
             entries: value.into(),
             metatable: None,
         }))

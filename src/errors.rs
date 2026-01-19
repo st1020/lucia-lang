@@ -7,7 +7,7 @@ use thiserror::Error;
 
 use crate::{
     compiler::{index::CodeId, opcode::OpCode, value::MetaName},
-    objects::{ArgumentRange, Effect, Value, ValueType},
+    objects::{ArgumentRange, RcEffect, Value, ValueType},
 };
 
 /// Kind of all errors.
@@ -57,5 +57,5 @@ pub enum Error {
     #[error("I/O error: {reason}")]
     IOError { reason: io::ErrorKind },
     #[error("unhandled effect: {effect} with arguments {args:?}")]
-    UnhandledEffect { effect: Effect, args: Vec<Value> },
+    UnhandledEffect { effect: RcEffect, args: Vec<Value> },
 }

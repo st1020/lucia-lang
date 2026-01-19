@@ -7,19 +7,15 @@ use crate::{
     errors::Error,
     frame::{Frame, LuciaFrame},
     fuel::Fuel,
-    objects::{
-        BuiltinEffect, CallbackReturn, ContinuationInner, Effect, EffectInner, Function, Value,
-    },
+    objects::{BuiltinEffect, CallbackReturn, Continuation, Effect, Function, RcEffect, Value},
 };
 
-pub type Executor = Rc<ExecutorInner>;
-
 #[derive(Debug, Clone)]
-pub struct ExecutorInner {
+pub struct Executor {
     pub frames: Vec<Frame>,
 }
 
-impl ExecutorInner {
+impl Executor {
     const VM_GRANULARITY: u32 = 64;
 
     const FUEL_PER_CALLBACK: i32 = 8;
@@ -134,7 +130,7 @@ impl ExecutorInner {
     }
 
     #[inline]
-    fn perform_effect_with(&mut self, effect: Effect, args: &[Value]) -> bool {
+    fn perform_effect_with(&mut self, effect: RcEffect, args: &[Value]) -> bool {
         if let Some(i) = self.frames.iter().rposition(|frame| {
             if let Frame::Lucia(LuciaFrame {
                 effect_handlers, ..
@@ -146,7 +142,7 @@ impl ExecutorInner {
                 false
             }
         }) {
-            let continuation = ContinuationInner::new(self.frames.split_off(i + 1));
+            let continuation = Continuation::new(self.frames.split_off(i + 1));
             if let Frame::Lucia(LuciaFrame {
                 pc,
                 stack,
@@ -169,7 +165,7 @@ impl ExecutorInner {
         false
     }
 
-    pub(crate) fn perform_effect(&mut self, effect: Effect, args: Vec<Value>) {
+    pub(crate) fn perform_effect(&mut self, effect: RcEffect, args: Vec<Value>) {
         if !self.perform_effect_with(Rc::clone(&effect), &args) {
             self.frames.push(Frame::Effect { effect, args });
         }
@@ -178,7 +174,7 @@ impl ExecutorInner {
     pub(crate) fn return_error(&mut self, error: Error) {
         if !self.perform_effect_with(
             #[expect(clippy::wildcard_enum_match_arm)]
-            EffectInner::Builtin(match error {
+            Effect::Builtin(match error {
                 Error::LuciaPanic(_) => BuiltinEffect::Panic,
                 Error::LuciaAssert(_) => BuiltinEffect::Assert,
                 _ => BuiltinEffect::Error,
@@ -191,7 +187,7 @@ impl ExecutorInner {
     }
 }
 
-impl Default for ExecutorInner {
+impl Default for Executor {
     fn default() -> Self {
         Self::new()
     }

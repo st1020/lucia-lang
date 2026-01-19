@@ -5,44 +5,44 @@ use derive_more::{Deref, Display, From};
 use crate::{
     Context,
     compiler::value::{MetaMethod, MetaName},
-    objects::{Table, Value, impl_metamethod},
+    objects::{RcTable, Value, impl_metamethod},
 };
 
-pub type UserData = Rc<UserDataInner>;
+pub type RcUserData = Rc<UserData>;
 
 #[derive(Debug, From, Display, Deref)]
 #[display("<userdata {:p}>", self.data)]
-pub struct UserDataInner {
+pub struct UserData {
     #[deref]
     pub data: Box<dyn Any>,
-    pub metatable: Option<Table>,
+    pub metatable: Option<RcTable>,
 }
 
-impl PartialEq for UserDataInner {
+impl PartialEq for UserData {
     fn eq(&self, other: &Self) -> bool {
         ptr::eq(ptr::from_ref(&*self.data), ptr::from_ref(&*other.data))
     }
 }
 
-impl Eq for UserDataInner {}
+impl Eq for UserData {}
 
-impl hash::Hash for UserDataInner {
+impl hash::Hash for UserData {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
         ptr::from_ref(&*self.data).hash(state);
     }
 }
 
-impl UserDataInner {
-    pub fn new(data: Box<dyn Any>, metatable: Option<Table>) -> Self {
+impl UserData {
+    pub fn new(data: Box<dyn Any>, metatable: Option<RcTable>) -> Self {
         Self { data, metatable }
     }
 
-    pub fn metatable(&self) -> Option<Table> {
+    pub fn metatable(&self) -> Option<RcTable> {
         self.metatable.clone()
     }
 }
 
-impl MetaMethod<&Context> for UserData {
+impl MetaMethod<&Context> for RcUserData {
     impl_metamethod!(UserData);
 
     #[inline]

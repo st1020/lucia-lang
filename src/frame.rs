@@ -10,7 +10,7 @@ use crate::{
         index::{CodeId, LocalNameId},
     },
     errors::Error,
-    objects::{Callback, Closure, Effect, TableInner, Value},
+    objects::{RcCallback, RcClosure, RcEffect, Table, Value},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -25,7 +25,7 @@ pub enum Frame {
     Lucia(LuciaFrame),
     /// A callback that has been queued but not called yet.
     Callback {
-        callback: Callback,
+        callback: RcCallback,
         args: Vec<Value>,
     },
     /// The result of the continuation.
@@ -36,16 +36,16 @@ pub enum Frame {
     Error { error: Error },
     /// An effect that has been performed but not handled.
     /// Must be the top frame.
-    Effect { effect: Effect, args: Vec<Value> },
+    Effect { effect: RcEffect, args: Vec<Value> },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct LuciaFrame {
     pub pc: CodeId,
-    pub closure: Closure,
+    pub closure: RcClosure,
     pub locals: IndexVec<LocalNameId, Value>,
     pub stack: Vec<Value>,
-    pub effect_handlers: OrderMap<Effect, EffectHandlerInfo>,
+    pub effect_handlers: OrderMap<RcEffect, EffectHandlerInfo>,
 }
 
 impl fmt::Display for LuciaFrame {
@@ -78,7 +78,7 @@ impl fmt::Display for LuciaFrame {
 impl LuciaFrame {
     const MAX_STACK_SIZE: usize = 256;
 
-    pub(crate) fn new(closure: Closure, args: &[Value]) -> Result<Self, Error> {
+    pub(crate) fn new(closure: RcClosure, args: &[Value]) -> Result<Self, Error> {
         let mut stack = Vec::with_capacity(closure.code.stack_size.min(Self::MAX_STACK_SIZE));
         closure
             .code
@@ -113,7 +113,7 @@ impl CodeParamsInfo {
             Ordering::Equal => {
                 stack.extend_from_slice(args);
                 if self.has_variadic {
-                    stack.push(Value::Table(TableInner::new().into()));
+                    stack.push(Value::Table(Table::new().into()));
                 }
                 Ok(())
             }

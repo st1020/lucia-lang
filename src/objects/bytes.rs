@@ -9,14 +9,14 @@ use crate::{
     objects::{FromValue, Value, ValueType, impl_metamethod, unexpected_type_error},
 };
 
-pub type Bytes = Rc<BytesInner>;
+pub type RcBytes = Rc<Bytes>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, From, Display, Deref)]
 #[display("b\"{}\"", self.escape_ascii())]
 #[deref(forward)]
-pub struct BytesInner(Vec<u8>);
+pub struct Bytes(Vec<u8>);
 
-impl MetaMethod<&Context> for Bytes {
+impl MetaMethod<&Context> for RcBytes {
     impl_metamethod!(Bytes);
 
     #[inline]
@@ -36,7 +36,7 @@ impl MetaMethod<&Context> for Bytes {
 
 impl From<Vec<u8>> for Value {
     fn from(value: Vec<u8>) -> Value {
-        Value::Bytes(Bytes::new(value.into()))
+        Value::Bytes(Rc::new(value.into()))
     }
 }
 

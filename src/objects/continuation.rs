@@ -2,21 +2,21 @@ use std::rc::Rc;
 
 use crate::{frame::Frame, objects::Value};
 
-pub type Continuation = Rc<ContinuationInner>;
+pub type RcContinuation = Rc<Continuation>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ContinuationInner {
+pub struct Continuation {
     pub frames: Vec<Frame>,
 }
 
-impl ContinuationInner {
+impl Continuation {
     pub fn new(frames: Vec<Frame>) -> Self {
         Self { frames }
     }
 }
 
-impl From<ContinuationInner> for Value {
-    fn from(value: ContinuationInner) -> Value {
+impl From<Continuation> for Value {
+    fn from(value: Continuation) -> Value {
         Value::Function(Rc::new(value).into())
     }
 }

@@ -8,32 +8,32 @@ use crate::{
         code::{CodeParamsInfo, EffectConst, UserEffect},
         value::MetaMethod,
     },
-    objects::{CallbackFn, CallbackInner, CallbackReturn, Str, Value, impl_metamethod},
+    objects::{Callback, CallbackFn, CallbackReturn, RcStr, Value, impl_metamethod},
 };
 
 pub use crate::compiler::value::BuiltinEffect;
 
-pub type Effect = Rc<EffectInner>;
+pub type RcEffect = Rc<Effect>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Display, From)]
 #[display("<effect {self:p}>")]
-pub enum EffectInner {
-    User(Rc<UserEffect<Str>>),
+pub enum Effect {
+    User(Rc<UserEffect<RcStr>>),
     Builtin(BuiltinEffect),
 }
 
-impl EffectInner {
-    pub fn new(effect: EffectConst<Str>) -> Self {
+impl Effect {
+    pub fn new(effect: EffectConst<RcStr>) -> Self {
         match effect {
-            EffectConst::User(v) => EffectInner::User(v),
-            EffectConst::Builtin(v) => EffectInner::Builtin(v),
+            EffectConst::User(v) => Effect::User(v),
+            EffectConst::Builtin(v) => Effect::Builtin(v),
         }
     }
 
     pub fn params_info(&self) -> CodeParamsInfo {
         match self {
-            EffectInner::User(effect) => effect.params.info(),
-            EffectInner::Builtin(
+            Effect::User(effect) => effect.params.info(),
+            Effect::Builtin(
                 BuiltinEffect::Error
                 | BuiltinEffect::Panic
                 | BuiltinEffect::Assert
@@ -45,7 +45,7 @@ impl EffectInner {
         }
     }
 
-    pub(crate) fn match_effect_handler(&self, expected: &Effect) -> bool {
+    pub(crate) fn match_effect_handler(&self, expected: &RcEffect) -> bool {
         let params_info = self.params_info();
         let expected_params_info = expected.params_info();
         (params_info.params_count + 1 == expected_params_info.params_count)
@@ -53,12 +53,12 @@ impl EffectInner {
     }
 }
 
-impl MetaMethod<&Context> for Effect {
+impl MetaMethod<&Context> for RcEffect {
     impl_metamethod!(Effect);
 
     #[inline]
     fn meta_call(self, _: &Context) -> Result<Self::ResultCall, Self::Error> {
-        Ok(Rc::new(CallbackInner::new(self)).into())
+        Ok(Rc::new(Callback::new(self)).into())
     }
 
     impl_metamethod!(Effect, str);
@@ -67,20 +67,20 @@ impl MetaMethod<&Context> for Effect {
     impl_metamethod!(Effect, eq_ne);
 }
 
-impl CallbackFn for Effect {
+impl CallbackFn for RcEffect {
     fn call(&self, _: &Context, args: &[Value]) -> super::CallbackResult {
         Ok(CallbackReturn::TailEffect(Rc::clone(self), args.to_vec()))
     }
 }
 
-impl From<EffectInner> for Value {
-    fn from(value: EffectInner) -> Self {
+impl From<Effect> for Value {
+    fn from(value: Effect) -> Self {
         Value::Effect(Rc::new(value))
     }
 }
 
 impl From<BuiltinEffect> for Value {
     fn from(value: BuiltinEffect) -> Self {
-        Value::Effect(Rc::new(EffectInner::Builtin(value)))
+        Value::Effect(Rc::new(Effect::Builtin(value)))
     }
 }

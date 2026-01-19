@@ -2,7 +2,7 @@ use crate::{
     Context,
     compiler::value::MetaMethod,
     errors::Error,
-    objects::{BuiltinEffect, CallbackInner, Value},
+    objects::{BuiltinEffect, Callback, Value},
 };
 
 pub fn load_builtin(context: &mut Context) {
@@ -11,17 +11,11 @@ pub fn load_builtin(context: &mut Context) {
     builtins.set(BuiltinEffect::Error.name(), BuiltinEffect::Error);
     builtins.set(BuiltinEffect::Panic.name(), BuiltinEffect::Panic);
     builtins.set(BuiltinEffect::Assert.name(), BuiltinEffect::Assert);
-    builtins.set(
-        "id",
-        CallbackInner::from_fn(|v: Value| v.id().map(usize::from)),
-    );
-    builtins.set(
-        "type",
-        CallbackInner::from_fn(|v: Value| v.value_type().name()),
-    );
+    builtins.set("id", Callback::from_fn(|v: Value| v.id().map(usize::from)));
+    builtins.set("type", Callback::from_fn(|v: Value| v.value_type().name()));
     builtins.set(
         "assert",
-        CallbackInner::from_fn(|v: bool, msg: &[Value]| {
+        Callback::from_fn(|v: bool, msg: &[Value]| {
             if v {
                 Ok(v)
             } else {
@@ -33,31 +27,31 @@ pub fn load_builtin(context: &mut Context) {
     );
     builtins.set(
         "len",
-        CallbackInner::from_fn(|ctx: &Context, value: Value| value.meta_len(ctx)),
+        Callback::from_fn(|ctx: &Context, value: Value| value.meta_len(ctx)),
     );
     builtins.set(
         "bool",
-        CallbackInner::from_fn(|ctx: &Context, value: Value| value.meta_bool(ctx)),
+        Callback::from_fn(|ctx: &Context, value: Value| value.meta_bool(ctx)),
     );
     builtins.set(
         "int",
-        CallbackInner::from_fn(|ctx: &Context, value: Value| value.meta_int(ctx)),
+        Callback::from_fn(|ctx: &Context, value: Value| value.meta_int(ctx)),
     );
     builtins.set(
         "float",
-        CallbackInner::from_fn(|ctx: &Context, value: Value| value.meta_float(ctx)),
+        Callback::from_fn(|ctx: &Context, value: Value| value.meta_float(ctx)),
     );
     builtins.set(
         "str",
-        CallbackInner::from_fn(|ctx: &Context, value: Value| value.meta_str(ctx)),
+        Callback::from_fn(|ctx: &Context, value: Value| value.meta_str(ctx)),
     );
     builtins.set(
         "repr",
-        CallbackInner::from_fn(|ctx: &Context, value: Value| value.meta_repr(ctx)),
+        Callback::from_fn(|ctx: &Context, value: Value| value.meta_repr(ctx)),
     );
     // builtins.set(
     //     "range",
-    //     CallbackInner::from_fn(|ctx: Context, start: i64, end: i64| {
+    //     Callback::from_fn(|ctx: Context, start: i64, end: i64| {
     //         #[derive(Collect)]
     //         #[collect[no_drop]]
     //         struct RangeIter {
@@ -66,7 +60,7 @@ pub fn load_builtin(context: &mut Context) {
     //         }
 
     //         Ok(NativeFnReturn::Return(
-    //             CallbackInner::from_fn_with(
+    //             Callback::from_fn_with(
     //                 Gc::new(&RefLock::new(RangeIter { value: start, end })),
     //                 |range, _args| {
     //                     let mut range = range.borrow_mut(&ctx);

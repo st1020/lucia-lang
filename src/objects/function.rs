@@ -11,7 +11,7 @@ use crate::{
     compiler::value::MetaMethod,
     errors::Error,
     objects::{
-        Callback, CallbackFn, CallbackInner, CallbackReturn, Closure, Continuation, FromValue,
+        Callback, CallbackFn, CallbackReturn, FromValue, RcCallback, RcClosure, RcContinuation,
         Value, ValueType, impl_metamethod, unexpected_type_error,
     },
 };
@@ -20,9 +20,9 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq, Hash, From, IsVariant, Display)]
 #[display("<function {:p}>", self.const_ptr())]
 pub enum Function {
-    Closure(Closure),
-    Callback(Callback),
-    Continuation(Continuation),
+    Closure(RcClosure),
+    Callback(RcCallback),
+    Continuation(RcContinuation),
 }
 
 impl Function {
@@ -53,7 +53,7 @@ impl MetaMethod<&Context> for Function {
             }
         }
 
-        Ok(Rc::new(CallbackInner::new(FunctionIter(self))).into())
+        Ok(Rc::new(Callback::new(FunctionIter(self))).into())
     }
 
     impl_metamethod!(Function, str);
@@ -63,17 +63,17 @@ impl MetaMethod<&Context> for Function {
 }
 
 macro_rules! impl_conversion {
-    ($($i:tt),*) => {
+    ($($e:ident($t:ty)),* $(,)?) => {
         $(
-            impl From<$i> for Value {
-                fn from(value: $i) -> Value {
+            impl From<$t> for Value {
+                fn from(value: $t) -> Value {
                     Value::Function(value.into())
                 }
             }
 
-            impl FromValue for $i {
+            impl FromValue for $t {
                 fn from_value(value: Value) -> Result<Self, Error> {
-                    if let Value::Function(Function::$i(v)) = value {
+                    if let Value::Function(Function::$e(v)) = value {
                         Ok(v)
                     } else {
                         Err(unexpected_type_error!(ValueType::Function, value))
@@ -83,7 +83,11 @@ macro_rules! impl_conversion {
         )*
     };
 }
-impl_conversion!(Closure, Callback, Continuation);
+impl_conversion! {
+    Closure(RcClosure),
+    Callback(RcCallback),
+    Continuation(RcContinuation),
+}
 
 /// The required number of arguments when calling a function.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

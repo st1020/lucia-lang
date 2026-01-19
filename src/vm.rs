@@ -6,12 +6,12 @@ use crate::{
     Context,
     compiler::{code::ConstValue, opcode::OpCode, value::MetaMethod},
     errors::Error,
-    executor::ExecutorInner,
+    executor::Executor,
     frame::{EffectHandlerInfo, Frame},
-    objects::{ClosureInner, EffectInner, MetaResult, TableEntries, TableInner, Value},
+    objects::{Closure, Effect, MetaResult, Table, TableEntries, Value},
 };
 
-impl ExecutorInner {
+impl Executor {
     /// Run this stack frame.
     pub(crate) fn run_vm(
         &mut self,
@@ -115,9 +115,9 @@ impl ExecutorInner {
                         ConstValue::Bytes(v) => Value::Bytes(Rc::new(v.clone().into())),
                         ConstValue::Function(v) => {
                             let code = Rc::clone(&code.const_codes[*v]);
-                            ClosureInner::new(code, Some(frame)).into()
+                            Closure::new(code, Some(frame)).into()
                         }
-                        ConstValue::Effect(v) => EffectInner::new(v.clone()).into(),
+                        ConstValue::Effect(v) => Effect::new(v.clone()).into(),
                     });
                 }
                 OpCode::StoreLocal(i) => {
@@ -253,7 +253,7 @@ impl ExecutorInner {
                     break;
                 }
                 OpCode::LoadLocals => {
-                    let mut table = TableInner::new();
+                    let mut table = Table::new();
                     for i in code.local_names.indices() {
                         table.set(Rc::clone(&code.local_names[i]), frame.locals[i].clone());
                     }

@@ -7,7 +7,7 @@ use derive_more::{Debug, Display};
 use crate::{
     Context,
     errors::Error,
-    objects::{ArgumentRange, Effect, FromValue, Function, MetaResult, Value},
+    objects::{ArgumentRange, FromValue, Function, MetaResult, RcEffect, Value},
 };
 
 pub type CallbackResult = Result<CallbackReturn, Error>;
@@ -16,7 +16,7 @@ pub type CallbackResult = Result<CallbackReturn, Error>;
 pub enum CallbackReturn {
     Return(Value),
     TailCall(Function, Vec<Value>),
-    TailEffect(Effect, Vec<Value>),
+    TailEffect(RcEffect, Vec<Value>),
 }
 
 impl<T: Into<Value>> From<T> for CallbackReturn {
@@ -55,28 +55,28 @@ pub trait CallbackFn {
     fn call(&self, ctx: &Context, args: &[Value]) -> CallbackResult;
 }
 
-pub type Callback = Rc<CallbackInner>;
+pub type RcCallback = Rc<Callback>;
 
 #[derive(Display, Debug)]
 #[display("<callback {self:p}>")]
 #[debug("{self}")]
-pub struct CallbackInner(Box<dyn CallbackFn>);
+pub struct Callback(Box<dyn CallbackFn>);
 
-impl PartialEq for CallbackInner {
+impl PartialEq for Callback {
     fn eq(&self, other: &Self) -> bool {
         ptr::eq(ptr::from_ref(&*self.0), ptr::from_ref(&*other.0))
     }
 }
 
-impl Eq for CallbackInner {}
+impl Eq for Callback {}
 
-impl hash::Hash for CallbackInner {
+impl hash::Hash for Callback {
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
         ptr::from_ref(&*self.0).hash(state);
     }
 }
 
-impl CallbackInner {
+impl Callback {
     pub fn new<F: CallbackFn + 'static>(f: F) -> Self {
         Self(Box::new(f))
     }
@@ -114,8 +114,8 @@ impl CallbackInner {
     }
 }
 
-impl From<CallbackInner> for Value {
-    fn from(value: CallbackInner) -> Value {
+impl From<Callback> for Value {
+    fn from(value: Callback) -> Value {
         Value::Function(Rc::new(value).into())
     }
 }
@@ -283,7 +283,7 @@ mod tests {
         }
 
         let context = Context::empty();
-        let dyn_callback = CallbackInner::new(CB);
+        let dyn_callback = Callback::new(CB);
         assert_eq!(
             dyn_callback.call(&context, &[]),
             Ok(CallbackReturn::Return(Value::Int(42)))
@@ -293,7 +293,7 @@ mod tests {
     #[test]
     fn test_callback_from_fn_with() {
         let context = Context::empty();
-        let callback = CallbackInner::from_fn_with(Cell::new(0), |cell: &Cell<usize>| {
+        let callback = Callback::from_fn_with(Cell::new(0), |cell: &Cell<usize>| {
             let value = cell.get();
             cell.set(value + 1);
             value

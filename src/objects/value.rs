@@ -6,7 +6,7 @@ use crate::{
     Context,
     compiler::value::{MetaMethod, MetaName},
     errors::Error,
-    objects::{Bytes, Effect, Function, Str, Table, UserData, unexpected_type_error},
+    objects::{Function, RcBytes, RcEffect, RcStr, RcTable, RcUserData, unexpected_type_error},
     utils::Float,
 };
 
@@ -26,21 +26,21 @@ pub enum Value {
     /// `float` - A 64-bit floating point number.
     Float(Float),
     /// `str` - A UTF-8 string.
-    Str(Str),
+    Str(RcStr),
     /// `bytes` - A byte array.
-    Bytes(Bytes),
+    Bytes(RcBytes),
     /// `table` - A table.
-    Table(Table),
+    Table(RcTable),
     /// `function` - A function.
     Function(Function),
     /// `effect` - An effect.
-    Effect(Effect),
+    Effect(RcEffect),
     /// `userdata` - An UserData.
-    UserData(UserData),
+    UserData(RcUserData),
 }
 
 impl Value {
-    pub fn metatable(self) -> Option<Table> {
+    pub fn metatable(self) -> Option<RcTable> {
         #[expect(clippy::wildcard_enum_match_arm)]
         match self {
             Value::Table(t) => t.metatable(),
@@ -218,18 +218,18 @@ impl_from_value! {
     Bool(bool),
     Int(i64),
     Float(Float),
-    Str(Str),
-    Bytes(Bytes),
-    Table(Table),
+    Str(RcStr),
+    Bytes(RcBytes),
+    Table(RcTable),
     Function(Function),
-    UserData(UserData),
+    UserData(RcUserData),
 }
 
 #[derive(Debug, Clone)]
 pub enum MetaResult<const N: usize> {
     Value(Value),
     TailCall(Function, [Value; N]),
-    TailEffect(Effect, Vec<Value>),
+    TailEffect(RcEffect, Vec<Value>),
 }
 
 impl<T: Into<Value>, const N: usize> From<T> for MetaResult<N> {

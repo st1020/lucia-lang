@@ -8,19 +8,19 @@ use crate::{
         index::UpvalueNameId,
     },
     frame::LuciaFrame,
-    objects::{Str, Value},
+    objects::{RcStr, Value},
 };
 
-pub type Closure = Rc<ClosureInner>;
+pub type RcClosure = Rc<Closure>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ClosureInner {
-    pub code: Rc<Code<Str>>,
+pub struct Closure {
+    pub code: Rc<Code<RcStr>>,
     pub upvalues: IndexVec<UpvalueNameId, Value>,
 }
 
-impl ClosureInner {
-    pub fn new(code: Rc<Code<Str>>, frame: Option<&LuciaFrame>) -> Self {
+impl Closure {
+    pub fn new(code: Rc<Code<RcStr>>, frame: Option<&LuciaFrame>) -> Self {
         let mut upvalues = IndexVec::with_capacity(code.upvalue_names.len());
 
         if let Some(frame) = frame {
@@ -42,8 +42,8 @@ impl ClosureInner {
     }
 }
 
-impl From<ClosureInner> for Value {
-    fn from(value: ClosureInner) -> Value {
+impl From<Closure> for Value {
+    fn from(value: Closure) -> Value {
         Value::Function(Rc::new(value).into())
     }
 }

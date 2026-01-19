@@ -1,17 +1,45 @@
-use std::rc::Rc;
+use std::{borrow::Borrow, collections::HashSet, ops::Deref, rc::Rc};
 
 use compact_str::{CompactString, ToCompactString, format_compact};
+use derive_more::Display;
+use rustc_hash::FxBuildHasher;
 
 use crate::{
     Context,
-    compiler::value::{MetaMethod, MetaName},
+    compiler::{
+        interning::StringInterner,
+        value::{MetaMethod, MetaName},
+    },
     errors::Error,
     objects::{FromValue, Value, ValueType, impl_metamethod, unexpected_type_error},
 };
 
-pub type Str = Rc<CompactString>;
+pub type RcStr = Rc<Str>;
 
-impl MetaMethod<&Context> for Str {
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Display)]
+pub struct Str(CompactString);
+
+impl Str {
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl Deref for Str {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_str()
+    }
+}
+
+impl<T: Into<CompactString>> From<T> for Str {
+    fn from(value: T) -> Self {
+        Self(value.into())
+    }
+}
+
+impl MetaMethod<&Context> for RcStr {
     impl_metamethod!(Str);
 
     #[inline]
@@ -69,19 +97,19 @@ impl MetaMethod<&Context> for Str {
 
 impl From<CompactString> for Value {
     fn from(value: CompactString) -> Value {
-        Value::Str(value.into())
+        Value::Str(Rc::new(value.into()))
     }
 }
 
 impl From<String> for Value {
     fn from(value: String) -> Value {
-        Value::Str(value.to_compact_string().into())
+        Value::Str(Rc::new(value.into()))
     }
 }
 
 impl From<&str> for Value {
     fn from(value: &str) -> Value {
-        Value::Str(value.to_compact_string().into())
+        Value::Str(Rc::new(value.into()))
     }
 }
 
@@ -97,7 +125,7 @@ impl From<MetaName> for Value {
     }
 }
 
-impl FromValue for CompactString {
+impl FromValue for Str {
     fn from_value(value: Value) -> Result<Self, Error> {
         if let Value::Str(v) = value {
             Ok(Rc::unwrap_or_clone(v))
@@ -110,9 +138,36 @@ impl FromValue for CompactString {
 impl FromValue for String {
     fn from_value(value: Value) -> Result<Self, Error> {
         if let Value::Str(v) = value {
-            Ok(Rc::unwrap_or_clone(v).into())
+            Ok((*Rc::unwrap_or_clone(v)).into())
         } else {
             Err(unexpected_type_error!(ValueType::Str, value))
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct RcStrWrapper(RcStr);
+
+impl Borrow<str> for RcStrWrapper {
+    fn borrow(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+/// A Str interner.
+#[derive(Debug, Default)]
+pub struct StrInterner(HashSet<RcStrWrapper, FxBuildHasher>);
+
+impl StringInterner for StrInterner {
+    type String = RcStr;
+
+    fn intern(&mut self, s: &str) -> Self::String {
+        if let Some(s) = self.0.get(s) {
+            s.clone().0
+        } else {
+            let s = Rc::new(Str::from(s));
+            self.0.insert(RcStrWrapper(Rc::clone(&s)));
+            s
         }
     }
 }
