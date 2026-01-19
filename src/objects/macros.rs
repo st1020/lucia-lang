@@ -62,10 +62,10 @@ macro_rules! impl_metamethod {
             }
         }
     };
-    ($value:ident, eq_ne) => {
+    ($type:ident, eq_ne) => {
         #[inline]
         fn meta_eq(self, _: &Context, other: Self::Value) -> Result<Self::Result2, Self::Error> {
-            if let $crate::objects::Value::$value(v) = other {
+            if let $crate::objects::Value::$type(v) = other {
                 Ok((self == v).into())
             } else {
                 Ok(false.into())
@@ -73,7 +73,7 @@ macro_rules! impl_metamethod {
         }
         #[inline]
         fn meta_ne(self, _: &Context, other: Self::Value) -> Result<Self::Result2, Self::Error> {
-            if let $crate::objects::Value::$value(v) = other {
+            if let $crate::objects::Value::$type(v) = other {
                 Ok((self != v).into())
             } else {
                 Ok(true.into())
@@ -94,6 +94,55 @@ macro_rules! impl_metamethod {
             }
         }
     };
+    ($type:ident, metatable, $operator:ident, $name:ident, 1) => {
+        #[inline]
+        fn $name(self, ctx: &Context) -> Result<Self::Result1, Self::Error> {
+            $crate::objects::call_metamethod!(
+                ctx,
+                $crate::compiler::value::MetaName::$operator,
+                self
+            );
+            Err(self.meta_error(ctx, $crate::compiler::value::MetaName::$operator, vec![]))
+        }
+    };
+    ($type:ident, metatable, $operator:ident, $name:ident, 2) => {
+        #[inline]
+        fn $name(self, ctx: &Context, other: Self::Value) -> Result<Self::Result2, Self::Error> {
+            $crate::objects::call_metamethod!(
+                ctx,
+                $crate::compiler::value::MetaName::$operator,
+                self,
+                other
+            );
+            Err(self.meta_error(
+                ctx,
+                $crate::compiler::value::MetaName::$operator,
+                vec![other],
+            ))
+        }
+    };
+    ($type:ident, metatable, $operator:ident, $name:ident, 3) => {
+        #[inline]
+        fn $name(
+            self,
+            ctx: &Context,
+            key: Self::Value,
+            value: Self::Value,
+        ) -> Result<Self::Result3, Self::Error> {
+            $crate::objects::call_metamethod!(
+                ctx,
+                $crate::compiler::value::MetaName::$operator,
+                self,
+                key,
+                value
+            );
+            Err(self.meta_error(
+                ctx,
+                $crate::compiler::value::MetaName::$operator,
+                vec![key, value],
+            ))
+        }
+    };
 }
 
 macro_rules! call_metamethod {
@@ -110,58 +159,6 @@ macro_rules! call_metamethod {
     };
 }
 
-macro_rules! call_metamethod_error {
-    (1, $name:ident, $meta_name:ident) => {
-        #[inline]
-        fn $name(self, ctx: &Context) -> Result<Self::Result1, Self::Error> {
-            $crate::objects::call_metamethod!(
-                ctx,
-                $crate::compiler::value::MetaName::$meta_name,
-                self
-            );
-            Err(self.meta_error(ctx, $crate::compiler::value::MetaName::$meta_name, vec![]))
-        }
-    };
-    (2, $name:ident, $meta_name:ident) => {
-        #[inline]
-        fn $name(self, ctx: &Context, other: Self::Value) -> Result<Self::Result2, Self::Error> {
-            $crate::objects::call_metamethod!(
-                ctx,
-                $crate::compiler::value::MetaName::$meta_name,
-                self,
-                other
-            );
-            Err(self.meta_error(
-                ctx,
-                $crate::compiler::value::MetaName::$meta_name,
-                vec![other],
-            ))
-        }
-    };
-    (3, $name:ident, $meta_name:ident) => {
-        #[inline]
-        fn $name(
-            self,
-            ctx: &Context,
-            key: Self::Value,
-            value: Self::Value,
-        ) -> Result<Self::Result3, Self::Error> {
-            $crate::objects::call_metamethod!(
-                ctx,
-                $crate::compiler::value::MetaName::$meta_name,
-                self,
-                key,
-                value
-            );
-            Err(self.meta_error(
-                ctx,
-                $crate::compiler::value::MetaName::$meta_name,
-                vec![key, value],
-            ))
-        }
-    };
-}
-
 macro_rules! unexpected_type_error {
     ($expected:expr, $found:expr) => {
         $crate::errors::Error::UnexpectedType {
@@ -172,6 +169,5 @@ macro_rules! unexpected_type_error {
 }
 
 pub(crate) use call_metamethod;
-pub(crate) use call_metamethod_error;
 pub(crate) use impl_metamethod;
 pub(crate) use unexpected_type_error;

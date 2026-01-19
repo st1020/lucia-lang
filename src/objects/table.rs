@@ -7,7 +7,7 @@ use ordermap::{OrderMap, OrderSet};
 use crate::{
     Context,
     compiler::value::{MetaMethod, MetaName},
-    objects::{MetaResult, Value, call_metamethod, call_metamethod_error, impl_metamethod},
+    objects::{MetaResult, Value, call_metamethod, impl_metamethod},
 };
 
 pub type Table = Rc<TableInner>;
@@ -159,8 +159,8 @@ impl MetaMethod<&Context> for Table {
         Ok((!self.is_empty()).into())
     }
 
-    call_metamethod_error!(1, meta_int, Int);
-    call_metamethod_error!(1, meta_float, Float);
+    impl_metamethod!(Table, metatable, Int, meta_int, 1);
+    impl_metamethod!(Table, metatable, Float, meta_float, 1);
 
     #[inline]
     fn meta_str(self, ctx: &Context) -> Result<Self::Result1, Self::Error> {
@@ -210,18 +210,35 @@ impl MetaMethod<&Context> for Table {
         Ok(result.into())
     }
 
-    call_metamethod_error!(1, meta_neg, Neg);
-    call_metamethod_error!(2, meta_add, Add);
-    call_metamethod_error!(2, meta_sub, Sub);
-    call_metamethod_error!(2, meta_mul, Mul);
-    call_metamethod_error!(2, meta_div, Div);
-    call_metamethod_error!(2, meta_rem, Rem);
+    impl_metamethod!(Table, metatable, Neg, meta_neg, 1);
+    impl_metamethod!(Table, metatable, Add, meta_add, 2);
+    impl_metamethod!(Table, metatable, Sub, meta_sub, 2);
+    impl_metamethod!(Table, metatable, Mul, meta_mul, 2);
+    impl_metamethod!(Table, metatable, Div, meta_div, 2);
+    impl_metamethod!(Table, metatable, Rem, meta_rem, 2);
 
-    impl_metamethod!(Table, eq_ne);
-    call_metamethod_error!(2, meta_gt, Gt);
-    call_metamethod_error!(2, meta_ge, Ge);
-    call_metamethod_error!(2, meta_lt, Lt);
-    call_metamethod_error!(2, meta_le, Le);
+    fn meta_eq(self, ctx: &Context, other: Self::Value) -> Result<Self::Result2, Self::Error> {
+        call_metamethod!(ctx, MetaName::Eq, self, other);
+        if let Value::Table(other) = other {
+            Ok((self == other).into())
+        } else {
+            Ok(false.into())
+        }
+    }
+
+    fn meta_ne(self, ctx: &Context, other: Self::Value) -> Result<Self::Result2, Self::Error> {
+        call_metamethod!(ctx, MetaName::Ne, self, other);
+        if let Value::Table(other) = other {
+            Ok((self != other).into())
+        } else {
+            Ok(true.into())
+        }
+    }
+
+    impl_metamethod!(Table, metatable, Gt, meta_gt, 2);
+    impl_metamethod!(Table, metatable, Ge, meta_ge, 2);
+    impl_metamethod!(Table, metatable, Lt, meta_lt, 2);
+    impl_metamethod!(Table, metatable, Le, meta_le, 2);
 
     #[inline]
     fn meta_get_attr(self, ctx: &Context, key: Self::Value) -> Result<Self::Result2, Self::Error> {

@@ -5,7 +5,7 @@ use derive_more::{Deref, Display, From};
 use crate::{
     Context,
     compiler::value::{MetaMethod, MetaName},
-    objects::{Table, Value, call_metamethod_error, impl_metamethod},
+    objects::{Table, Value, impl_metamethod},
 };
 
 pub type UserData = Rc<UserDataInner>;
@@ -74,30 +74,30 @@ impl MetaMethod<&Context> for UserData {
     //     Err(self.meta_error(ctx, MetaName::Iter, vec![]))
     // }
 
-    call_metamethod_error!(1, meta_len, Len);
+    impl_metamethod!(UserData, metatable, Len, meta_len, 1);
 
-    call_metamethod_error!(1, meta_bool, Bool);
-    call_metamethod_error!(1, meta_int, Int);
-    call_metamethod_error!(1, meta_float, Float);
-    call_metamethod_error!(1, meta_str, Str);
-    call_metamethod_error!(1, meta_repr, Repr);
+    impl_metamethod!(UserData, metatable, Bool, meta_bool, 1);
+    impl_metamethod!(UserData, metatable, Int, meta_int, 1);
+    impl_metamethod!(UserData, metatable, Float, meta_float, 1);
+    impl_metamethod!(UserData, metatable, Str, meta_str, 1);
+    impl_metamethod!(UserData, metatable, Repr, meta_repr, 1);
 
-    call_metamethod_error!(1, meta_neg, Neg);
-    call_metamethod_error!(2, meta_add, Add);
-    call_metamethod_error!(2, meta_sub, Sub);
-    call_metamethod_error!(2, meta_mul, Mul);
-    call_metamethod_error!(2, meta_div, Div);
-    call_metamethod_error!(2, meta_rem, Rem);
+    impl_metamethod!(UserData, metatable, Neg, meta_neg, 1);
+    impl_metamethod!(UserData, metatable, Add, meta_add, 2);
+    impl_metamethod!(UserData, metatable, Sub, meta_sub, 2);
+    impl_metamethod!(UserData, metatable, Mul, meta_mul, 2);
+    impl_metamethod!(UserData, metatable, Div, meta_div, 2);
+    impl_metamethod!(UserData, metatable, Rem, meta_rem, 2);
 
-    call_metamethod_error!(2, meta_eq, Eq);
-    call_metamethod_error!(2, meta_ne, Ne);
-    call_metamethod_error!(2, meta_gt, Gt);
-    call_metamethod_error!(2, meta_ge, Ge);
-    call_metamethod_error!(2, meta_lt, Lt);
-    call_metamethod_error!(2, meta_le, Le);
+    impl_metamethod!(UserData, metatable, Eq, meta_eq, 2);
+    impl_metamethod!(UserData, metatable, Ne, meta_ne, 2);
+    impl_metamethod!(UserData, metatable, Gt, meta_gt, 2);
+    impl_metamethod!(UserData, metatable, Ge, meta_ge, 2);
+    impl_metamethod!(UserData, metatable, Lt, meta_lt, 2);
+    impl_metamethod!(UserData, metatable, Le, meta_le, 2);
 
-    call_metamethod_error!(2, meta_get_attr, GetAttr);
-    call_metamethod_error!(2, meta_get_item, GetItem);
-    call_metamethod_error!(3, meta_set_attr, SetAttr);
-    call_metamethod_error!(3, meta_set_item, SetItem);
+    impl_metamethod!(UserData, metatable, GetAttr, meta_get_attr, 2);
+    impl_metamethod!(UserData, metatable, GetItem, meta_get_item, 2);
+    impl_metamethod!(UserData, metatable, SetAttr, meta_set_attr, 3);
+    impl_metamethod!(UserData, metatable, SetItem, meta_set_item, 3);
 }
