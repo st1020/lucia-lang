@@ -3,9 +3,9 @@ use std::fmt;
 /// Unary operator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnOp {
-    /// The `not` operator for logical inversion
+    /// The `not` operator for logical inversion.
     Not,
-    /// The `-` operator for negation
+    /// The `-` operator for negation.
     Neg,
 }
 
@@ -21,33 +21,33 @@ impl fmt::Display for UnOp {
 /// Binary operator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinOp {
-    /// The `+` operator (addition)
+    /// The `+` operator (addition).
     Add,
-    /// The `-` operator (subtraction)
+    /// The `-` operator (subtraction).
     Sub,
-    /// The `*` operator (multiplication)
+    /// The `*` operator (multiplication).
     Mul,
-    /// The `/` operator (division)
+    /// The `/` operator (division).
     Div,
-    /// The `%` operator (remainder)
+    /// The `%` operator (remainder).
     Rem,
-    /// The `and` operator (logical and)
+    /// The `and` operator (logical and).
     And,
-    /// The `or` operator (logical or)
+    /// The `or` operator (logical or).
     Or,
-    /// The `==` operator (equality)
+    /// The `==` operator (equality).
     Eq,
-    /// The `!=` operator (not equal to)
+    /// The `!=` operator (not equal to).
     Ne,
-    /// The `<` operator (less than)
+    /// The `<` operator (less than).
     Lt,
-    /// The `<=` operator (less than or equal to)
+    /// The `<=` operator (less than or equal to).
     Le,
-    /// The `>` operator (greater than)
+    /// The `>` operator (greater than).
     Gt,
-    /// The `>=` operator (greater than or equal to)
+    /// The `>=` operator (greater than or equal to).
     Ge,
-    /// The `is` operator (type check)
+    /// The `is` operator (type check).
     Is,
 }
 

@@ -1,7 +1,7 @@
 //! The lexer.
 //!
 //! This is basically a copy of the rustc_lexer.
-//! See: <https://github.com/rust-lang/rust/tree/master/compiler/rustc_lexer>
+//! See: <https://github.com/rust-lang/rust/tree/main/compiler/rustc_lexer>.
 
 use std::{iter, str::Chars};
 

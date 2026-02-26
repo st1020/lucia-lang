@@ -78,7 +78,7 @@ pub struct Scope<S> {
     pub function_id: FunctionId,
     /// Symbol bindings in a scope.
     ///
-    /// A binding is a mapping from an identifier name to its [`SymbolId`]
+    /// A binding is a mapping from an identifier name to its [`SymbolId`].
     pub bindings: OrderMap<S, SymbolId, FxBuildHasher>,
 }
 

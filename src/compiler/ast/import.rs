@@ -8,11 +8,11 @@ use super::*;
 /// Kind of import statement.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ImportKind<S> {
-    /// `import path::xxx as xxx`
+    /// `import path::xxx as xxx`.
     Simple(Option<Box<Ident<S>>>),
-    /// `import path::{...}`
+    /// `import path::{...}`.
     Nested(Vec<ImportItem<S>>),
-    /// `import path::*`
+    /// `import path::*`.
     Glob,
 }
 

@@ -19,17 +19,17 @@ impl_kind_display!(Lit);
 /// Kind of literal.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum LitKind<S> {
-    /// "null"
+    /// "null".
     Null,
-    /// "true", "false"
+    /// "true", "false".
     Bool(bool),
-    /// "12", "0o100", "0b110"
+    /// "12", "0o100", "0b110".
     Int(i64),
-    /// "12.34", "0b100.100"
+    /// "12.34", "0b100.100".
     Float(Float),
-    /// ""abc"", ""abc"
+    /// ""abc"", ""abc".
     Str(S),
-    /// "b"abc""
+    /// "b"abc"".
     Bytes(Vec<u8>),
 }
 

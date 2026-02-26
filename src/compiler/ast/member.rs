@@ -5,17 +5,17 @@ use super::*;
 /// Kind of member expression.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MemberKind<S> {
-    /// `[]`
+    /// `[]`.
     Bracket(Box<Expr<S>>),
-    /// `.`
+    /// `.`.
     Dot(Box<Ident<S>>),
-    /// `::`
+    /// `::`.
     DoubleColon(Box<Ident<S>>),
-    /// `[#]`
+    /// `[#]`.
     BracketMeta,
-    /// `.#`
+    /// `.#`.
     DotMeta,
-    /// `::#`
+    /// `::#`.
     DoubleColonMeta,
 }
 

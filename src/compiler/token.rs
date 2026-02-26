@@ -32,17 +32,17 @@ impl Locatable for Token {
 #[display("{:?}", self)]
 pub enum TokenKind {
     // Multi-char tokens:
-    /// "// comment"
+    /// "// comment".
     LineComment,
-    /// `/* block comment */`
+    /// `/* block comment */`.
     ///
-    /// Block comments can be recursive, so a sequence like `/* /* */`
+    /// Block comments can be recursive, so a sequence like `/* /* */`.
     BlockComment,
     /// Any whitespace character sequence.
     Whitespace,
     /// Escaped newline (`\` followed by `\n`).
     EscapedNewline,
-    /// "ident"
+    /// "ident".
     Ident,
 
     // Literals:
@@ -50,147 +50,147 @@ pub enum TokenKind {
     Int,
     /// "12.34", "1e3".
     Float,
-    /// ""abc""
+    /// ""abc"".
     Str,
-    /// "r"abc""
+    /// "r"abc"".
     RawStr,
-    /// "b"abc""
+    /// "b"abc"".
     ByteStr,
 
     // Keywords:
-    /// "if"
+    /// "if".
     If,
-    /// "else"
+    /// "else".
     Else,
-    /// "match"
+    /// "match".
     Match,
-    /// "loop"
+    /// "loop".
     Loop,
-    /// "while"
+    /// "while".
     While,
-    /// "for"
+    /// "for".
     For,
-    /// "in"
+    /// "in".
     In,
-    /// "break"
+    /// "break".
     Break,
-    /// "continue"
+    /// "continue".
     Continue,
-    /// "return"
+    /// "return".
     Return,
-    /// "glo"
+    /// "glo".
     Glo,
-    /// "import"
+    /// "import".
     Import,
-    /// "as"
+    /// "as".
     As,
-    /// "is"
+    /// "is".
     Is,
-    /// "not"
+    /// "not".
     Not,
-    /// "and"
+    /// "and".
     And,
-    /// "or"
+    /// "or".
     Or,
-    /// "try"
+    /// "try".
     Try,
-    /// "with"
+    /// "with".
     With,
-    /// "fn"
+    /// "fn".
     Fn,
-    /// "do"
+    /// "do".
     Do,
-    /// "effect"
+    /// "effect".
     Effect,
-    /// "null"
+    /// "null".
     Null,
-    /// "true"
+    /// "true".
     True,
-    /// "false"
+    /// "false".
     False,
 
     // Three-char tokens:
-    /// "..."
+    /// "...".
     Ellipsis,
 
     // Two-char tokens:
-    /// "::"
+    /// "::".
     DoubleColon,
-    /// "->"
+    /// "->".
     Arrow,
-    /// "=>"
+    /// "=>".
     FatArrow,
-    /// "=="
+    /// "==".
     Eq,
-    /// "!="
+    /// "!=".
     NotEq,
-    /// "<="
+    /// "<=".
     LtEq,
-    /// ">="
+    /// ">=".
     GtEq,
-    /// "+="
+    /// "+=".
     AddAssign,
-    /// "-="
+    /// "-=".
     SubAssign,
-    /// "*="
+    /// "*=".
     MulAssign,
-    /// "/="
+    /// "/=".
     DivAssign,
-    /// "%="
+    /// "%=".
     RemAssign,
 
     // One-char tokens:
-    /// ","
+    /// ",".
     Comma,
-    /// "."
+    /// ".".
     Dot,
-    /// "("
+    /// "(".
     OpenParen,
-    /// ")"
+    /// ")".
     CloseParen,
-    /// "{"
+    /// "{".
     OpenBrace,
-    /// "}"
+    /// "}".
     CloseBrace,
-    /// "["
+    /// "[".
     OpenBracket,
-    /// "]"
+    /// "]".
     CloseBracket,
-    /// "#"
+    /// "#".
     Pound,
-    /// "?"
+    /// "?".
     Question,
-    /// "!"
+    /// "!".
     Exclamation,
-    /// ":"
+    /// ":".
     Colon,
-    /// "="
+    /// "=".
     Assign,
-    /// "<"
+    /// "<".
     Lt,
-    /// ">"
+    /// ">".
     Gt,
-    /// "|"
+    /// "|".
     VBar,
-    /// "+"
+    /// "+".
     Add,
-    /// "-"
+    /// "-".
     Sub,
-    /// "*"
+    /// "*".
     Mul,
-    /// "/"
+    /// "/".
     Div,
-    /// "%"
+    /// "%".
     Rem,
 
     // Others:
-    /// End of line (`\n`)
+    /// End of line (`\n`).
     Eol,
     /// End of input.
     Eof,
 
     // Errors:
-    /// Unknown token, not expected by the lexer, e.g. "№"
+    /// Unknown token, not expected by the lexer, e.g. "№".
     Unknown,
     /// Unterminated block comment, e.g. `/*`.
     UnterminatedBlockComment,

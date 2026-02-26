@@ -156,18 +156,18 @@ impl<S: fmt::Display> fmt::Display for Code<S> {
 /// The const value.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, From)]
 pub enum ConstValue<S, F> {
-    /// "null"
+    /// "null".
     Null,
-    /// "true", "false"
+    /// "true", "false".
     Bool(bool),
-    /// "12", "0o100", "0b110"
+    /// "12", "0o100", "0b110".
     Int(i64),
-    /// "12.34", "0b100.100"
+    /// "12.34", "0b100.100".
     Float(Float),
-    /// ""abc"", ""abc"
+    /// ""abc"", ""abc".
     #[from(skip)]
     Str(S),
-    /// "b"abc""
+    /// "b"abc"".
     Bytes(Vec<u8>),
     /// A function code.
     #[from(skip)]

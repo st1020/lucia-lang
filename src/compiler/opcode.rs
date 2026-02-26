@@ -146,7 +146,7 @@ pub enum OpCode<JumpTarget> {
     Continue(JumpTarget),
 
     /// If `STACK[-1]` is null, sets the bytecode counter to target and pop `STACK[-1]`.
-    /// Otherwise, leaves `STACK[-1]` on the stack
+    /// Otherwise, leaves `STACK[-1]` on the stack.
     JumpPopIfNull(JumpTarget),
     /// If `STACK[-1]` is true, sets the bytecode counter to target. `STACK[-1]` is popped.
     PopJumpIfTrue(JumpTarget),
