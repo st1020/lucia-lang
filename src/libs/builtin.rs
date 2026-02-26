@@ -2,7 +2,7 @@ use crate::{
     Context,
     compiler::value::MetaMethod,
     errors::Error,
-    objects::{BuiltinEffect, Callback, Value},
+    objects::{BuiltinEffect, Callback, CallbackFn, CallbackResult, CallbackReturn, Effect, Value},
 };
 
 pub fn load_builtin(context: &mut Context) {
@@ -49,32 +49,30 @@ pub fn load_builtin(context: &mut Context) {
         "repr",
         Callback::from_fn(|ctx: &Context, value: Value| value.meta_repr(ctx)),
     );
-    // builtins.set(
-    //     "range",
-    //     Callback::from_fn(|ctx: Context, start: i64, end: i64| {
-    //         #[derive(Collect)]
-    //         #[collect[no_drop]]
-    //         struct RangeIter {
-    //             value: i64,
-    //             end: i64,
-    //         }
+    builtins.set(
+        "range",
+        Callback::from_fn(|start: i64, end: i64| {
+            #[derive(Clone)]
+            struct RangeIter {
+                value: i64,
+                end: i64,
+            }
 
-    //         Ok(NativeFnReturn::Return(
-    //             Callback::from_fn_with(
-    //                 Gc::new(&RefLock::new(RangeIter { value: start, end })),
-    //                 |range, _args| {
-    //                     let mut range = range.borrow_mut(&ctx);
-    //                     let value = range.value;
-    //                     Ok(NativeFnReturn::Return(if value == range.end {
-    //                         Value::Null
-    //                     } else {
-    //                         range.value += 1;
-    //                         Value::Int(value)
-    //                     }))
-    //                 },
-    //             )
-    //             .into(),
-    //         ))
-    //     }),
-    // );
+            impl CallbackFn for RangeIter {
+                fn call(&mut self, _ctx: &Context, _args: &[Value]) -> CallbackResult {
+                    self.value += 1;
+                    if self.value <= self.end {
+                        Ok(CallbackReturn::Perform(
+                            Effect::Builtin(BuiltinEffect::Yield).into(),
+                            vec![Value::Int(self.value - 1)],
+                        ))
+                    } else {
+                        Ok(CallbackReturn::ReturnValue(Value::Null))
+                    }
+                }
+            }
+
+            Callback::new(RangeIter { value: start, end })
+        }),
+    );
 }

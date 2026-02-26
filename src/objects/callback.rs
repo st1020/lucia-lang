@@ -3,6 +3,8 @@
 use std::{hash, marker::PhantomData, ops::RangeBounds, ptr, rc::Rc};
 
 use derive_more::{Debug, Display};
+use dyn_clone::{DynClone, clone_trait_object};
+use ordermap::OrderSet;
 
 use crate::{
     Context,
@@ -14,23 +16,25 @@ pub type CallbackResult = Result<CallbackReturn, Error>;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum CallbackReturn {
-    Return(Value),
+    Call(Function, Vec<Value>, OrderSet<RcEffect>),
+    Perform(RcEffect, Vec<Value>),
     TailCall(Function, Vec<Value>),
-    TailEffect(RcEffect, Vec<Value>),
+    TailPerform(RcEffect, Vec<Value>),
+    ReturnValue(Value),
 }
 
 impl<T: Into<Value>> From<T> for CallbackReturn {
     fn from(value: T) -> Self {
-        CallbackReturn::Return(value.into())
+        CallbackReturn::ReturnValue(value.into())
     }
 }
 
 impl<const N: usize> From<MetaResult<N>> for CallbackReturn {
     fn from(value: MetaResult<N>) -> Self {
         match value {
-            MetaResult::Value(v) => CallbackReturn::Return(v),
+            MetaResult::Value(v) => CallbackReturn::ReturnValue(v),
             MetaResult::TailCall(f, args) => CallbackReturn::TailCall(f, Vec::from(args)),
-            MetaResult::TailEffect(e, args) => CallbackReturn::TailEffect(e, args),
+            MetaResult::TailEffect(e, args) => CallbackReturn::TailPerform(e, args),
         }
     }
 }
@@ -51,13 +55,15 @@ impl<T: Into<CallbackReturn>> IntoCallbackResult for Result<T, Error> {
     }
 }
 
-pub trait CallbackFn {
-    fn call(&self, ctx: &Context, args: &[Value]) -> CallbackResult;
+pub trait CallbackFn: DynClone {
+    fn call(&mut self, ctx: &Context, args: &[Value]) -> CallbackResult;
 }
+
+clone_trait_object!(CallbackFn);
 
 pub type RcCallback = Rc<Callback>;
 
-#[derive(Display, Debug)]
+#[derive(Clone, Display, Debug)]
 #[display("<callback {self:p}>")]
 #[debug("{self}")]
 pub struct Callback(Box<dyn CallbackFn>);
@@ -83,33 +89,25 @@ impl Callback {
 
     pub fn from_fn<F, T>(call: F) -> Self
     where
-        F: IntoCallback<(), T> + 'static,
-        T: 'static,
+        F: IntoCallback<T> + Clone + 'static,
+        T: Clone + 'static,
     {
-        Self::from_fn_with((), call)
-    }
+        #[derive(Clone)]
+        struct CallbackObj<F, T>(F, PhantomData<T>);
 
-    pub fn from_fn_with<V, F, T>(value: V, call: F) -> Self
-    where
-        V: 'static,
-        F: IntoCallback<V, T> + 'static,
-        T: 'static,
-    {
-        struct Shim<V, F, T>(V, F, PhantomData<T>);
-
-        impl<V, F, T> CallbackFn for Shim<V, F, T>
+        impl<F: Clone, T: Clone> CallbackFn for CallbackObj<F, T>
         where
-            F: IntoCallback<V, T>,
+            F: IntoCallback<T>,
         {
-            fn call(&self, ctx: &Context, args: &[Value]) -> CallbackResult {
-                self.1.call(&self.0, ctx, args)
+            fn call(&mut self, ctx: &Context, args: &[Value]) -> CallbackResult {
+                self.0.call(ctx, args)
             }
         }
 
-        Self(Box::new(Shim(value, call, PhantomData)))
+        Self::new(CallbackObj(call, PhantomData))
     }
 
-    pub fn call(&self, ctx: &Context, args: &[Value]) -> CallbackResult {
+    pub fn call(&mut self, ctx: &Context, args: &[Value]) -> CallbackResult {
         self.0.call(ctx, args)
     }
 }
@@ -120,8 +118,8 @@ impl From<Callback> for Value {
     }
 }
 
-pub trait IntoCallback<V, Marker> {
-    fn call(&self, value: &V, ctx: &Context, args: &[Value]) -> CallbackResult;
+pub trait IntoCallback<Marker> {
+    fn call(&self, ctx: &Context, args: &[Value]) -> CallbackResult;
 }
 
 macro_rules! impl_into_callback {
@@ -136,13 +134,13 @@ macro_rules! impl_into_callback {
         }
     };
     ($len:literal, $($idx:literal $t:ident),*) => {
-        impl<Func, Ret, $($t,)*> IntoCallback<(), fn($($t,)*) -> Ret> for Func
+        impl<Func, Ret, $($t,)*> IntoCallback<fn($($t,)*) -> Ret> for Func
         where
             Func: Fn($($t,)*) -> Ret,
             Ret: IntoCallbackResult,
             $($t: FromValue,)*
         {
-            fn call(&self, _value: &(), _ctx: &Context, args: &[Value]) -> CallbackResult {
+            fn call(&self, _ctx: &Context, args: &[Value]) -> CallbackResult {
                 impl_into_callback!(@CHECK_ARGS args, $len);
                 debug_assert!(args.len() == $len);
                 self($($t::from_value(args[$idx].clone())?,)*).into_callback_result()
@@ -150,26 +148,26 @@ macro_rules! impl_into_callback {
         }
 
         #[allow(unused_comparisons, clippy::allow_attributes)]
-        impl<Func, Ret, $($t,)*> IntoCallback<(), fn($($t,)* &[Value]) -> Ret> for Func
+        impl<Func, Ret, $($t,)*> IntoCallback<fn($($t,)* &[Value]) -> Ret> for Func
         where
             Func: Fn($($t,)* &[Value]) -> Ret,
             Ret: IntoCallbackResult,
             $($t: FromValue,)*
         {
-            fn call(&self, _value: &(), _ctx: &Context, args: &[Value]) -> CallbackResult {
+            fn call(&self, _ctx: &Context, args: &[Value]) -> CallbackResult {
                 impl_into_callback!(@CHECK_ARGS args, ($len, None));
                 debug_assert!(args.len() >= $len);
                 self($($t::from_value(args[$idx].clone())?,)* &args[$len..]).into_callback_result()
             }
         }
 
-        impl<Func, Ret, $($t,)*> IntoCallback<(), fn(Context, $($t,)*) -> Ret> for Func
+        impl<Func, Ret, $($t,)*> IntoCallback<fn(Context, $($t,)*) -> Ret> for Func
         where
             Func: Fn(&Context, $($t,)*) -> Ret,
             Ret: IntoCallbackResult,
             $($t: FromValue,)*
         {
-            fn call(&self, _value: &(), ctx: &Context, args: &[Value]) -> CallbackResult {
+            fn call(&self, ctx: &Context, args: &[Value]) -> CallbackResult {
                 impl_into_callback!(@CHECK_ARGS args, $len);
                 debug_assert!(args.len() == $len);
                 self(ctx, $($t::from_value(args[$idx].clone())?,)*).into_callback_result()
@@ -177,70 +175,16 @@ macro_rules! impl_into_callback {
         }
 
         #[allow(unused_comparisons, clippy::allow_attributes)]
-        impl<Func, Ret, $($t,)*> IntoCallback<(), fn(Context, $($t,)* &[Value]) -> Ret> for Func
+        impl<Func, Ret, $($t,)*> IntoCallback<fn(Context, $($t,)* &[Value]) -> Ret> for Func
         where
             Func: Fn(&Context, $($t,)* &[Value]) -> Ret,
             Ret: IntoCallbackResult,
             $($t: FromValue,)*
         {
-            fn call(&self, _value: &(), ctx: &Context, args: &[Value]) -> CallbackResult {
+            fn call(&self, ctx: &Context, args: &[Value]) -> CallbackResult {
                 impl_into_callback!(@CHECK_ARGS args, ($len, None));
                 debug_assert!(args.len() >= $len);
                 self(ctx, $($t::from_value(args[$idx].clone())?,)* &args[$len..]).into_callback_result()
-            }
-        }
-
-        impl<V, Func, Ret, $($t,)*> IntoCallback<V, fn(&V, $($t,)*) -> Ret> for Func
-        where
-            Func: Fn(&V, $($t,)*) -> Ret,
-            Ret: IntoCallbackResult,
-            $($t: FromValue,)*
-        {
-            fn call(&self, value: &V, _ctx: &Context, args: &[Value]) -> CallbackResult {
-                impl_into_callback!(@CHECK_ARGS args, $len);
-                debug_assert!(args.len() == $len);
-                self(value, $($t::from_value(args[$idx].clone())?,)*).into_callback_result()
-            }
-        }
-
-        #[allow(unused_comparisons, clippy::allow_attributes)]
-        impl<V, Func, Ret, $($t,)*> IntoCallback<V, fn(&V, $($t,)* &[Value]) -> Ret> for Func
-        where
-            Func: Fn(&V, $($t,)* &[Value]) -> Ret,
-            Ret: IntoCallbackResult,
-            $($t: FromValue,)*
-        {
-            fn call(&self, value: &V, _ctx: &Context, args: &[Value]) -> CallbackResult {
-                impl_into_callback!(@CHECK_ARGS args, ($len, None));
-                debug_assert!(args.len() >= $len);
-                self(value, $($t::from_value(args[$idx].clone())?,)* &args[$len..]).into_callback_result()
-            }
-        }
-
-        impl<V, Func, Ret, $($t,)*> IntoCallback<V, fn(&V, &Context, $($t,)*) -> Ret> for Func
-        where
-            Func: Fn(&V, &Context, $($t,)*) -> Ret,
-            Ret: IntoCallbackResult,
-            $($t: FromValue,)*
-        {
-            fn call(&self, value: &V, ctx: &Context, args: &[Value]) -> CallbackResult {
-                impl_into_callback!(@CHECK_ARGS args, $len);
-                debug_assert!(args.len() == $len);
-                self(value, ctx, $($t::from_value(args[$idx].clone())?,)*).into_callback_result()
-            }
-        }
-
-        #[allow(unused_comparisons, clippy::allow_attributes)]
-        impl<V, Func, Ret, $($t,)*> IntoCallback<V, fn(&V, &Context, $($t,)* &[Value]) -> Ret> for Func
-        where
-            Func: Fn(&V, &Context, $($t,)* &[Value]) -> Ret,
-            Ret: IntoCallbackResult,
-            $($t: FromValue,)*
-        {
-            fn call(&self, value: &V, ctx: &Context, args: &[Value]) -> CallbackResult {
-                impl_into_callback!(@CHECK_ARGS args, ($len, None));
-                debug_assert!(args.len() >= $len);
-                self(value, ctx, $($t::from_value(args[$idx].clone())?,)* &args[$len..]).into_callback_result()
             }
         }
     };
@@ -266,45 +210,26 @@ impl_into_callback!(16, 0 A, 1 B, 2 C, 3 D, 4 E, 5 F, 6 G, 7 H, 8 I, 9 J, 10 K, 
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
-
     use crate::{Context, objects::CallbackReturn};
 
     use super::*;
 
     #[test]
     fn test_dyn_callback() {
+        #[derive(Clone)]
         struct CB;
 
         impl CallbackFn for CB {
-            fn call(&self, _ctx: &Context, _args: &[Value]) -> CallbackResult {
-                Ok(CallbackReturn::Return(Value::Int(42)))
+            fn call(&mut self, _ctx: &Context, _args: &[Value]) -> CallbackResult {
+                Ok(CallbackReturn::ReturnValue(Value::Int(42)))
             }
         }
 
         let context = Context::empty();
-        let dyn_callback = Callback::new(CB);
+        let mut dyn_callback = Callback::new(CB);
         assert_eq!(
             dyn_callback.call(&context, &[]),
-            Ok(CallbackReturn::Return(Value::Int(42)))
-        );
-    }
-
-    #[test]
-    fn test_callback_from_fn_with() {
-        let context = Context::empty();
-        let callback = Callback::from_fn_with(Cell::new(0), |cell: &Cell<usize>| {
-            let value = cell.get();
-            cell.set(value + 1);
-            value
-        });
-        assert_eq!(
-            callback.call(&context, &[]),
-            Ok(CallbackReturn::Return(Value::Int(0)))
-        );
-        assert_eq!(
-            callback.call(&context, &[]),
-            Ok(CallbackReturn::Return(Value::Int(1)))
+            Ok(CallbackReturn::ReturnValue(Value::Int(42)))
         );
     }
 }

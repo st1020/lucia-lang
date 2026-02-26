@@ -1,16 +1,12 @@
-use std::{cmp::Ordering, fmt};
+use std::fmt;
 
 use itertools::Itertools;
-use ordermap::OrderMap;
-use oxc_index::{IndexVec, index_vec};
+use ordermap::{OrderMap, OrderSet};
+use oxc_index::IndexVec;
 
 use crate::{
-    compiler::{
-        code::CodeParamsInfo,
-        index::{CodeId, LocalNameId},
-    },
-    errors::Error,
-    objects::{RcCallback, RcClosure, RcEffect, Table, Value},
+    compiler::index::{CodeId, LocalNameId},
+    objects::{Callback, RcClosure, RcEffect, Value},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -22,114 +18,70 @@ pub struct EffectHandlerInfo {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Frame {
     /// A running Lucia frame.
-    Lucia(LuciaFrame),
+    Lucia {
+        pc: CodeId,
+        closure: RcClosure,
+        locals: IndexVec<LocalNameId, Value>,
+        stack: Vec<Value>,
+        effect_handlers: OrderMap<RcEffect, EffectHandlerInfo>,
+    },
     /// A callback that has been queued but not called yet.
     Callback {
-        callback: RcCallback,
-        args: Vec<Value>,
+        callback: Callback,
+        stack: Vec<Value>,
+        effect_handlers: OrderSet<RcEffect>,
     },
-    /// The result of the continuation.
-    /// Must be the top frame.
-    Result { value: Value },
-    /// An error that has occurred.
-    /// Must be the top frame of the stack.
-    Error { error: Error },
-    /// An effect that has been performed but not handled.
-    /// Must be the top frame.
-    Effect { effect: RcEffect, args: Vec<Value> },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct LuciaFrame {
-    pub pc: CodeId,
-    pub closure: RcClosure,
-    pub locals: IndexVec<LocalNameId, Value>,
-    pub stack: Vec<Value>,
-    pub effect_handlers: OrderMap<RcEffect, EffectHandlerInfo>,
-}
-
-impl fmt::Display for LuciaFrame {
+impl fmt::Display for Frame {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "pc: {}", self.pc)?;
-        writeln!(
-            f,
-            "locals: [{}]",
-            self.closure
-                .code
-                .local_names
-                .iter()
-                .zip(self.locals.iter())
-                .map(|(name, value)| format!("{name}: {value}"))
-                .join(", ")
-        )?;
-        writeln!(f, "stack: [{}]", self.stack.iter().join(", "))?;
-        writeln!(
-            f,
-            "effect_handlers: [{}]",
-            self.effect_handlers
-                .iter()
-                .map(|(effect, jump_target)| format!("{effect} -> {jump_target:?}"))
-                .join(", ")
-        )?;
-        Ok(())
-    }
-}
-
-impl LuciaFrame {
-    const MAX_STACK_SIZE: usize = 256;
-
-    pub(crate) fn new(closure: RcClosure, args: &[Value]) -> Result<Self, Error> {
-        let mut stack = Vec::with_capacity(closure.code.stack_size.min(Self::MAX_STACK_SIZE));
-        closure
-            .code
-            .params
-            .info()
-            .parse_args_to_stack(&mut stack, args)?;
-        Ok(LuciaFrame {
-            pc: CodeId::new(0),
-            locals: index_vec![Value::Null; closure.code.local_names.len()],
-            stack,
-            closure,
-            effect_handlers: OrderMap::new(),
-        })
-    }
-}
-
-impl CodeParamsInfo {
-    pub(crate) fn parse_args_to_stack(
-        &self,
-        stack: &mut Vec<Value>,
-        args: &[Value],
-    ) -> Result<(), Error> {
-        match args.len().cmp(&self.params_count) {
-            Ordering::Less => Err(Error::CallArguments {
-                required: if self.has_variadic {
-                    (self.params_count, None).into()
-                } else {
-                    self.params_count.into()
-                },
-                given: args.len(),
-            }),
-            Ordering::Equal => {
-                stack.extend_from_slice(args);
-                if self.has_variadic {
-                    stack.push(Value::Table(Table::new().into()));
-                }
-                Ok(())
+        match self {
+            Frame::Lucia {
+                pc,
+                closure,
+                locals,
+                stack,
+                effect_handlers,
+            } => {
+                writeln!(f, "pc: {pc}")?;
+                writeln!(
+                    f,
+                    "locals: [{}]",
+                    closure
+                        .code
+                        .local_names
+                        .iter()
+                        .zip(locals.iter())
+                        .map(|(name, value)| format!("{name}: {value}"))
+                        .join(", ")
+                )?;
+                writeln!(f, "stack: [{}]", stack.iter().join(", "))?;
+                writeln!(
+                    f,
+                    "effect_handlers: [{}]",
+                    effect_handlers
+                        .iter()
+                        .map(|(effect, jump_target)| format!("{effect} -> {jump_target:?}"))
+                        .join(", ")
+                )?;
             }
-            Ordering::Greater => {
-                if self.has_variadic {
-                    let (params, variadic) = args.split_at(self.params_count);
-                    stack.extend_from_slice(params);
-                    stack.push(variadic.into());
-                    Ok(())
-                } else {
-                    Err(Error::CallArguments {
-                        required: self.params_count.into(),
-                        given: args.len(),
-                    })
-                }
+            Frame::Callback {
+                callback,
+                stack,
+                effect_handlers,
+            } => {
+                writeln!(f, "callback: {callback}")?;
+                writeln!(f, "stack: [{}]", stack.iter().join(", "))?;
+                writeln!(
+                    f,
+                    "effect_handlers: [{}]",
+                    effect_handlers
+                        .iter()
+                        .map(|effect| format!("{effect}"))
+                        .join(", ")
+                )?;
             }
         }
+        Ok(())
     }
 }

@@ -68,8 +68,8 @@ impl MetaMethod<&Context> for RcEffect {
 }
 
 impl CallbackFn for RcEffect {
-    fn call(&self, _: &Context, args: &[Value]) -> super::CallbackResult {
-        Ok(CallbackReturn::TailEffect(Rc::clone(self), args.to_vec()))
+    fn call(&mut self, _: &Context, args: &[Value]) -> super::CallbackResult {
+        Ok(CallbackReturn::TailPerform(Rc::clone(self), args.to_vec()))
     }
 }
 

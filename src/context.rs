@@ -3,8 +3,7 @@ use std::{panic, rc::Rc};
 use crate::{
     compiler::{code::Code, compile, error::CompilerError},
     errors::Error,
-    executor::Executor,
-    frame::Frame,
+    executor::{Executor, ExecutorResult},
     fuel::Fuel,
     libs,
     objects::{Closure, RcStr, StrInterner, Table, Value},
@@ -50,7 +49,7 @@ impl Context {
     pub fn execute(&mut self, code: Code<RcStr>) -> Result<Value, Error> {
         const FUEL_PER_GC: i32 = 4096;
 
-        let closure = Rc::new(Closure::new(Rc::new(code), None));
+        let closure = Rc::new(Closure::new(Rc::new(code)));
         let mut executor = Executor::new();
         executor.start(closure.into(), Vec::new());
 
@@ -61,10 +60,12 @@ impl Context {
             }
         }
 
-        match executor.frames.pop() {
-            Some(Frame::Result { value }) => Ok(value),
-            Some(Frame::Error { error }) => Err(error),
-            Some(Frame::Effect { effect, args }) => Err(Error::UnhandledEffect { effect, args }),
+        match executor.result {
+            Some(ExecutorResult::Value { value }) => Ok(value),
+            Some(ExecutorResult::Error { error }) => Err(error),
+            Some(ExecutorResult::Effect { effect, args }) => {
+                Err(Error::UnhandledEffect { effect, args })
+            }
             _ => panic!("executor finished without result"),
         }
     }

@@ -16,6 +16,7 @@ compact_str = "0.9"
 unicode-ident = "1"
 rustc-literal-escaper = "0.0.7"
 # Data Structure
+dyn-clone = "1"
 itertools = "0.14"
 derive_more = { version = "2", features = [
     "from",
@@ -67,6 +68,7 @@ text-size.workspace = true
 compact_str.workspace = true
 unicode-ident.workspace = true
 rustc-literal-escaper.workspace = true
+dyn-clone.workspace = true
 itertools.workspace = true
 derive_more.workspace = true
 ordered-float.workspace = true

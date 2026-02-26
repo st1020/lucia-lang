@@ -45,10 +45,11 @@ impl MetaMethod<&Context> for Function {
 
     #[inline]
     fn meta_iter(self, _: &Context) -> Result<Self::ResultIter, Self::Error> {
+        #[derive(Clone)]
         struct FunctionIter(Function);
 
         impl CallbackFn for FunctionIter {
-            fn call(&self, _: &Context, _: &[Value]) -> super::CallbackResult {
+            fn call(&mut self, _: &Context, _: &[Value]) -> super::CallbackResult {
                 Ok(CallbackReturn::TailCall(self.0.clone(), Vec::new()))
             }
         }

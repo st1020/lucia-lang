@@ -1,18 +1,35 @@
 #![allow(clippy::multiple_inherent_impl)]
 
-use std::rc::Rc;
+use std::{cmp::Ordering, rc::Rc};
+
+use ordermap::{OrderMap, OrderSet};
+use oxc_index::index_vec;
 
 use crate::{
     Context,
+    compiler::{code::CodeParamsInfo, index::CodeId},
     errors::Error,
-    frame::{Frame, LuciaFrame},
+    frame::Frame,
     fuel::Fuel,
-    objects::{BuiltinEffect, CallbackReturn, Continuation, Effect, Function, RcEffect, Value},
+    objects::{
+        BuiltinEffect, CallbackReturn, Continuation, Effect, Function, RcEffect, Table, Value,
+    },
 };
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ExecutorResult {
+    /// The result value of the executor.
+    Value { value: Value },
+    /// An error that has occurred.
+    Error { error: Error },
+    /// An effect that has been performed but not handled.
+    Effect { effect: RcEffect, args: Vec<Value> },
+}
 
 #[derive(Debug, Clone)]
 pub struct Executor {
     pub frames: Vec<Frame>,
+    pub result: Option<ExecutorResult>,
 }
 
 impl Executor {
@@ -21,53 +38,61 @@ impl Executor {
     const FUEL_PER_CALLBACK: i32 = 8;
     const FUEL_PER_STEP: i32 = 4;
 
+    const MAX_STACK_SIZE: usize = 256;
+
     pub fn new() -> Self {
-        Self { frames: Vec::new() }
+        Self {
+            frames: Vec::new(),
+            result: None,
+        }
     }
 
-    /// If this continuation is `Stopped`, start a new function with the given arguments.
+    /// Start a new function with the given arguments.
     pub fn start(&mut self, function: Function, args: Vec<Value>) {
         self.call_function(function, args);
     }
 
-    /// If the continuation is in `Normal` mode, either run the Lucia VM for a while or step any callback
-    /// that we are waiting on.
+    /// Run the Lucia VM for a while or step any callback that we are waiting on.
     pub fn step(&mut self, ctx: &mut Context, fuel: &mut Fuel) -> bool {
         loop {
             if self.frames.is_empty() {
                 break true;
             }
 
-            match self.frames.pop().expect("no frame to step") {
-                Frame::Callback { callback, args } => {
+            match self.frames.last_mut().expect("no frame to step") {
+                Frame::Lucia { .. } => match self.run_vm(ctx, Self::VM_GRANULARITY) {
+                    Ok(instructions_run) => {
+                        fuel.consume(instructions_run.try_into().unwrap_or(i32::MAX));
+                    }
+                    Err(error) => self.throw_error(error),
+                },
+                Frame::Callback {
+                    callback,
+                    stack,
+                    effect_handlers,
+                } => {
                     fuel.consume(Self::FUEL_PER_CALLBACK);
-                    match callback.call(ctx, &args) {
-                        Ok(CallbackReturn::Return(v)) => {
-                            self.return_current(v);
-                        }
-                        Ok(CallbackReturn::TailCall(function, args)) => {
+                    match callback.call(ctx, stack) {
+                        Ok(CallbackReturn::Call(function, args, new_effect_handlers)) => {
+                            *effect_handlers = new_effect_handlers;
                             self.call_function(function, args);
                         }
-                        Ok(CallbackReturn::TailEffect(effect, args)) => {
+                        Ok(CallbackReturn::Perform(effect, args)) => {
                             self.perform_effect(effect, args);
                         }
-                        Err(e) => {
-                            self.return_error(e);
+                        Ok(CallbackReturn::TailCall(function, args)) => {
+                            self.tail_call(function, args);
+                        }
+                        Ok(CallbackReturn::TailPerform(effect, args)) => {
+                            self.tail_perform(effect, args);
+                        }
+                        Ok(CallbackReturn::ReturnValue(value)) => {
+                            self.return_value(value);
+                        }
+                        Err(error) => {
+                            self.throw_error(error);
                         }
                     }
-                }
-                frame @ Frame::Lucia { .. } => {
-                    self.frames.push(frame);
-                    match self.run_vm(ctx, Self::VM_GRANULARITY) {
-                        Ok(instructions_run) => {
-                            fuel.consume(instructions_run.try_into().unwrap_or(i32::MAX));
-                        }
-                        Err(e) => self.return_error(e),
-                    }
-                }
-                frame @ (Frame::Result { .. } | Frame::Error { .. } | Frame::Effect { .. }) => {
-                    self.frames.push(frame);
-                    break true;
                 }
             }
 
@@ -79,25 +104,69 @@ impl Executor {
         }
     }
 
+    pub(crate) fn return_value(&mut self, value: Value) {
+        self.frames.pop().expect("no frame to pop for return value");
+        match self.frames.last_mut() {
+            Some(Frame::Lucia {
+                stack,
+                effect_handlers,
+                ..
+            }) => {
+                effect_handlers.clear();
+                stack.push(value);
+            }
+            Some(Frame::Callback {
+                stack,
+                effect_handlers,
+                ..
+            }) => {
+                effect_handlers.clear();
+                stack.clear();
+                stack.push(value);
+            }
+            None => self.result = Some(ExecutorResult::Value { value }),
+        }
+    }
+
     pub(crate) fn call_function(&mut self, function: Function, args: Vec<Value>) {
         match function {
-            Function::Closure(closure) => match LuciaFrame::new(closure, &args) {
-                Ok(frame) => self.frames.push(Frame::Lucia(frame)),
-                Err(error) => self.return_error(error),
-            },
-            Function::Callback(callback) => self.frames.push(Frame::Callback { callback, args }),
+            Function::Closure(closure) => {
+                let params_info = closure.code.params.info();
+                if let Err(error) = params_info.check_args(&args) {
+                    return self.throw_error(error);
+                }
+                let mut stack =
+                    Vec::with_capacity(closure.code.stack_size.min(Self::MAX_STACK_SIZE));
+                params_info.parse_args_to_stack(&mut stack, &args);
+                self.frames.push(Frame::Lucia {
+                    pc: CodeId::new(0),
+                    locals: index_vec![Value::Null; closure.code.local_names.len()],
+                    stack,
+                    closure,
+                    effect_handlers: OrderMap::new(),
+                });
+            }
+            Function::Callback(callback) => self.frames.push(Frame::Callback {
+                callback: Rc::unwrap_or_clone(callback),
+                stack: args,
+                effect_handlers: OrderSet::new(),
+            }),
             Function::Continuation(continuation) => {
-                let mut frames = Rc::unwrap_or_clone(continuation).frames;
                 if args.len() != 1 {
-                    return self.return_error(Error::CallArguments {
+                    return self.throw_error(Error::CallArguments {
                         required: 1.into(),
                         given: args.len(),
                     });
                 }
-                if let Some(Frame::Lucia(LuciaFrame { stack, .. })) = frames.last_mut() {
-                    stack.push(args[0].clone());
-                } else {
-                    panic!("continuation top frame is not lucia frame");
+                let resume_value = args[0].clone();
+                let mut frames = Rc::unwrap_or_clone(continuation).frames;
+                match frames.last_mut() {
+                    Some(Frame::Lucia { stack, .. }) => stack.push(resume_value),
+                    Some(Frame::Callback { stack, .. }) => {
+                        stack.clear();
+                        stack.push(resume_value);
+                    }
+                    None => panic!("continuation has no frames"),
                 }
                 self.frames.append(&mut frames);
             }
@@ -105,73 +174,69 @@ impl Executor {
     }
 
     pub(crate) fn tail_call(&mut self, function: Function, args: Vec<Value>) {
-        self.frames.pop().expect("top frame is not lua frame");
+        self.frames.pop().expect("no frame to pop for tail call");
         self.call_function(function, args);
-    }
-
-    pub(crate) fn return_current(&mut self, value: Value) {
-        match self.frames.last_mut() {
-            Some(Frame::Lucia(LuciaFrame {
-                stack,
-                effect_handlers,
-                ..
-            })) => {
-                effect_handlers.clear();
-                stack.push(value);
-            }
-            None => self.frames.push(Frame::Result { value }),
-            _ => panic!("lua frame must be above a lua frame"),
-        }
-    }
-
-    pub(crate) fn return_upper(&mut self, value: Value) {
-        self.frames.pop().expect("top frame is not lua frame");
-        self.return_current(value);
     }
 
     #[inline]
     fn perform_effect_with(&mut self, effect: RcEffect, args: &[Value]) -> bool {
-        if let Some(i) = self.frames.iter().rposition(|frame| {
-            if let Frame::Lucia(LuciaFrame {
-                effect_handlers, ..
-            }) = frame
-                && effect_handlers.contains_key(&effect)
-            {
-                true
-            } else {
-                false
-            }
-        }) {
+        let params_info = effect.params_info();
+        if let Err(error) = params_info.check_args(args) {
+            self.throw_error(error);
+            return true;
+        }
+        if let Some(i) = self
+            .frames
+            .iter()
+            .take(self.frames.len().saturating_sub(1))
+            .rposition(|frame| match frame {
+                Frame::Lucia {
+                    effect_handlers, ..
+                } => effect_handlers.contains_key(&effect),
+                Frame::Callback {
+                    effect_handlers, ..
+                } => effect_handlers.contains(&effect),
+            })
+        {
             let continuation = Continuation::new(self.frames.split_off(i + 1));
-            if let Frame::Lucia(LuciaFrame {
-                pc,
-                stack,
-                effect_handlers,
-                ..
-            }) = &mut self.frames[i]
-                && let Some(effect_handler_info) = effect_handlers.get(&effect).cloned()
-            {
-                stack.push(continuation.into());
-                if let Err(e) = effect.params_info().parse_args_to_stack(stack, args) {
-                    self.return_error(e);
-                    return true;
+            match &mut self.frames[i] {
+                Frame::Lucia {
+                    pc,
+                    stack,
+                    effect_handlers,
+                    ..
+                } => {
+                    let effect_handler_info = effect_handlers.get(&effect).cloned().unwrap();
+                    stack.push(continuation.into());
+                    params_info.parse_args_to_stack(stack, args);
+                    stack.push(effect.into());
+                    *pc = effect_handler_info.jump_target;
                 }
-                stack.push(effect.into());
-                *pc = effect_handler_info.jump_target;
-                self.frames.truncate(i + 1);
-                return true;
+                Frame::Callback { stack, .. } => {
+                    stack.clear();
+                    stack.push(effect.into());
+                    stack.push(continuation.into());
+                    params_info.parse_args_to_stack(stack, args);
+                }
             }
+            self.frames.truncate(i + 1);
+            return true;
         }
         false
     }
 
     pub(crate) fn perform_effect(&mut self, effect: RcEffect, args: Vec<Value>) {
         if !self.perform_effect_with(Rc::clone(&effect), &args) {
-            self.frames.push(Frame::Effect { effect, args });
+            self.result = Some(ExecutorResult::Effect { effect, args });
         }
     }
 
-    pub(crate) fn return_error(&mut self, error: Error) {
+    pub(crate) fn tail_perform(&mut self, effect: RcEffect, args: Vec<Value>) {
+        self.frames.pop().expect("no frame to pop for tail perform");
+        self.perform_effect(effect, args);
+    }
+
+    pub(crate) fn throw_error(&mut self, error: Error) {
         if !self.perform_effect_with(
             #[expect(clippy::wildcard_enum_match_arm)]
             Effect::Builtin(match error {
@@ -180,9 +245,9 @@ impl Executor {
                 _ => BuiltinEffect::Error,
             })
             .into(),
-            &[],
+            &[error.to_string().into()],
         ) {
-            self.frames.push(Frame::Error { error });
+            self.result = Some(ExecutorResult::Error { error });
         }
     }
 }
@@ -190,5 +255,45 @@ impl Executor {
 impl Default for Executor {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl CodeParamsInfo {
+    pub(crate) fn check_args(&self, args: &[Value]) -> Result<(), Error> {
+        match args.len().cmp(&self.params_count) {
+            Ordering::Less => Err(Error::CallArguments {
+                required: if self.has_variadic {
+                    (self.params_count, None).into()
+                } else {
+                    self.params_count.into()
+                },
+                given: args.len(),
+            }),
+            Ordering::Equal => Ok(()),
+            Ordering::Greater => {
+                if self.has_variadic {
+                    Ok(())
+                } else {
+                    Err(Error::CallArguments {
+                        required: self.params_count.into(),
+                        given: args.len(),
+                    })
+                }
+            }
+        }
+    }
+
+    pub(crate) fn parse_args_to_stack(&self, stack: &mut Vec<Value>, args: &[Value]) {
+        if self.has_variadic {
+            if let Some((params, variadic)) = args.split_at_checked(self.params_count) {
+                stack.extend_from_slice(params);
+                stack.push(variadic.into());
+            } else {
+                stack.extend_from_slice(args);
+                stack.push(Table::new().into());
+            }
+        } else {
+            stack.extend_from_slice(args);
+        }
     }
 }
