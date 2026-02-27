@@ -33,15 +33,12 @@ impl Effect {
     pub fn params_info(&self) -> CodeParamsInfo {
         match self {
             Effect::User(effect) => effect.params.info(),
-            Effect::Builtin(
-                BuiltinEffect::Error
-                | BuiltinEffect::Panic
-                | BuiltinEffect::Assert
-                | BuiltinEffect::Yield,
-            ) => CodeParamsInfo {
-                params_count: 1,
-                has_variadic: false,
-            },
+            Effect::Builtin(BuiltinEffect::Yield | BuiltinEffect::Error | BuiltinEffect::Panic) => {
+                CodeParamsInfo {
+                    params_count: 1,
+                    has_variadic: false,
+                }
+            }
         }
     }
 

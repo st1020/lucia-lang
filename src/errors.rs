@@ -18,8 +18,6 @@ pub enum Error {
     LuciaError(Value),
     #[error("panic: {0}")]
     LuciaPanic(Value),
-    #[error("assert: {0}")]
-    LuciaAssert(Value),
     #[error("unexpected type error (expected {expected}, found {found})")]
     UnexpectedType {
         expected: ValueType,

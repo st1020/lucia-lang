@@ -114,7 +114,6 @@ pub enum BuiltinEffect {
     Yield,
     Error,
     Panic,
-    Assert,
 }
 
 impl BuiltinEffect {
@@ -123,7 +122,6 @@ impl BuiltinEffect {
             BuiltinEffect::Yield => "yield",
             BuiltinEffect::Error => "error",
             BuiltinEffect::Panic => "panic",
-            BuiltinEffect::Assert => "assert",
         }
     }
 }

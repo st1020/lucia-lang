@@ -211,12 +211,18 @@ impl Executor {
                     ..
                 } => {
                     let effect_handler_info = effect_handlers.get(&effect).cloned().unwrap();
+                    effect_handlers.clear();
                     stack.push(continuation.into());
                     params_info.parse_args_to_stack(stack, args);
                     stack.push(effect.into());
                     *pc = effect_handler_info.jump_target;
                 }
-                Frame::Callback { stack, .. } => {
+                Frame::Callback {
+                    stack,
+                    effect_handlers,
+                    ..
+                } => {
+                    effect_handlers.clear();
                     stack.clear();
                     stack.push(effect.into());
                     stack.push(continuation.into());
@@ -241,16 +247,13 @@ impl Executor {
     }
 
     pub(crate) fn throw_error(&mut self, error: Error) {
-        if !self.perform_effect_with(
-            #[expect(clippy::wildcard_enum_match_arm)]
-            Effect::Builtin(match error {
-                Error::LuciaPanic(_) => BuiltinEffect::Panic,
-                Error::LuciaAssert(_) => BuiltinEffect::Assert,
-                _ => BuiltinEffect::Error,
-            })
-            .into(),
-            &[error.to_string().into()],
-        ) {
+        #[expect(clippy::wildcard_enum_match_arm)]
+        let (effect, value) = match &error {
+            Error::LuciaError(value) => (BuiltinEffect::Error, value.clone()),
+            Error::LuciaPanic(value) => (BuiltinEffect::Panic, value.clone()),
+            _ => (BuiltinEffect::Error, error.to_string().into()),
+        };
+        if !self.perform_effect_with(Effect::Builtin(effect).into(), &[value]) {
             self.result = Some(ExecutorResult::Error { error });
         }
     }

@@ -13,16 +13,21 @@ pub fn load_builtin(context: &mut Context) {
     builtins.set(BuiltinEffect::Yield.name(), BuiltinEffect::Yield);
     builtins.set(BuiltinEffect::Error.name(), BuiltinEffect::Error);
     builtins.set(BuiltinEffect::Panic.name(), BuiltinEffect::Panic);
-    builtins.set(BuiltinEffect::Assert.name(), BuiltinEffect::Assert);
     builtins.set("id", Callback::from_fn(|v: Value| v.id().map(usize::from)));
     builtins.set("type", Callback::from_fn(|v: Value| v.value_type().name()));
     builtins.set(
         "assert",
         Callback::from_fn(|v: bool, msg: &[Value]| {
+            if msg.len() > 1 {
+                return Err(Error::CallArguments {
+                    required: ArgumentRange::from((1, 2)),
+                    given: msg.len(),
+                });
+            }
             if v {
                 Ok(v)
             } else {
-                Err(Error::LuciaAssert(
+                Err(Error::LuciaError(
                     msg.first().cloned().unwrap_or(Value::Null),
                 ))
             }
