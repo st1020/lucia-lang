@@ -57,7 +57,7 @@ impl MetaMethod<&Context> for RcEffect {
     impl_metamethod!(Effect);
 
     #[inline]
-    fn meta_call(self, _: &Context) -> Result<Self::ResultCall, Self::Error> {
+    fn meta_call(self, _ctx: &Context) -> Result<Self::ResultCall, Self::Error> {
         Ok(Rc::new(Callback::new(self)).into())
     }
 
@@ -68,7 +68,7 @@ impl MetaMethod<&Context> for RcEffect {
 }
 
 impl CallbackFn for RcEffect {
-    fn call(&mut self, _: &Context, args: &[Value]) -> super::CallbackResult {
+    fn call(&mut self, _ctx: &Context, args: &[Value]) -> super::CallbackResult {
         Ok(CallbackReturn::TailPerform {
             effect: Rc::clone(self),
             args: args.to_vec(),

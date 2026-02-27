@@ -12,18 +12,18 @@ impl MetaMethod<&Context> for Float {
     impl_metamethod!(Float);
 
     #[inline]
-    fn meta_bool(self, _: &Context) -> Result<Self::Result1, Self::Error> {
+    fn meta_bool(self, _ctx: &Context) -> Result<Self::Result1, Self::Error> {
         Ok((self.0 != 0.0).into())
     }
 
     #[expect(clippy::as_conversions, clippy::cast_possible_truncation)]
     #[inline]
-    fn meta_int(self, _: &Context) -> Result<Self::Result1, Self::Error> {
+    fn meta_int(self, _ctx: &Context) -> Result<Self::Result1, Self::Error> {
         Ok((self.0 as i64).into())
     }
 
     #[inline]
-    fn meta_float(self, _: &Context) -> Result<Self::Result1, Self::Error> {
+    fn meta_float(self, _ctx: &Context) -> Result<Self::Result1, Self::Error> {
         Ok(self.into())
     }
 

@@ -43,17 +43,17 @@ impl MetaMethod<&Context> for RcStr {
     impl_metamethod!(Str);
 
     #[inline]
-    fn meta_len(self, _: &Context) -> Result<Self::Result1, Self::Error> {
+    fn meta_len(self, _ctx: &Context) -> Result<Self::Result1, Self::Error> {
         Ok(self.len().into())
     }
 
     #[inline]
-    fn meta_bool(self, _: &Context) -> Result<Self::Result1, Self::Error> {
+    fn meta_bool(self, _ctx: &Context) -> Result<Self::Result1, Self::Error> {
         Ok((!self.is_empty()).into())
     }
 
     #[inline]
-    fn meta_int(self, _: &Context) -> Result<Self::Result1, Self::Error> {
+    fn meta_int(self, _ctx: &Context) -> Result<Self::Result1, Self::Error> {
         Ok(self
             .parse::<i64>()
             .map_err(|e| Error::ParseError {
@@ -63,7 +63,7 @@ impl MetaMethod<&Context> for RcStr {
     }
 
     #[inline]
-    fn meta_float(self, _: &Context) -> Result<Self::Result1, Self::Error> {
+    fn meta_float(self, _ctx: &Context) -> Result<Self::Result1, Self::Error> {
         Ok(self
             .parse::<f64>()
             .map_err(|e| Error::ParseError {
@@ -75,7 +75,7 @@ impl MetaMethod<&Context> for RcStr {
     impl_metamethod!(Str, str);
 
     #[inline]
-    fn meta_repr(self, _: &Context) -> Result<Self::Result1, Self::Error> {
+    fn meta_repr(self, _ctx: &Context) -> Result<Self::Result1, Self::Error> {
         Ok(format_compact!("{:?}", self.as_str()).into())
     }
 

@@ -13,7 +13,7 @@ macro_rules! impl_metamethod {
         #[inline]
         fn meta_error(
             self,
-            _: &Context,
+            _ctx: &Context,
             operator: $crate::compiler::value::MetaName,
             args: Vec<Self::Value>,
         ) -> Self::Error {
@@ -30,9 +30,57 @@ macro_rules! impl_metamethod {
             }
         }
     };
+    ($type:ident, call) => {
+        #[inline]
+        fn meta_call(self, ctx: &Context) -> Result<Self::ResultCall, Self::Error> {
+            if let Some(metatable) = self.metatable() {
+                #[derive(Clone)]
+                struct MetaCallCallback {
+                    function: $crate::objects::Function,
+                    self_value: std::rc::Rc<$type>,
+                }
+
+                impl $crate::objects::CallbackFn for MetaCallCallback {
+                    fn call(
+                        &mut self,
+                        _ctx: &Context,
+                        args: &[$crate::objects::Value],
+                    ) -> $crate::objects::CallbackResult {
+                        let mut callback_args = Vec::with_capacity(args.len() + 1);
+                        callback_args.push(std::rc::Rc::clone(&self.self_value).into());
+                        callback_args.extend_from_slice(args);
+                        Ok($crate::objects::CallbackReturn::TailCall {
+                            function: self.function.clone(),
+                            args: callback_args,
+                        })
+                    }
+                }
+
+                let function = match metatable.get($crate::compiler::value::MetaName::Call) {
+                    $crate::objects::Value::Function(v) => v,
+                    $crate::objects::Value::Table(v) => v.meta_call(ctx)?,
+                    v => {
+                        return Err(v.meta_error(
+                            ctx,
+                            $crate::compiler::value::MetaName::Call,
+                            vec![],
+                        ));
+                    }
+                };
+                Ok($crate::objects::Function::Callback(std::rc::Rc::new(
+                    $crate::objects::Callback::new(MetaCallCallback {
+                        function,
+                        self_value: self,
+                    }),
+                )))
+            } else {
+                Err(self.meta_error(ctx, $crate::compiler::value::MetaName::Call, vec![]))
+            }
+        }
+    };
     ($type:ident, str) => {
         #[inline]
-        fn meta_str(self, _: &Context) -> Result<Self::Result1, Self::Error> {
+        fn meta_str(self, _ctx: &Context) -> Result<Self::Result1, Self::Error> {
             Ok(compact_str::ToCompactString::to_compact_string(&self).into())
         }
     };
@@ -44,7 +92,7 @@ macro_rules! impl_metamethod {
     };
     ($type:ident, neg) => {
         #[inline]
-        fn meta_neg(self, _: &Context) -> Result<Self::Result1, Self::Error> {
+        fn meta_neg(self, _ctx: &Context) -> Result<Self::Result1, Self::Error> {
             Ok((-self).into())
         }
     };
@@ -64,7 +112,7 @@ macro_rules! impl_metamethod {
     };
     ($type:ident, eq_ne) => {
         #[inline]
-        fn meta_eq(self, _: &Context, other: Self::Value) -> Result<Self::Result2, Self::Error> {
+        fn meta_eq(self, _ctx: &Context, other: Self::Value) -> Result<Self::Result2, Self::Error> {
             if let $crate::objects::Value::$type(v) = other {
                 Ok((self == v).into())
             } else {
@@ -72,7 +120,7 @@ macro_rules! impl_metamethod {
             }
         }
         #[inline]
-        fn meta_ne(self, _: &Context, other: Self::Value) -> Result<Self::Result2, Self::Error> {
+        fn meta_ne(self, _ctx: &Context, other: Self::Value) -> Result<Self::Result2, Self::Error> {
             if let $crate::objects::Value::$type(v) = other {
                 Ok((self != v).into())
             } else {
@@ -159,6 +207,43 @@ macro_rules! call_metamethod {
     };
 }
 
+macro_rules! call_meta_iter {
+    ($type:ident, $ctx:ident, $self:ident) => {
+        if let Some(metatable) = $self.metatable() {
+            let t = metatable.get($crate::compiler::value::MetaName::Iter);
+            if !t.is_null() {
+                #[derive(Clone)]
+                struct MetaIterCallback {
+                    function: $crate::objects::Function,
+                    self_value: std::rc::Rc<$type>,
+                }
+
+                impl $crate::objects::CallbackFn for MetaIterCallback {
+                    fn call(
+                        &mut self,
+                        _ctx: &Context,
+                        args: &[$crate::objects::Value],
+                    ) -> $crate::objects::CallbackResult {
+                        $crate::objects::ArgumentRange::from(0).check(args)?;
+                        Ok($crate::objects::CallbackReturn::TailCall {
+                            function: self.function.clone(),
+                            args: vec![std::rc::Rc::clone(&self.self_value).into()],
+                        })
+                    }
+                }
+
+                return $crate::objects::Function::Callback(std::rc::Rc::new(
+                    $crate::objects::Callback::new(MetaIterCallback {
+                        function: t.meta_call($ctx)?,
+                        self_value: $self,
+                    }),
+                ))
+                .meta_iter($ctx);
+            }
+        }
+    };
+}
+
 macro_rules! unexpected_type_error {
     ($expected:expr, $found:expr) => {
         $crate::errors::Error::UnexpectedType {
@@ -168,6 +253,7 @@ macro_rules! unexpected_type_error {
     };
 }
 
+pub(crate) use call_meta_iter;
 pub(crate) use call_metamethod;
 pub(crate) use impl_metamethod;
 pub(crate) use unexpected_type_error;

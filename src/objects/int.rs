@@ -9,18 +9,18 @@ impl MetaMethod<&Context> for i64 {
     impl_metamethod!(Int);
 
     #[inline]
-    fn meta_bool(self, _: &Context) -> Result<Self::Result1, Self::Error> {
+    fn meta_bool(self, _ctx: &Context) -> Result<Self::Result1, Self::Error> {
         Ok((self != 0).into())
     }
 
     #[inline]
-    fn meta_int(self, _: &Context) -> Result<Self::Result1, Self::Error> {
+    fn meta_int(self, _ctx: &Context) -> Result<Self::Result1, Self::Error> {
         Ok(self.into())
     }
 
     #[expect(clippy::as_conversions, clippy::cast_precision_loss)]
     #[inline]
-    fn meta_float(self, _: &Context) -> Result<Self::Result1, Self::Error> {
+    fn meta_float(self, _ctx: &Context) -> Result<Self::Result1, Self::Error> {
         Ok((self as f64).into())
     }
 

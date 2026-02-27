@@ -2,7 +2,10 @@ use crate::{
     Context,
     compiler::value::MetaMethod,
     errors::Error,
-    objects::{BuiltinEffect, Callback, CallbackFn, CallbackResult, CallbackReturn, Effect, Value},
+    objects::{
+        ArgumentRange, BuiltinEffect, Callback, CallbackFn, CallbackResult, CallbackReturn, Effect,
+        Value,
+    },
 };
 
 pub fn load_builtin(context: &mut Context) {
@@ -53,13 +56,15 @@ pub fn load_builtin(context: &mut Context) {
         "range",
         Callback::from_fn(|start: i64, end: i64| {
             #[derive(Clone)]
-            struct RangeIter {
-                value: i64,
+            struct RangeIterCallback {
+                start: i64,
                 end: i64,
+                value: i64,
             }
 
-            impl CallbackFn for RangeIter {
-                fn call(&mut self, _ctx: &Context, _args: &[Value]) -> CallbackResult {
+            impl CallbackFn for RangeIterCallback {
+                fn call(&mut self, _ctx: &Context, args: &[Value]) -> CallbackResult {
+                    ArgumentRange::check_iter_callback(args, self.value == self.start)?;
                     self.value += 1;
                     if self.value <= self.end {
                         Ok(CallbackReturn::Perform {
@@ -72,7 +77,11 @@ pub fn load_builtin(context: &mut Context) {
                 }
             }
 
-            Callback::new(RangeIter { value: start, end })
+            Callback::new(RangeIterCallback {
+                start,
+                end,
+                value: start,
+            })
         }),
     );
 }

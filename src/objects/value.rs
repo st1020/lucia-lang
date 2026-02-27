@@ -174,7 +174,7 @@ impl MetaMethod<&Context> for Value {
     value_enum_dispatch_meta_method!(3, meta_set_attr, meta_set_item);
 
     #[inline]
-    fn meta_error(self, _: &Context, operator: MetaName, args: Vec<Self::Value>) -> Self::Error {
+    fn meta_error(self, _ctx: &Context, operator: MetaName, args: Vec<Self::Value>) -> Self::Error {
         if args.is_empty() {
             Error::MetaUnOperator {
                 operator,

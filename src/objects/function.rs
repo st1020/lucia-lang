@@ -39,17 +39,19 @@ impl MetaMethod<&Context> for Function {
     impl_metamethod!(Function);
 
     #[inline]
-    fn meta_call(self, _: &Context) -> Result<Self::ResultCall, Self::Error> {
+    fn meta_call(self, _ctx: &Context) -> Result<Self::ResultCall, Self::Error> {
         Ok(self)
     }
 
     #[inline]
-    fn meta_iter(self, _: &Context) -> Result<Self::ResultIter, Self::Error> {
+    fn meta_iter(self, _ctx: &Context) -> Result<Self::ResultIter, Self::Error> {
         #[derive(Clone)]
         struct FunctionIterCallback(Function);
 
         impl CallbackFn for FunctionIterCallback {
-            fn call(&mut self, _: &Context, _: &[Value]) -> super::CallbackResult {
+            fn call(&mut self, _ctx: &Context, args: &[Value]) -> super::CallbackResult {
+                ArgumentRange::from(1).check(args)?;
+                <()>::from_value(args[0].clone())?;
                 Ok(CallbackReturn::TailCall {
                     function: self.0.clone(),
                     args: Vec::new(),
@@ -109,7 +111,8 @@ impl ArgumentRange {
         Self { start, end: None }
     }
 
-    pub fn check(&self, args_len: usize) -> Result<(), Error> {
+    pub fn check(&self, args: &[Value]) -> Result<(), Error> {
+        let args_len = args.len();
         if self.contains(&args_len) {
             Ok(())
         } else {
@@ -118,6 +121,15 @@ impl ArgumentRange {
                 given: args_len,
             })
         }
+    }
+
+    #[inline]
+    pub fn check_iter_callback(args: &[Value], first_call: bool) -> Result<(), Error> {
+        ArgumentRange::from(usize::from(!first_call)).check(args)?;
+        if !first_call {
+            <()>::from_value(args[0].clone())?;
+        }
+        Ok(())
     }
 }
 

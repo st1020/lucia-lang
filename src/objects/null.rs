@@ -9,22 +9,22 @@ impl MetaMethod<&Context> for () {
     impl_metamethod!(Null);
 
     #[inline]
-    fn meta_bool(self, _: &Context) -> Result<Self::Result1, Self::Error> {
+    fn meta_bool(self, _ctx: &Context) -> Result<Self::Result1, Self::Error> {
         Ok(false.into())
     }
 
     #[inline]
-    fn meta_int(self, _: &Context) -> Result<Self::Result1, Self::Error> {
+    fn meta_int(self, _ctx: &Context) -> Result<Self::Result1, Self::Error> {
         Ok(0.into())
     }
 
     #[inline]
-    fn meta_float(self, _: &Context) -> Result<Self::Result1, Self::Error> {
+    fn meta_float(self, _ctx: &Context) -> Result<Self::Result1, Self::Error> {
         Ok(0.0.into())
     }
 
     #[inline]
-    fn meta_str(self, _: &Context) -> Result<Self::Result1, Self::Error> {
+    fn meta_str(self, _ctx: &Context) -> Result<Self::Result1, Self::Error> {
         Ok("null".into())
     }
 
@@ -34,12 +34,12 @@ impl MetaMethod<&Context> for () {
     }
 
     #[inline]
-    fn meta_eq(self, _: &Context, other: Self::Value) -> Result<Self::Result2, Self::Error> {
+    fn meta_eq(self, _ctx: &Context, other: Self::Value) -> Result<Self::Result2, Self::Error> {
         Ok(matches!(other, Value::Null).into())
     }
 
     #[inline]
-    fn meta_ne(self, _: &Context, other: Self::Value) -> Result<Self::Result2, Self::Error> {
+    fn meta_ne(self, _ctx: &Context, other: Self::Value) -> Result<Self::Result2, Self::Error> {
         Ok((!matches!(other, Value::Null)).into())
     }
 }

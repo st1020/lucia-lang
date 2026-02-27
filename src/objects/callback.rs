@@ -151,7 +151,7 @@ macro_rules! impl_into_callback {
             $($t: FromValue,)*
         {
             fn call(&self, _ctx: &Context, args: &[Value]) -> CallbackResult {
-                ArgumentRange::from($len).check(args.len())?;
+                ArgumentRange::from($len).check(args)?;
                 debug_assert!(args.len() == $len);
                 self($($t::from_value(args[$idx].clone())?,)*).into_callback_result()
             }
@@ -165,7 +165,7 @@ macro_rules! impl_into_callback {
             $($t: FromValue,)*
         {
             fn call(&self, _ctx: &Context, args: &[Value]) -> CallbackResult {
-                ArgumentRange::from(($len, None)).check(args.len())?;
+                ArgumentRange::from(($len, None)).check(args)?;
                 debug_assert!(args.len() >= $len);
                 self($($t::from_value(args[$idx].clone())?,)* &args[$len..]).into_callback_result()
             }
@@ -178,7 +178,7 @@ macro_rules! impl_into_callback {
             $($t: FromValue,)*
         {
             fn call(&self, ctx: &Context, args: &[Value]) -> CallbackResult {
-                ArgumentRange::from($len).check(args.len())?;
+                ArgumentRange::from($len).check(args)?;
                 debug_assert!(args.len() == $len);
                 self(ctx, $($t::from_value(args[$idx].clone())?,)*).into_callback_result()
             }
@@ -192,7 +192,7 @@ macro_rules! impl_into_callback {
             $($t: FromValue,)*
         {
             fn call(&self, ctx: &Context, args: &[Value]) -> CallbackResult {
-                ArgumentRange::from(($len, None)).check(args.len())?;
+                ArgumentRange::from(($len, None)).check(args)?;
                 debug_assert!(args.len() >= $len);
                 self(ctx, $($t::from_value(args[$idx].clone())?,)* &args[$len..]).into_callback_result()
             }
@@ -230,7 +230,8 @@ mod tests {
         struct CB;
 
         impl CallbackFn for CB {
-            fn call(&mut self, _ctx: &Context, _args: &[Value]) -> CallbackResult {
+            fn call(&mut self, _ctx: &Context, args: &[Value]) -> CallbackResult {
+                ArgumentRange::from(0).check(args)?;
                 Ok(CallbackReturn::ReturnValue {
                     value: Value::Int(42),
                 })

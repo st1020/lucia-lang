@@ -8,8 +8,8 @@ use crate::{
     Context,
     compiler::value::{MetaMethod, MetaName},
     objects::{
-        BuiltinEffect, Callback, CallbackFn, CallbackReturn, Effect, Function, MetaResult, Value,
-        call_metamethod, impl_metamethod,
+        ArgumentRange, BuiltinEffect, Callback, CallbackFn, CallbackReturn, Effect, Function,
+        MetaResult, Value, call_meta_iter, call_metamethod, impl_metamethod,
     },
 };
 
@@ -133,7 +133,9 @@ impl TableIterCallback {
 }
 
 impl CallbackFn for TableIterCallback {
-    fn call(&mut self, _ctx: &Context, _args: &[Value]) -> super::CallbackResult {
+    fn call(&mut self, _ctx: &Context, args: &[Value]) -> super::CallbackResult {
+        ArgumentRange::check_iter_callback(args, self.i == 0)?;
+
         self.i += 1;
         if let Some((k, v)) = self.table.get_index(self.i - 1) {
             Ok(CallbackReturn::Perform {
@@ -162,52 +164,12 @@ impl<'a> IntoIterator for &'a Table {
 impl MetaMethod<&Context> for RcTable {
     impl_metamethod!(Table);
 
-    #[inline]
-    fn meta_call(self, ctx: &Context) -> Result<Self::ResultCall, Self::Error> {
-        if let Some(metatable) = self.metatable() {
-            #[expect(clippy::wildcard_enum_match_arm)]
-            match metatable.get(MetaName::Call) {
-                Value::Function(v) => Ok(v),
-                Value::Table(v) => v.meta_call(ctx),
-                v => Err(v.meta_error(ctx, MetaName::Call, vec![])),
-            }
-        } else {
-            Err(self.meta_error(ctx, MetaName::Call, vec![]))
-        }
-    }
+    impl_metamethod!(Table, call);
 
     #[inline]
     fn meta_iter(self, ctx: &Context) -> Result<Self::ResultIter, Self::Error> {
-        if let Some(metatable) = self.metatable() {
-            let t = metatable.get(MetaName::Iter);
-            if !t.is_null() {
-                #[derive(Clone)]
-                struct IterCallback {
-                    function: Function,
-                    table: RcTable,
-                }
-
-                impl CallbackFn for IterCallback {
-                    fn call(&mut self, _ctx: &Context, _args: &[Value]) -> super::CallbackResult {
-                        Ok(CallbackReturn::TailCall {
-                            function: self.function.clone(),
-                            args: vec![Rc::clone(&self.table).into()],
-                        })
-                    }
-                }
-
-                return Ok(Function::Callback(
-                    Callback::new(IterCallback {
-                        function: t.meta_call(ctx)?,
-                        table: self,
-                    })
-                    .into(),
-                ));
-            }
-        }
-        Ok(Function::Callback(Rc::new(Callback::new(
-            TableIterCallback::new(self),
-        ))))
+        call_meta_iter!(Table, ctx, self);
+        Function::Callback(Rc::new(Callback::new(TableIterCallback::new(self)))).meta_iter(ctx)
     }
 
     #[inline]

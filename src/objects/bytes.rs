@@ -20,7 +20,7 @@ impl MetaMethod<&Context> for RcBytes {
     impl_metamethod!(Bytes);
 
     #[inline]
-    fn meta_len(self, _: &Context) -> Result<Self::Result1, Self::Error> {
+    fn meta_len(self, _ctx: &Context) -> Result<Self::Result1, Self::Error> {
         Ok(self.len().into())
     }
 

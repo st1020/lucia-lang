@@ -5,7 +5,7 @@ use derive_more::{Deref, Display, From};
 use crate::{
     Context,
     compiler::value::{MetaMethod, MetaName},
-    objects::{RcTable, Value, impl_metamethod},
+    objects::{RcTable, call_meta_iter, impl_metamethod},
 };
 
 pub type RcUserData = Rc<UserData>;
@@ -45,34 +45,13 @@ impl UserData {
 impl MetaMethod<&Context> for RcUserData {
     impl_metamethod!(UserData);
 
-    #[inline]
-    fn meta_call(self, ctx: &Context) -> Result<Self::ResultCall, Self::Error> {
-        if let Some(metatable) = self.metatable() {
-            #[expect(clippy::wildcard_enum_match_arm)]
-            match metatable.get(MetaName::Call) {
-                Value::Function(v) => Ok(v),
-                Value::Table(v) => v.meta_call(ctx), // TODO: prevent infinite recursion
-                v => Err(v.meta_error(ctx, MetaName::Call, vec![])),
-            }
-        } else {
-            Err(self.meta_error(ctx, MetaName::Call, vec![]))
-        }
-    }
+    impl_metamethod!(UserData, call);
 
-    // #[inline]
-    // fn meta_iter(self, ctx: &Context) -> Result<Self::ResultIter, Self::Error> {
-    //     if let Some(metatable) = self.metatable() {
-    //         let t = metatable.get(ctx, MetaName::Iter);
-    //         if !t.is_null() {
-    //             return Ok(Function::Callback(Callback::from_fn_with(
-    //                 &ctx,
-    //                 (t.meta_call(ctx)?, *self),
-    //                 |(f, v), _ctx, _args| Ok(CallbackReturn::TailCall(*f, vec![(*v).into()])),
-    //             )));
-    //         }
-    //     }
-    //     Err(self.meta_error(ctx, MetaName::Iter, vec![]))
-    // }
+    #[inline]
+    fn meta_iter(self, ctx: &Context) -> Result<Self::ResultIter, Self::Error> {
+        call_meta_iter!(UserData, ctx, self);
+        Err(self.meta_error(ctx, MetaName::Iter, vec![]))
+    }
 
     impl_metamethod!(UserData, metatable, Len, meta_len, 1);
 
