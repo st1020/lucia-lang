@@ -46,15 +46,15 @@ pub enum TokenKind {
     Ident,
 
     // Literals:
-    /// "12_u8", "0o100", "0b120", "1".
+    /// `12_u8`, `0o100`, `0b120`, `1`.
     Int,
-    /// "12.34", "1e3".
+    /// `12.34`, `1e3`.
     Float,
-    /// ""abc"".
+    /// `"abc"`.
     Str,
-    /// "r"abc"".
+    /// `r"abc"`.
     RawStr,
-    /// "b"abc"".
+    /// `b"abc"`.
     ByteStr,
 
     // Keywords:

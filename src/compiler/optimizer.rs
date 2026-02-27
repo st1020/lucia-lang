@@ -79,7 +79,7 @@ fn constant_fold<S: Clone + Eq + Hash>(
         };
     }
     for opcode in block.code.iter().copied() {
-        #[expect(clippy::restriction)]
+        #[expect(clippy::wildcard_enum_match_arm)]
         match opcode {
             OpCode::LoadConst(i) => {
                 stack.push(consts.get_index(i.index()).unwrap().clone());

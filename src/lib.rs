@@ -30,11 +30,7 @@
 #![warn(clippy::pedantic)]
 #![allow(clippy::too_many_lines, clippy::must_use_candidate)]
 // TODO: Improve documentation
-#![allow(
-    clippy::doc_markdown,
-    clippy::missing_errors_doc,
-    clippy::missing_panics_doc
-)]
+#![allow(clippy::missing_errors_doc, clippy::missing_panics_doc)]
 // Restriction warnings
 #![warn(clippy::restriction)]
 #![allow(
@@ -49,7 +45,6 @@
     clippy::mod_module_files,
     clippy::module_name_repetitions,
     clippy::pattern_type_mismatch,
-    clippy::pointer_format,
     clippy::pub_use,
     clippy::pub_with_shorthand,
     clippy::question_mark_used,
@@ -67,7 +62,6 @@
 // TODO: Improve documentation
 #![allow(
     clippy::allow_attributes_without_reason,
-    clippy::missing_assert_message,
     clippy::missing_docs_in_private_items
 )]
 // TODO: Prevent panic
@@ -75,8 +69,6 @@
     clippy::arithmetic_side_effects,
     clippy::expect_used,
     clippy::indexing_slicing,
-    clippy::panic,
-    clippy::panic_in_result_fn,
     clippy::unreachable,
     clippy::unwrap_used
 )]

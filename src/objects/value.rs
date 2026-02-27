@@ -13,6 +13,7 @@ use crate::{
 pub use crate::compiler::value::ValueType;
 
 /// Enum of all lucia values.
+#[expect(clippy::doc_markdown)]
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default, From, Display, IsVariant)]
 pub enum Value {
     /// `null` - A null value.

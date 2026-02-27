@@ -1,4 +1,4 @@
-//! The OpCodes for LVM.
+//! The operation codes of Lucia Virtual Machine.
 
 use std::fmt;
 

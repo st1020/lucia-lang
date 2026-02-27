@@ -1,4 +1,4 @@
-use std::{panic, rc::Rc};
+use std::rc::Rc;
 
 use crate::{
     compiler::{code::Code, compile, error::CompilerError},
@@ -66,7 +66,7 @@ impl Context {
             Some(ExecutorResult::Effect { effect, args }) => {
                 Err(Error::UnhandledEffect { effect, args })
             }
-            _ => panic!("executor finished without result"),
+            _ => unreachable!("executor finished without result"),
         }
     }
 }

@@ -211,7 +211,7 @@ impl<'a, S: Clone + Eq + Hash> CodeGenerator<'a, S> {
         } else if let Some(index) = self.global_names().get_index_of(&symbol_id) {
             OpCode::LoadGlobal(GlobalNameId::new(index))
         } else {
-            panic!("symbol not found");
+            unreachable!("symbol not found");
         };
         self.push_code(opcode);
     }
@@ -863,7 +863,10 @@ impl<S: Clone + Eq + Hash> Visit<S> for CodeGenerator<'_, S> {
                 self.push_load_const(ConstValue::Null);
             }
             ExprKind::AssignMulti { left, right } => {
-                assert!(left.len() == right.len());
+                assert!(
+                    left.len() == right.len(),
+                    "the length of left and right should be the same in multi assignment"
+                );
                 for right_expr in right {
                     self.visit_expr(right_expr)?;
                 }

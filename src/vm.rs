@@ -13,12 +13,13 @@ use crate::{
 
 impl Executor {
     /// Run this stack frame.
+    #[expect(clippy::panic_in_result_fn)]
     pub(crate) fn run_vm(
         &mut self,
         ctx: &mut Context,
         mut instructions: u32,
     ) -> Result<u32, Error> {
-        assert_ne!(instructions, 0);
+        assert_ne!(instructions, 0, "instructions must be greater than 0");
 
         let Some(Frame::Lucia {
             pc,
@@ -28,7 +29,7 @@ impl Executor {
             effect_handlers,
         }) = self.frames.last_mut()
         else {
-            panic!("top frame is already finished");
+            unreachable!("invalid frame type");
         };
         let code = &closure.code;
 
@@ -212,7 +213,7 @@ impl Executor {
                     if let ConstValue::Str(v) = &code.consts[i] {
                         stack.push(ctx.libs.get(Rc::clone(v)));
                     } else {
-                        panic!("program error");
+                        unreachable!("program error");
                     }
                 }
                 OpCode::ImportFrom(i) => {
@@ -247,7 +248,7 @@ impl Executor {
                     break;
                 }
                 OpCode::Return => {
-                    debug_assert_eq!(stack.len(), 1);
+                    debug_assert_eq!(stack.len(), 1, "stack length must be 1 on return");
                     let value = stack.pop().unwrap();
                     self.return_value(value);
                     break;

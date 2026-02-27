@@ -1067,7 +1067,8 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
             TokenKind::Str => {
                 debug_assert!(
                     text.starts_with('"') && text.ends_with('"')
-                        || text.starts_with('\'') && text.ends_with('\'')
+                        || text.starts_with('\'') && text.ends_with('\''),
+                    "unexpected string literal"
                 );
                 let text = &text[1..text.len() - 1];
                 let mut s = Ok(String::new());
@@ -1084,7 +1085,8 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
             TokenKind::RawStr => {
                 debug_assert!(
                     text.starts_with("r\"") && text.ends_with('"')
-                        || text.starts_with("r'") && text.ends_with('\'')
+                        || text.starts_with("r'") && text.ends_with('\''),
+                    "unexpected raw string literal"
                 );
                 let text = &text[2..text.len() - 1];
                 LitKind::Str(self.interner.intern(text))
@@ -1092,7 +1094,8 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
             TokenKind::ByteStr => {
                 debug_assert!(
                     text.starts_with("b\"") && text.ends_with('"')
-                        || text.starts_with("b'") && text.ends_with('\'')
+                        || text.starts_with("b'") && text.ends_with('\''),
+                    "unexpected byte string literal"
                 );
                 let text = &text[2..text.len() - 1];
                 let mut s = Ok(Vec::new());

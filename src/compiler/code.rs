@@ -86,7 +86,7 @@ pub struct Code<S> {
     pub params: CodeParams<S>,
     /// Function kind.
     pub kind: FunctionKind,
-    /// Bytecode, a list of OpCodes.
+    /// Bytecode, a list of [`OpCode`].
     pub code: IndexVec<CodeId, OpCode<CodeId>>,
 
     /// List of constants used in the bytecode.

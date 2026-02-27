@@ -170,7 +170,7 @@ impl Executor {
                         stack.clear();
                         stack.push(resume_value);
                     }
-                    None => panic!("continuation has no frames"),
+                    None => unreachable!("continuation has no frames"),
                 }
                 self.frames.append(&mut frames);
             }
