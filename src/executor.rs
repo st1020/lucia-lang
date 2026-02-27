@@ -55,7 +55,7 @@ impl Executor {
     /// Run the Lucia VM for a while or step any callback that we are waiting on.
     pub fn step(&mut self, ctx: &mut Context, fuel: &mut Fuel) -> bool {
         loop {
-            if self.frames.is_empty() {
+            if self.frames.is_empty() || self.result.is_some() {
                 break true;
             }
 
@@ -73,20 +73,24 @@ impl Executor {
                 } => {
                     fuel.consume(Self::FUEL_PER_CALLBACK);
                     match callback.call(ctx, stack) {
-                        Ok(CallbackReturn::Call(function, args, new_effect_handlers)) => {
+                        Ok(CallbackReturn::Call {
+                            function,
+                            args,
+                            effect_handlers: new_effect_handlers,
+                        }) => {
                             *effect_handlers = new_effect_handlers;
                             self.call_function(function, args);
                         }
-                        Ok(CallbackReturn::Perform(effect, args)) => {
+                        Ok(CallbackReturn::Perform { effect, args }) => {
                             self.perform_effect(effect, args);
                         }
-                        Ok(CallbackReturn::TailCall(function, args)) => {
+                        Ok(CallbackReturn::TailCall { function, args }) => {
                             self.tail_call(function, args);
                         }
-                        Ok(CallbackReturn::TailPerform(effect, args)) => {
+                        Ok(CallbackReturn::TailPerform { effect, args }) => {
                             self.tail_perform(effect, args);
                         }
-                        Ok(CallbackReturn::ReturnValue(value)) => {
+                        Ok(CallbackReturn::ReturnValue { value }) => {
                             self.return_value(value);
                         }
                         Err(error) => {

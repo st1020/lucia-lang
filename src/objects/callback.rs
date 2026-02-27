@@ -1,6 +1,6 @@
 #![allow(clippy::arbitrary_source_item_ordering)]
 
-use std::{hash, marker::PhantomData, ops::RangeBounds, ptr, rc::Rc};
+use std::{hash, marker::PhantomData, ptr, rc::Rc};
 
 use derive_more::{Debug, Display};
 use dyn_clone::{DynClone, clone_trait_object};
@@ -16,25 +16,45 @@ pub type CallbackResult = Result<CallbackReturn, Error>;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum CallbackReturn {
-    Call(Function, Vec<Value>, OrderSet<RcEffect>),
-    Perform(RcEffect, Vec<Value>),
-    TailCall(Function, Vec<Value>),
-    TailPerform(RcEffect, Vec<Value>),
-    ReturnValue(Value),
+    Call {
+        function: Function,
+        args: Vec<Value>,
+        effect_handlers: OrderSet<RcEffect>,
+    },
+    Perform {
+        effect: RcEffect,
+        args: Vec<Value>,
+    },
+    TailCall {
+        function: Function,
+        args: Vec<Value>,
+    },
+    TailPerform {
+        effect: RcEffect,
+        args: Vec<Value>,
+    },
+    ReturnValue {
+        value: Value,
+    },
 }
 
 impl<T: Into<Value>> From<T> for CallbackReturn {
     fn from(value: T) -> Self {
-        CallbackReturn::ReturnValue(value.into())
+        CallbackReturn::ReturnValue {
+            value: value.into(),
+        }
     }
 }
 
 impl<const N: usize> From<MetaResult<N>> for CallbackReturn {
-    fn from(value: MetaResult<N>) -> Self {
-        match value {
-            MetaResult::Value(v) => CallbackReturn::ReturnValue(v),
-            MetaResult::TailCall(f, args) => CallbackReturn::TailCall(f, Vec::from(args)),
-            MetaResult::TailEffect(e, args) => CallbackReturn::TailPerform(e, args),
+    fn from(meta_result: MetaResult<N>) -> Self {
+        match meta_result {
+            MetaResult::TailCall { function, args } => CallbackReturn::TailCall {
+                function,
+                args: args.to_vec(),
+            },
+            MetaResult::TailEffect { effect, args } => CallbackReturn::TailPerform { effect, args },
+            MetaResult::ReturnValue { value } => CallbackReturn::ReturnValue { value },
         }
     }
 }
@@ -123,16 +143,6 @@ pub trait IntoCallback<Marker> {
 }
 
 macro_rules! impl_into_callback {
-    (@CHECK_ARGS $args:ident, $argument_range:expr) => {
-        let args_len = $args.len();
-        let required = ArgumentRange::from($argument_range);
-        if !required.contains(&args_len) {
-            return Err(Error::CallArguments {
-                required,
-                given: args_len
-            });
-        }
-    };
     ($len:literal, $($idx:literal $t:ident),*) => {
         impl<Func, Ret, $($t,)*> IntoCallback<fn($($t,)*) -> Ret> for Func
         where
@@ -141,7 +151,7 @@ macro_rules! impl_into_callback {
             $($t: FromValue,)*
         {
             fn call(&self, _ctx: &Context, args: &[Value]) -> CallbackResult {
-                impl_into_callback!(@CHECK_ARGS args, $len);
+                ArgumentRange::from($len).check(args.len())?;
                 debug_assert!(args.len() == $len);
                 self($($t::from_value(args[$idx].clone())?,)*).into_callback_result()
             }
@@ -155,7 +165,7 @@ macro_rules! impl_into_callback {
             $($t: FromValue,)*
         {
             fn call(&self, _ctx: &Context, args: &[Value]) -> CallbackResult {
-                impl_into_callback!(@CHECK_ARGS args, ($len, None));
+                ArgumentRange::from(($len, None)).check(args.len())?;
                 debug_assert!(args.len() >= $len);
                 self($($t::from_value(args[$idx].clone())?,)* &args[$len..]).into_callback_result()
             }
@@ -168,7 +178,7 @@ macro_rules! impl_into_callback {
             $($t: FromValue,)*
         {
             fn call(&self, ctx: &Context, args: &[Value]) -> CallbackResult {
-                impl_into_callback!(@CHECK_ARGS args, $len);
+                ArgumentRange::from($len).check(args.len())?;
                 debug_assert!(args.len() == $len);
                 self(ctx, $($t::from_value(args[$idx].clone())?,)*).into_callback_result()
             }
@@ -182,7 +192,7 @@ macro_rules! impl_into_callback {
             $($t: FromValue,)*
         {
             fn call(&self, ctx: &Context, args: &[Value]) -> CallbackResult {
-                impl_into_callback!(@CHECK_ARGS args, ($len, None));
+                ArgumentRange::from(($len, None)).check(args.len())?;
                 debug_assert!(args.len() >= $len);
                 self(ctx, $($t::from_value(args[$idx].clone())?,)* &args[$len..]).into_callback_result()
             }
@@ -221,7 +231,9 @@ mod tests {
 
         impl CallbackFn for CB {
             fn call(&mut self, _ctx: &Context, _args: &[Value]) -> CallbackResult {
-                Ok(CallbackReturn::ReturnValue(Value::Int(42)))
+                Ok(CallbackReturn::ReturnValue {
+                    value: Value::Int(42),
+                })
             }
         }
 
@@ -229,7 +241,9 @@ mod tests {
         let mut dyn_callback = Callback::new(CB);
         assert_eq!(
             dyn_callback.call(&context, &[]),
-            Ok(CallbackReturn::ReturnValue(Value::Int(42)))
+            Ok(CallbackReturn::ReturnValue {
+                value: Value::Int(42),
+            })
         );
     }
 }

@@ -62,12 +62,12 @@ pub fn load_builtin(context: &mut Context) {
                 fn call(&mut self, _ctx: &Context, _args: &[Value]) -> CallbackResult {
                     self.value += 1;
                     if self.value <= self.end {
-                        Ok(CallbackReturn::Perform(
-                            Effect::Builtin(BuiltinEffect::Yield).into(),
-                            vec![Value::Int(self.value - 1)],
-                        ))
+                        Ok(CallbackReturn::Perform {
+                            effect: Effect::Builtin(BuiltinEffect::Yield).into(),
+                            args: vec![Value::Int(self.value - 1)],
+                        })
                     } else {
-                        Ok(CallbackReturn::ReturnValue(Value::Null))
+                        Ok(CallbackReturn::ReturnValue { value: Value::Null })
                     }
                 }
             }

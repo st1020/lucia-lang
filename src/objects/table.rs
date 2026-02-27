@@ -7,7 +7,10 @@ use ordermap::{OrderMap, OrderSet};
 use crate::{
     Context,
     compiler::value::{MetaMethod, MetaName},
-    objects::{MetaResult, Value, call_metamethod, impl_metamethod},
+    objects::{
+        BuiltinEffect, Callback, CallbackFn, CallbackReturn, Effect, Function, MetaResult, Value,
+        call_metamethod, impl_metamethod,
+    },
 };
 
 pub type RcTable = Rc<Table>;
@@ -87,24 +90,64 @@ impl Table {
     pub fn iter(&self) -> TableIter<'_> {
         TableIter { table: self, i: 0 }
     }
+}
 
-    // pub fn iter_callback(&self, ctx: Context) -> Callback {
-    //     Callback::from_fn_with(
-    //         &ctx,
-    //         Gc::new(&ctx, RefLock::new(self.iter())),
-    //         |iter, ctx, _args| {
-    //             Ok(CallbackReturn::Return(iter.borrow_mut(&ctx).next().map_or(
-    //                 Value::Null,
-    //                 |(k, v)| {
-    //                     let t = Table::new(&ctx);
-    //                     t.set(ctx, 0_i64, k);
-    //                     t.set(ctx, 1_i64, v);
-    //                     t.into()
-    //                 },
-    //             )))
-    //         },
-    //     )
-    // }
+#[derive(Debug, Clone)]
+enum TableIterKind {
+    Keys,
+    Values,
+    Items,
+}
+
+#[derive(Debug, Clone)]
+pub struct TableIterCallback {
+    kind: TableIterKind,
+    table: RcTable,
+    i: usize,
+}
+
+impl TableIterCallback {
+    pub fn new(table: RcTable) -> Self {
+        TableIterCallback {
+            kind: TableIterKind::Items,
+            table,
+            i: 0,
+        }
+    }
+
+    pub fn keys(table: RcTable) -> Self {
+        TableIterCallback {
+            kind: TableIterKind::Keys,
+            table,
+            i: 0,
+        }
+    }
+
+    pub fn values(table: RcTable) -> Self {
+        TableIterCallback {
+            kind: TableIterKind::Values,
+            table,
+            i: 0,
+        }
+    }
+}
+
+impl CallbackFn for TableIterCallback {
+    fn call(&mut self, _ctx: &Context, _args: &[Value]) -> super::CallbackResult {
+        self.i += 1;
+        if let Some((k, v)) = self.table.get_index(self.i - 1) {
+            Ok(CallbackReturn::Perform {
+                effect: Effect::Builtin(BuiltinEffect::Yield).into(),
+                args: vec![match self.kind {
+                    TableIterKind::Keys => k,
+                    TableIterKind::Values => v,
+                    TableIterKind::Items => Value::from(&[k, v]),
+                }],
+            })
+        } else {
+            Ok(CallbackReturn::ReturnValue { value: Value::Null })
+        }
+    }
 }
 
 impl<'a> IntoIterator for &'a Table {
@@ -125,7 +168,7 @@ impl MetaMethod<&Context> for RcTable {
             #[expect(clippy::wildcard_enum_match_arm)]
             match metatable.get(MetaName::Call) {
                 Value::Function(v) => Ok(v),
-                Value::Table(v) => v.meta_call(ctx), // TODO: prevent infinite recursion
+                Value::Table(v) => v.meta_call(ctx),
                 v => Err(v.meta_error(ctx, MetaName::Call, vec![])),
             }
         } else {
@@ -133,19 +176,39 @@ impl MetaMethod<&Context> for RcTable {
         }
     }
 
-    // fn meta_iter(&self, ctx: &Context) -> Result<Self::ResultIter, Self::Error> {
-    //     if let Some(metatable) = self.metatable() {
-    //         let t = metatable.get(MetaName::Iter);
-    //         if !t.is_null() {
-    //             return Ok(Function::Callback(Callback::from_fn_with(
-    //                 &ctx,
-    //                 (t.meta_call(ctx)?, *self),
-    //                 |(f, v), _ctx, _args| Ok(CallbackReturn::TailCall(*f, vec![(*v).into()])),
-    //             )));
-    //         }
-    //     }
-    //     Ok(Function::Callback(self.iter_callback(ctx)))
-    // }
+    #[inline]
+    fn meta_iter(self, ctx: &Context) -> Result<Self::ResultIter, Self::Error> {
+        if let Some(metatable) = self.metatable() {
+            let t = metatable.get(MetaName::Iter);
+            if !t.is_null() {
+                #[derive(Clone)]
+                struct IterCallback {
+                    function: Function,
+                    table: RcTable,
+                }
+
+                impl CallbackFn for IterCallback {
+                    fn call(&mut self, _ctx: &Context, _args: &[Value]) -> super::CallbackResult {
+                        Ok(CallbackReturn::TailCall {
+                            function: self.function.clone(),
+                            args: vec![Rc::clone(&self.table).into()],
+                        })
+                    }
+                }
+
+                return Ok(Function::Callback(
+                    Callback::new(IterCallback {
+                        function: t.meta_call(ctx)?,
+                        table: self,
+                    })
+                    .into(),
+                ));
+            }
+        }
+        Ok(Function::Callback(Rc::new(Callback::new(
+            TableIterCallback::new(self),
+        ))))
+    }
 
     #[inline]
     fn meta_len(self, ctx: &Context) -> Result<Self::Result1, Self::Error> {
@@ -243,13 +306,17 @@ impl MetaMethod<&Context> for RcTable {
     #[inline]
     fn meta_get_attr(self, ctx: &Context, key: Self::Value) -> Result<Self::Result2, Self::Error> {
         call_metamethod!(ctx, MetaName::GetAttr, self, key);
-        Ok(MetaResult::Value(self.get(key)))
+        Ok(MetaResult::ReturnValue {
+            value: self.get(key),
+        })
     }
 
     #[inline]
     fn meta_get_item(self, ctx: &Context, key: Self::Value) -> Result<Self::Result2, Self::Error> {
         call_metamethod!(ctx, MetaName::GetItem, self, key);
-        Ok(MetaResult::Value(self.get(key)))
+        Ok(MetaResult::ReturnValue {
+            value: self.get(key),
+        })
     }
 
     #[inline]
@@ -366,6 +433,12 @@ impl<T: Into<Value> + Clone> From<&[T]> for TableEntries {
     }
 }
 
+impl<T: Into<Value> + Clone, const N: usize> From<&[T; N]> for TableEntries {
+    fn from(value: &[T; N]) -> Self {
+        value.iter().cloned().map(Into::into).collect()
+    }
+}
+
 impl<K: Into<Value>, V: Into<Value>> From<Vec<(K, V)>> for TableEntries {
     fn from(value: Vec<(K, V)>) -> Self {
         value
@@ -377,6 +450,18 @@ impl<K: Into<Value>, V: Into<Value>> From<Vec<(K, V)>> for TableEntries {
 
 impl<K: Into<Value> + Clone, V: Into<Value> + Clone> From<&[(K, V)]> for TableEntries {
     fn from(value: &[(K, V)]) -> Self {
+        value
+            .iter()
+            .cloned()
+            .map(|(k, v)| (k.into(), v.into()))
+            .collect()
+    }
+}
+
+impl<K: Into<Value> + Clone, V: Into<Value> + Clone, const N: usize> From<&[(K, V); N]>
+    for TableEntries
+{
+    fn from(value: &[(K, V); N]) -> Self {
         value
             .iter()
             .cloned()

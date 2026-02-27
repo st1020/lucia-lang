@@ -227,14 +227,24 @@ impl_from_value! {
 
 #[derive(Debug, Clone)]
 pub enum MetaResult<const N: usize> {
-    Value(Value),
-    TailCall(Function, [Value; N]),
-    TailEffect(RcEffect, Vec<Value>),
+    TailCall {
+        function: Function,
+        args: [Value; N],
+    },
+    TailEffect {
+        effect: RcEffect,
+        args: Vec<Value>,
+    },
+    ReturnValue {
+        value: Value,
+    },
 }
 
 impl<T: Into<Value>, const N: usize> From<T> for MetaResult<N> {
     fn from(value: T) -> Self {
-        MetaResult::Value(value.into())
+        MetaResult::ReturnValue {
+            value: value.into(),
+        }
     }
 }
 

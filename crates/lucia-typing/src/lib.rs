@@ -215,7 +215,7 @@ impl<'a, S: AsRef<str> + Clone + Eq + Ord> TypeChecker<'a, S> {
         for stmt in &block.body {
             match self.check_expr(stmt) {
                 Ok(ty) => last_type = ty,
-                Err(e) => self.errors.push(e),
+                Err(error) => self.errors.push(error),
             }
         }
         Ok(last_type)

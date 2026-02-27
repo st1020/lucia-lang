@@ -46,15 +46,18 @@ impl MetaMethod<&Context> for Function {
     #[inline]
     fn meta_iter(self, _: &Context) -> Result<Self::ResultIter, Self::Error> {
         #[derive(Clone)]
-        struct FunctionIter(Function);
+        struct FunctionIterCallback(Function);
 
-        impl CallbackFn for FunctionIter {
+        impl CallbackFn for FunctionIterCallback {
             fn call(&mut self, _: &Context, _: &[Value]) -> super::CallbackResult {
-                Ok(CallbackReturn::TailCall(self.0.clone(), Vec::new()))
+                Ok(CallbackReturn::TailCall {
+                    function: self.0.clone(),
+                    args: Vec::new(),
+                })
             }
         }
 
-        Ok(Rc::new(Callback::new(FunctionIter(self))).into())
+        Ok(Rc::new(Callback::new(FunctionIterCallback(self))).into())
     }
 
     impl_metamethod!(Function, str);
@@ -104,6 +107,17 @@ impl ArgumentRange {
 
     pub fn more_then(start: usize) -> Self {
         Self { start, end: None }
+    }
+
+    pub fn check(&self, args_len: usize) -> Result<(), Error> {
+        if self.contains(&args_len) {
+            Ok(())
+        } else {
+            Err(Error::CallArguments {
+                required: *self,
+                given: args_len,
+            })
+        }
     }
 }
 

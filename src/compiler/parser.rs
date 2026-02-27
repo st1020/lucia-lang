@@ -303,8 +303,8 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
         while !self.eat(end) {
             match self.parse_stmt() {
                 Ok(expr) => items.push(expr),
-                Err(e) => {
-                    self.errors.push(e);
+                Err(error) => {
+                    self.errors.push(error);
                     while !(self.check(TokenKind::Eol)
                         || self.check(TokenKind::Eof)
                         || self.check(end))
@@ -317,12 +317,12 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
                 break;
             }
             if self.check(TokenKind::Eof) {
-                let e = self.unexpected();
-                self.errors.push(e);
+                let error = self.unexpected();
+                self.errors.push(error);
                 break;
             }
-            if let Err(e) = self.expect(TokenKind::Eol) {
-                self.errors.push(e);
+            if let Err(error) = self.expect(TokenKind::Eol) {
+                self.errors.push(error);
             }
             self.eat_eol();
         }
@@ -1073,7 +1073,7 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
                 let mut s = Ok(String::new());
                 unescape_str(text, |_, c| match (&mut s, c) {
                     (Ok(s), Ok(c)) => s.push(c),
-                    (Ok(_), Err(e)) => s = Err(e),
+                    (Ok(_), Err(error)) => s = Err(error),
                     _ => (),
                 });
                 match s {
@@ -1098,7 +1098,7 @@ impl<S: StringInterner, I: Iterator<Item = Token> + Clone> Parser<'_, S, I> {
                 let mut s = Ok(Vec::new());
                 unescape_byte_str(text, |_, c| match (&mut s, c) {
                     (Ok(s), Ok(c)) => s.push(c),
-                    (Ok(_), Err(e)) => s = Err(e),
+                    (Ok(_), Err(error)) => s = Err(error),
                     _ => (),
                 });
                 match s {

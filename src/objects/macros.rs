@@ -150,10 +150,10 @@ macro_rules! call_metamethod {
         if let Some(metatable) = $self.metatable() {
             let metamethod = metatable.get($meta_name);
             if !metamethod.is_null() {
-                return Ok($crate::objects::MetaResult::TailCall(
-                    metamethod.meta_call($ctx)?,
-                    [$self.clone().into(), $($arg.into()),*],
-                ));
+                return Ok($crate::objects::MetaResult::TailCall{
+                    function: metamethod.meta_call($ctx)?,
+                    args: [$self.clone().into(), $($arg.into()),*],
+                });
             }
         }
     };

@@ -49,15 +49,15 @@ impl Executor {
         macro_rules! call_metamethod {
             ($meta_result:expr) => {
                 match $meta_result? {
-                    MetaResult::Value(v) => stack.push(v),
-                    MetaResult::TailCall(callee, args) => {
-                        self.call_function(callee, args.to_vec());
+                    MetaResult::TailCall { function, args } => {
+                        self.call_function(function, args.to_vec());
                         break;
                     }
-                    MetaResult::TailEffect(effect, args) => {
+                    MetaResult::TailEffect { effect, args } => {
                         self.perform_effect(effect, args);
                         break;
                     }
+                    MetaResult::ReturnValue { value } => stack.push(value),
                 }
             };
         }
