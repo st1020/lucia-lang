@@ -12,12 +12,12 @@ repository = "https://github.com/st1020/lucia-lang"
 lucia-lang = { path = "./" }
 # String
 text-size = "1"
-compact_str = "0.9"
+compact_str = "0.10"
 unicode-ident = "1"
-rustc-literal-escaper = "0.0.7"
+rustc-literal-escaper = "0.0.8"
 # Data Structure
 dyn-clone = "1"
-itertools = "0.14"
+itertools = "0.15"
 derive_more = { version = "2", features = [
     "from",
     "debug",
@@ -26,7 +26,7 @@ derive_more = { version = "2", features = [
     "is_variant",
 ] }
 ordered-float = "5"
-oxc_index = { version = "4", features = ["nonmax"] }
+oxc_index = { version = "5", features = ["nonmax"] }
 sorted-vec = "0.8"
 ordermap = "1"
 rustc-hash = "2"

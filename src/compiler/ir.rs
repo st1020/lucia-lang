@@ -230,13 +230,11 @@ impl ControlFlowGraph {
                         cfg.blocks[block_id].code.push(opcode);
                     }
                 }
-                Some(OpCode::Return) => {
-                    if current_end_stack_size != 0 {
-                        let mut new_code = vec![OpCode::Pop; current_end_stack_size];
-                        new_code.extend(&cfg.blocks[block_id].code);
-                        cfg.blocks[block_id].code = new_code;
-                        cfg.blocks[block_id].end_stack_size = 0;
-                    }
+                Some(OpCode::Return) if current_end_stack_size != 0 => {
+                    let mut new_code = vec![OpCode::Pop; current_end_stack_size];
+                    new_code.extend(&cfg.blocks[block_id].code);
+                    cfg.blocks[block_id].code = new_code;
+                    cfg.blocks[block_id].end_stack_size = 0;
                 }
                 _ => (),
             }
@@ -302,7 +300,7 @@ impl fmt::Display for BasicBlock {
             .code
             .iter()
             .enumerate()
-            .map(|(index, code)| format!("{index:>12} {code}",))
+            .map(|(index, code)| format!("{index:>12} {code}"))
             .join("\n");
         write!(f, "code:\n{code_str}")
     }

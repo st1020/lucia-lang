@@ -285,19 +285,19 @@ impl Cursor<'_> {
     }
 
     fn eol(&mut self) -> TokenKind {
-        debug_assert!(self.prev() == '\n');
+        debug_assert_eq!(self.prev(), '\n');
         self.eat_while(|c| c == '\n');
         Eol
     }
 
     fn line_comment(&mut self) -> TokenKind {
-        debug_assert!(self.prev() == '/');
+        debug_assert_eq!(self.prev(), '/');
         self.eat_while(|c| c != '\n');
         LineComment
     }
 
     fn block_comment(&mut self) -> TokenKind {
-        debug_assert!(self.prev() == '*');
+        debug_assert_eq!(self.prev(), '*');
         let mut depth = 1_usize;
         while let Some(c) = self.bump() {
             match c {

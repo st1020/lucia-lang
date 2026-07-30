@@ -39,6 +39,8 @@
     clippy::exhaustive_enums,
     clippy::exhaustive_structs,
     clippy::implicit_return,
+    clippy::inline_modules,
+    clippy::inline_trait_bounds,
     clippy::min_ident_chars,
     clippy::missing_inline_in_public_items,
     clippy::missing_trait_methods,
